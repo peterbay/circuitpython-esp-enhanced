@@ -94,6 +94,7 @@ INC += \
 	-isystem esp-idf/components/esp_timer/include \
 	-isystem esp-idf/components/esp_wifi/include \
 	-isystem esp-idf/components/esp_wifi/include/local \
+	-isystem esp-idf/components/wpa_supplicant/esp_supplicant/include \
 	-isystem esp-idf/components/freertos/config/include \
 	-isystem esp-idf/components/freertos/config/include/freertos \
 	-isystem esp-idf/components/freertos/config/$(IDF_TARGET_ARCH)/include \
@@ -443,6 +444,16 @@ SRC_C += \
 	boards/$(BOARD)/pins.c \
 	shared/netutils/netutils.c \
 	peripherals/$(IDF_TARGET)/pins.c
+
+ifeq ($(CIRCUITPY_PARTITION_DISK),1)
+CFLAGS += -DCIRCUITPY_PARTITION_DISK=1
+SRC_C += supervisor/partition_disk.c
+endif
+
+ifeq ($(CIRCUITPY_PROF),1)
+CFLAGS += -DCIRCUITPY_PROF=1
+SRC_C += supervisor/prof.c
+endif
 
 ifeq ($(CIRCUITPY_SSL),1)
 SRC_C += common-hal/ssl/crt_bundle.c

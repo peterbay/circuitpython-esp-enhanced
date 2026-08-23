@@ -805,3 +805,8 @@ $(BUILD)/manifest.py: $(BUILD)/frozen_mpy | $(TOP)/py/circuitpy_mpconfig.mk mpco
 	$(Q)(cd $(BUILD)/frozen_mpy && find * -name \*.py -exec printf 'freeze_as_mpy("frozen_mpy", "%s")\n' {} \; )> $@.tmp && mv -f $@.tmp $@
 FROZEN_MANIFEST=$(BUILD)/manifest.py
 endif
+
+# CIRCUITPY-CHANGE: wifi channel state information via espidf.CSI. Needs
+# CONFIG_ESP_WIFI_CSI_ENABLED in the board sdkconfig.
+CIRCUITPY_ESPIDF_CSI ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_CSI=$(CIRCUITPY_ESPIDF_CSI)

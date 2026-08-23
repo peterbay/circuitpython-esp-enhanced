@@ -6,11 +6,13 @@
 // SPDX-License-Identifier: MIT
 
 #include "py/mphal.h"
+#include "py/runtime.h"
 #include "supervisor/cpu.h"
 
 #include "rom/ets_sys.h"
 
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 
 // This is used by ProtoMatter's interrupt so make sure it is available when
 // flash isn't.

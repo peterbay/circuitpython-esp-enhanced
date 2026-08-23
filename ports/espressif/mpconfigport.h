@@ -19,7 +19,67 @@
 
 #include "py/circuitpy_mpconfig.h"
 
+// The VM runs RUN_BACKGROUND_TASKS on every jump, every loop iteration and every
+// method call. That is a call into flash to background_callback_run_all(), which
+// unconditionally calls port_background_task() before it even looks at the queue.
+// port_background_task() is empty on this port (background.c), so test the queue
+// inline and only pay for the call when there is actually work to run. Same
+// latency, same semantics, one load instead of two out of line calls.
+struct background_callback;
+extern volatile struct background_callback *volatile callback_head;
+#undef MICROPY_VM_HOOK_LOOP
+#undef MICROPY_VM_HOOK_RETURN
+#define MICROPY_VM_HOOK_LOOP if (callback_head != NULL) { RUN_BACKGROUND_TASKS; }
+#define MICROPY_VM_HOOK_RETURN if (callback_head != NULL) { RUN_BACKGROUND_TASKS; }
+
 #define MICROPY_NLR_SETJMP                  (1)
+// Xtensa has register windows, so the libc setjmp flushes the whole register file
+// on every nlr_push, which is every python function call. Measured 305 cycles
+// against 6 for the compiler's own non-local goto, which defers the flush to the
+// jump. See py/nlr.h.
+#define MICROPY_NLR_SETJMP_BUILTIN          (1)
+
+// Builtin names cost two map lookups, the first of which always misses. Measured
+// on this board: reading a plain global 411 ns, reading "len" 2141 ns.
+#define MICROPY_OPT_LOAD_GLOBAL_CACHE       (1)
+
+// A method call costs 1033 cycles against 537 for a plain call, and the gap is
+// mostly the six calls the general path walks to reach two map lookups.
+#define MICROPY_OPT_LOAD_METHOD_FAST_PATH   (1)
+
+// Reaching a bytecode function through mp_call_function_n_kw costs a frame, a
+// type lookup and an indirect jump the branch predictor cannot follow.
+#define MICROPY_OPT_CALL_FUN_BC_FAST_PATH   (1)
+
+// A bytearray store costs 410 cycles against 102 for a list index.
+#define MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH (1)
+
+// Building a str costs 5605 cycles against 1200 for the same bytes, and the
+// whole difference is the qstr pool search. See py/objstr.c.
+#define MICROPY_OPT_STR_NO_INTERN           (1)
+
+// s[3] costs 712 cycles and s[0] 1782, the difference being where the character
+// sits in the qstr pools. 256 bytes of RAM removes the search entirely.
+#define MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE  (1)
+
+// len(x) costs 422 cycles, most of it reaching the C function at all.
+#define MICROPY_OPT_CALL_BUILTIN_FAST_PATH  (1)
+
+// One pass of an empty loop costs 260 cycles, and every loop pays it.
+#define MICROPY_OPT_ITERNEXT_FAST_PATH      (1)
+
+// d["x"] costs 422 cycles, of which the generic subscript path is most of it.
+#define MICROPY_OPT_DICT_SUBSCR_FAST_PATH   (1)
+
+// "if a_list:" costs 235 cycles against 102 for "if an_int:".
+#define MICROPY_OPT_TRUTH_FAST_PATH         (1)
+
+// CIRCUITPY-CHANGE: __setattr__ / __delattr__ on user classes. Off by default at
+// this ROM level. CPython has it, drivers assume it, and it is what lets a
+// register map intercept attribute writes. Only classes that define these methods
+// pay for it (they lose the attribute store fast path); everything else is
+// unaffected.
+#define MICROPY_PY_DELATTR_SETATTR          (1)
 #define CIRCUITPY_DEFAULT_STACK_SIZE        0x6000
 
 // PSRAM can require more stack space for GC.
@@ -69,6 +129,13 @@ extern portMUX_TYPE background_task_mutex;
 #define CIRCUITPY_WIFI_DEFAULT_TX_POWER (20)
 #endif
 
+// CIRCUITPY-CHANGE: how much of each CSI record is kept. The radio can report
+// more than this for wide channels; the tail is dropped.
+#ifndef ESPIDF_CSI_MAX_BYTES
+#define ESPIDF_CSI_MAX_BYTES (128)
+#endif
+
 #ifndef CIRCUITPY_ESP32P4_SWAP_LSFS
 #define CIRCUITPY_ESP32P4_SWAP_LSFS (0)
 #endif
+
