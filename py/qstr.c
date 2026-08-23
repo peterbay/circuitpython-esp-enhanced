@@ -202,10 +202,25 @@ extern const qstr_pool_t MICROPY_QSTR_EXTRA_POOL;
 #define CONST_POOL mp_qstr_const_pool
 #endif
 
+#if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+// CIRCUITPY-CHANGE: indexing a str and every step of iterating one produce a
+// one-character string, and each one used to walk the pools: a linear scan of
+// the run-time pool, which is not sorted, followed by a binary search of the
+// pool in flash. Measured between 300 and 1400 cycles depending on where the
+// character happened to sit. A qstr keeps its number for as long as the pools
+// live, so remember it. Zero means "not looked up yet", which is also what
+// qstr_reset() puts back when the pools are dropped.
+static uint16_t qstr_char_cache[128];
+#endif
+
 // CIRCUITPY-CHANGE: provide separate reset function
 void qstr_reset(void) {
     MP_STATE_VM(last_pool) = (qstr_pool_t *)&CONST_POOL; // we won't modify the const_pool since it has no allocated room left
     MP_STATE_VM(qstr_last_chunk) = NULL;
+    #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+    // The numbers just became meaningless along with the pools.
+    memset(qstr_char_cache, 0, sizeof(qstr_char_cache));
+    #endif
 }
 
 void qstr_init(void) {
@@ -337,6 +352,27 @@ qstr qstr_find_strn(const char *str, size_t str_len) {
 qstr qstr_from_str(const char *str) {
     return qstr_from_strn(str, strlen(str));
 }
+
+#if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+qstr qstr_from_char(byte c) {
+    // CIRCUITPY-CHANGE: the assert compiles out in release builds, so a caller that
+    // mistook a lone UTF-8 continuation byte for ASCII indexed this 128 entry table
+    // out of bounds. Callers are fixed, but the table must not be reachable past its
+    // end from here either.
+    if (c >= 128) {
+        return qstr_from_strn((const char *)&c, 1);
+    }
+    qstr q = qstr_char_cache[c];
+    if (q == 0) {
+        q = qstr_from_strn((const char *)&c, 1);
+        // A qstr number beyond the cache width is simply not remembered.
+        if (q <= 0xffff) {
+            qstr_char_cache[c] = (uint16_t)q;
+        }
+    }
+    return q;
+}
+#endif
 
 static qstr qstr_from_strn_helper(const char *str, size_t len, bool data_is_static) {
     QSTR_ENTER();

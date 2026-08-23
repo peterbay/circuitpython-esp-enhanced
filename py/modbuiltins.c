@@ -142,10 +142,27 @@ static mp_obj_t mp_builtin_chr(mp_obj_t o_in) {
     }
     VSTR_FIXED(buf, 4);
     vstr_add_char(&buf, c);
+    #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+    // CIRCUITPY-CHANGE: a single byte means an ASCII character.
+    if (buf.len == 1) {
+        return MP_OBJ_NEW_QSTR(qstr_from_char((byte)buf.buf[0]));
+    }
+    #endif
+    #if MICROPY_OPT_STR_NO_INTERN
+    // CIRCUITPY-CHANGE: chr() is how a program reaches characters above ASCII, so
+    // interning here would fill the qstr pools for good. See objstrunicode.c.
+    return mp_obj_new_str(buf.buf, buf.len);
+    #else
     return mp_obj_new_str_via_qstr(buf.buf, buf.len);
+    #endif
     #else
     mp_int_t ord = mp_obj_get_int(o_in);
     if (0 <= ord && ord <= 0xff) {
+        #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+        if (ord < 128) {
+            return MP_OBJ_NEW_QSTR(qstr_from_char((byte)ord));
+        }
+        #endif
         uint8_t str[1] = {ord};
         return mp_obj_new_str_via_qstr((char *)str, 1);
     } else {

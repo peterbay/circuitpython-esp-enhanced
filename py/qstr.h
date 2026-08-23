@@ -107,6 +107,11 @@ qstr qstr_find_strn(const char *str, size_t str_len); // returns MP_QSTRnull if 
 
 qstr qstr_from_str(const char *str);
 qstr qstr_from_strn(const char *str, size_t len);
+#if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+// CIRCUITPY-CHANGE: the qstr for a single ASCII character, remembered so that
+// repeated use does not walk the pools again. See qstr.c.
+qstr qstr_from_char(byte c);
+#endif
 #if MICROPY_VFS_ROM
 qstr qstr_from_strn_static(const char *str, size_t len);
 #endif

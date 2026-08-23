@@ -222,10 +222,17 @@ mp_obj_t mp_obj_str_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_
                 #endif
 
                 // Check if a qstr with this data already exists
+                // CIRCUITPY-CHANGE: MICROPY_OPT_STR_NO_INTERN exists so dynamic
+                // strings stop being searched for in the qstr pools -- the run-time
+                // pool is unsorted, so the scan is linear. Every other dynamic path
+                // honours it; this one always searched, so the option had neither a
+                // consistent speed nor a consistent memory behaviour.
+                #if !MICROPY_OPT_STR_NO_INTERN
                 qstr q = qstr_find_strn((const char *)str_data, str_len);
                 if (q != MP_QSTRnull) {
                     return MP_OBJ_NEW_QSTR(q);
                 }
+                #endif
 
                 mp_obj_str_t *o = MP_OBJ_TO_PTR(mp_obj_new_str_copy(type, NULL, str_len));
                 o->data = str_data;
@@ -514,6 +521,11 @@ static mp_obj_t bytes_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
         if (MICROPY_PY_BUILTINS_STR_UNICODE || type == &mp_type_bytes) {
             return MP_OBJ_NEW_SMALL_INT(self_data[index_val]);
         } else {
+            #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+            if (self_data[index_val] < 128) {
+                return MP_OBJ_NEW_QSTR(qstr_from_char(self_data[index_val]));
+            }
+            #endif
             return mp_obj_new_str_via_qstr((char *)&self_data[index_val], 1);
         }
     } else {
@@ -2284,12 +2296,27 @@ mp_obj_t mp_obj_new_str_via_qstr(const char *data, size_t len) {
 static mp_obj_t mp_obj_new_str_type_from_vstr(const mp_obj_type_t *type, vstr_t *vstr) {
     // if not a bytes object, look if a qstr with this data already exists
     if (type == &mp_type_str) {
+        #if MICROPY_OPT_STR_NO_INTERN
+        // CIRCUITPY-CHANGE: the pool search is a binary search over the whole ROM
+        // pool, and every step reads a string out of flash through the cache.
+        // Measured at ~4400 cycles on esp32s3, against ~1200 for building the
+        // string itself, and it only pays off when the computed data happens to
+        // equal a name the firmware already knows. The empty string is kept
+        // because it is common and its qstr costs nothing. Equality, hashing,
+        // dict lookup and attribute access all handle non-interned strings.
+        if (vstr->len == 0) {
+            vstr_clear(vstr);
+            vstr->alloc = 0;
+            return MP_OBJ_NEW_QSTR(MP_QSTR_);
+        }
+        #else
         qstr q = qstr_find_strn(vstr->buf, vstr->len);
         if (q != MP_QSTRnull) {
             vstr_clear(vstr);
             vstr->alloc = 0;
             return MP_OBJ_NEW_QSTR(q);
         }
+        #endif
     }
 
     byte *data;
@@ -2339,14 +2366,20 @@ mp_obj_t mp_obj_new_str(const char *data, size_t len) {
         mp_raise_msg(&mp_type_UnicodeError, NULL);
     }
     #endif
+    #if MICROPY_OPT_STR_NO_INTERN
+    // CIRCUITPY-CHANGE: see mp_obj_new_str_type_from_vstr.
+    if (len == 0) {
+        return MP_OBJ_NEW_QSTR(MP_QSTR_);
+    }
+    #else
     qstr q = qstr_find_strn(data, len);
     if (q != MP_QSTRnull) {
         // qstr with this data already exists
         return MP_OBJ_NEW_QSTR(q);
-    } else {
-        // no existing qstr, don't make one
-        return mp_obj_new_str_copy(&mp_type_str, (const byte *)data, len);
     }
+    #endif
+    // no existing qstr, don't make one
+    return mp_obj_new_str_copy(&mp_type_str, (const byte *)data, len);
 }
 
 mp_obj_t mp_obj_new_str_from_cstr(const char *str) {
@@ -2470,7 +2503,13 @@ static mp_obj_t str_it_iternext(mp_obj_t self_in) {
     mp_obj_str8_it_t *self = MP_OBJ_TO_PTR(self_in);
     GET_STR_DATA_LEN(self->str, str, len);
     if (self->cur < len) {
+        #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+        mp_obj_t o_out = (str[self->cur] < 128)
+            ? MP_OBJ_NEW_QSTR(qstr_from_char(str[self->cur]))
+            : mp_obj_new_str_via_qstr((const char *)str + self->cur, 1);
+        #else
         mp_obj_t o_out = mp_obj_new_str_via_qstr((const char *)str + self->cur, 1);
+        #endif
         self->cur += 1;
         return o_out;
     } else {

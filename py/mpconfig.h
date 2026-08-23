@@ -689,6 +689,76 @@ typedef uint64_t mp_uint_t;
 // linear search on ordered (especially in-ROM) maps. Can provide a +10-15%
 // performance improvement on benchmarks involving lots of attribute access
 // or dictionary lookup.
+// Resolve a method on an instance of a python class straight in the VM, the way
+// MICROPY_OPT_LOAD_ATTR_FAST_PATH already does for attributes.
+#ifndef MICROPY_OPT_LOAD_METHOD_FAST_PATH
+#define MICROPY_OPT_LOAD_METHOD_FAST_PATH (0)
+#endif
+
+// Cache the outcome of resolving a name to a builtin, so that the lookup that
+// misses in the module globals is not repeated on every use. See mp_load_global.
+#ifndef MICROPY_OPT_LOAD_GLOBAL_CACHE
+#define MICROPY_OPT_LOAD_GLOBAL_CACHE (0)
+#endif
+
+#ifndef MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE
+#define MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE (32)
+#endif
+
+// Call a bytecode function straight from the VM instead of going through
+// mp_call_function_n_kw, which costs a frame, a type lookup and an indirect
+// jump through the type's call slot.
+#ifndef MICROPY_OPT_CALL_FUN_BC_FAST_PATH
+#define MICROPY_OPT_CALL_FUN_BC_FAST_PATH (0)
+#endif
+
+// Store into a bytearray straight from the VM. The generic path walks three
+// switches over the typecode and four out-of-line calls.
+#ifndef MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH
+#define MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH (0)
+#endif
+
+// Do not search the qstr pools when a new string is built at run time. The
+// search only pays off when the result happens to equal a name the firmware
+// already knows, and it costs a walk of the whole ROM pool. Setting this makes
+// "a" + "b" is "ab" false, which CPython does not guarantee either, and gives
+// up the memory shared by equal strings.
+#ifndef MICROPY_OPT_STR_NO_INTERN
+#define MICROPY_OPT_STR_NO_INTERN (0)
+#endif
+
+// Remember the qstr of each ASCII character. Indexing a str and iterating one
+// both produce a single character, and looking it up walks the qstr pools:
+// the run-time pool is not sorted, so it is scanned linearly.
+#ifndef MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+#define MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE (0)
+#endif
+
+// Call a builtin straight from the VM. The generic path costs a frame, a type
+// lookup, an indirect jump and then the slot function's own argument check.
+#ifndef MICROPY_OPT_CALL_BUILTIN_FAST_PATH
+#define MICROPY_OPT_CALL_BUILTIN_FAST_PATH (0)
+#endif
+
+// Call the iternext slot straight from the VM instead of going through
+// mp_iternext_allow_raise. Every pass of every loop goes through here.
+#ifndef MICROPY_OPT_ITERNEXT_FAST_PATH
+#define MICROPY_OPT_ITERNEXT_FAST_PATH (0)
+#endif
+
+// Look a dict key up straight from the VM instead of walking mp_obj_subscr,
+// dict_subscr and mp_obj_dict_store to reach the same mp_map_lookup.
+#ifndef MICROPY_OPT_DICT_SUBSCR_FAST_PATH
+#define MICROPY_OPT_DICT_SUBSCR_FAST_PATH (0)
+#endif
+
+// Decide the truth of the common container types in the VM. The general path
+// leaves this translation unit and then jumps through the type's unary_op slot
+// only to read a length that is right there in the object.
+#ifndef MICROPY_OPT_TRUTH_FAST_PATH
+#define MICROPY_OPT_TRUTH_FAST_PATH (0)
+#endif
+
 #ifndef MICROPY_OPT_MAP_LOOKUP_CACHE
 #define MICROPY_OPT_MAP_LOOKUP_CACHE (MICROPY_CONFIG_ROM_LEVEL_AT_LEAST_EXTRA_FEATURES)
 #endif

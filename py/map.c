@@ -61,6 +61,12 @@
 #define MAP_CACHE_SET(index, pos)
 #endif
 
+// CIRCUITPY-CHANGE: counts every change of membership in any map, so that caches
+// built on "this name was not in that map" can tell whether they still hold. Only
+// adds and removes bump it; replacing the value of an existing key does not change
+// what is present and cannot invalidate such a cache.
+uint32_t mp_map_mutation_count;
+
 // This table of sizes is used to control the growth of hash tables.
 // The first set of sizes are chosen so the allocation fits exactly in a
 // 4-word GC block, and it's not so important for these small values to be
@@ -115,6 +121,7 @@ void mp_map_init_fixed_table(mp_map_t *map, size_t n, const mp_obj_t *table) {
 
 // Differentiate from mp_map_clear() - semantics is different
 void mp_map_deinit(mp_map_t *map) {
+    mp_map_mutation_count++;
     if (!map->is_fixed) {
         m_del(mp_map_elem_t, map->table, map->alloc);
     }
@@ -122,6 +129,7 @@ void mp_map_deinit(mp_map_t *map) {
 }
 
 void mp_map_clear(mp_map_t *map) {
+    mp_map_mutation_count++;
     if (!map->is_fixed) {
         m_del(mp_map_elem_t, map->table, map->alloc);
     }
@@ -201,6 +209,7 @@ mp_map_elem_t *MICROPY_WRAP_MP_MAP_LOOKUP(mp_map_lookup)(mp_map_t * map, mp_obj_
                 if (MP_UNLIKELY(lookup_kind == MP_MAP_LOOKUP_REMOVE_IF_FOUND)) {
                     // remove the found element by moving the rest of the array down
                     mp_obj_t value = elem->value;
+                    mp_map_mutation_count++;
                     --map->used;
                     memmove(elem, elem + 1, (top - elem - 1) * sizeof(*elem));
                     // put the found element after the end so the caller can access it if needed
@@ -224,6 +233,7 @@ mp_map_elem_t *MICROPY_WRAP_MP_MAP_LOOKUP(mp_map_lookup)(mp_map_t * map, mp_obj_
             map->table = m_renew(mp_map_elem_t, map->table, map->used, map->alloc);
             mp_seq_clear(map->table, map->used, map->alloc, sizeof(*map->table));
         }
+        mp_map_mutation_count++;
         mp_map_elem_t *elem = map->table + map->used++;
         elem->key = index;
         elem->value = MP_OBJ_NULL;
@@ -262,6 +272,7 @@ mp_map_elem_t *MICROPY_WRAP_MP_MAP_LOOKUP(mp_map_lookup)(mp_map_t * map, mp_obj_
         if (slot->key == MP_OBJ_NULL) {
             // found NULL slot, so index is not in table
             if (lookup_kind == MP_MAP_LOOKUP_ADD_IF_NOT_FOUND) {
+                mp_map_mutation_count++;
                 map->used += 1;
                 if (avail_slot == NULL) {
                     avail_slot = slot;
@@ -285,6 +296,7 @@ mp_map_elem_t *MICROPY_WRAP_MP_MAP_LOOKUP(mp_map_lookup)(mp_map_t * map, mp_obj_
             // Note: CPython does not replace the index; try x={True:'true'};x[1]='one';x
             if (lookup_kind == MP_MAP_LOOKUP_REMOVE_IF_FOUND) {
                 // delete element in this slot
+                mp_map_mutation_count++;
                 map->used--;
                 if (map->table[(pos + 1) % map->alloc].key == MP_OBJ_NULL) {
                     // optimisation if next slot is empty
@@ -306,6 +318,13 @@ mp_map_elem_t *MICROPY_WRAP_MP_MAP_LOOKUP(mp_map_lookup)(mp_map_t * map, mp_obj_
             if (lookup_kind == MP_MAP_LOOKUP_ADD_IF_NOT_FOUND) {
                 if (avail_slot != NULL) {
                     // there was an available slot, so use that
+                    // CIRCUITPY-CHANGE: every other insertion bumps the mutation
+                    // count, but this one -- reusing a tombstone found while the
+                    // search wrapped all the way round a full table -- did not. The
+                    // global-name cache keys its invalidation off that counter, so a
+                    // new global inserted here that shadows a builtin of the same
+                    // name left the cache handing back the builtin.
+                    mp_map_mutation_count++;
                     map->used++;
                     avail_slot->key = index;
                     avail_slot->value = MP_OBJ_NULL;

@@ -540,6 +540,11 @@ mp_map_elem_t *mp_map_lookup(mp_map_t *map, mp_obj_t index, mp_map_lookup_kind_t
 void mp_map_clear(mp_map_t *map);
 void mp_map_dump(mp_map_t *map);
 
+// CIRCUITPY-CHANGE: bumped whenever a key is added to or removed from any map, so a
+// cache that recorded "this name was absent from that map" can tell whether it still
+// holds. Replacing the value of an existing key does not bump it. See mp_load_global.
+extern uint32_t mp_map_mutation_count;
+
 // Underlying set implementation (not set object)
 
 typedef struct _mp_set_t {
