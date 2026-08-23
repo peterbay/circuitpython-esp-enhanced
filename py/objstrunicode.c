@@ -230,7 +230,28 @@ static mp_obj_t str_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
                 ++len;
             }
         }
+        #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+        // CIRCUITPY-CHANGE: len == 1 is NOT proof of ASCII, which is what this used
+        // to assume. A lone continuation byte, 0x80 to 0xBF, has the high bit set but
+        // no further one bits, so the counting loop above adds nothing and len stays
+        // 1 -- and qstr_from_char then indexes its 128 entry table out of bounds on a
+        // release build, where the assert is compiled out. Malformed UTF-8 is
+        // reachable from Python; test the byte, not the length.
+        if (len == 1 && *s < 0x80) {
+            return MP_OBJ_NEW_QSTR(qstr_from_char(*s));
+        }
+        #endif
+        #if MICROPY_OPT_STR_NO_INTERN
+        // CIRCUITPY-CHANGE: a character above ASCII would otherwise become a qstr,
+        // and qstrs live until the next reset. Two thousand different characters
+        // cost about 18 kB that never comes back, and because the run-time pool is
+        // not sorted it is scanned linearly, so every later lookup gets slower:
+        // measured 125 us per character against 1 us for ASCII. A plain string
+        // object costs one allocation and the collector can take it back.
+        return mp_obj_new_str((const char *)s, len);
+        #else
         return mp_obj_new_str_via_qstr((const char *)s, len); // This will create a one-character string
+        #endif
     } else {
         return MP_OBJ_NULL; // op not supported
     }
@@ -267,7 +288,26 @@ static mp_obj_t str_it_iternext(mp_obj_t self_in) {
     if (self->cur < len) {
         const byte *cur = str + self->cur;
         const byte *end = utf8_next_char(str + self->cur);
-        mp_obj_t o_out = mp_obj_new_str_via_qstr((const char *)cur, end - cur);
+        // CIRCUITPY-CHANGE: see str_subscr for why a character above ASCII is not
+        // turned into a qstr here.
+        mp_obj_t o_out;
+        #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+        // CIRCUITPY-CHANGE: a one byte step is not proof of ASCII either --
+        // utf8_next_char advances one byte over a lone continuation byte too. Same
+        // out of bounds index into the 128 entry table as in str_subscr.
+        if (end - cur == 1 && *cur < 0x80) {
+            o_out = MP_OBJ_NEW_QSTR(qstr_from_char(*cur));
+        } else
+        #endif
+        #if MICROPY_OPT_STR_NO_INTERN
+        {
+            o_out = mp_obj_new_str((const char *)cur, end - cur);
+        }
+        #else
+        {
+            o_out = mp_obj_new_str_via_qstr((const char *)cur, end - cur);
+        }
+        #endif
         self->cur += end - cur;
         return o_out;
     } else {
