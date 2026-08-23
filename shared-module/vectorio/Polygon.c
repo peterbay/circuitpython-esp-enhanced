@@ -166,11 +166,17 @@ uint32_t common_hal_vectorio_polygon_get_pixel(void *obj, int16_t x, int16_t y) 
     int16_t winding_number = 0;
     int16_t x1 = self->points_list[0];
     int16_t y1 = self->points_list[1];
+    // CIRCUITPY-CHANGE: these two modulos ran on every edge of every pixel purely
+    // so the last iteration could wrap back to points_list[0] and [1] for the
+    // closing edge; on every other iteration they are the identity. len is set as
+    // 2 * point_count and the zero case returned above, so len is even and at
+    // least 2, which makes i at most len + 1 and strictly below 2 * len -- exactly
+    // the range where subtracting once is the same as taking the remainder.
     for (uint16_t i = 2; i <= self->len + 1; ++i) {
         VECTORIO_POLYGON_DEBUG("  {(%3d, %3d),", x1, y1);
-        int16_t x2 = self->points_list[i % self->len];
+        int16_t x2 = self->points_list[i < self->len ? i : i - self->len];
         ++i;
-        int16_t y2 = self->points_list[i % self->len];
+        int16_t y2 = self->points_list[i < self->len ? i : i - self->len];
         VECTORIO_POLYGON_DEBUG(" (%3d, %3d)}\n", x2, y2);
         if (y1 <= y) {
             if (y2 > y && line_side(x1, y1, x2, y2, x, y) < 0) {
