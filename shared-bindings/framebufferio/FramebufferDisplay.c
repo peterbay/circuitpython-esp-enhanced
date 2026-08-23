@@ -125,7 +125,12 @@ static mp_obj_t framebufferio_framebufferdisplay_obj_refresh(size_t n_args, cons
 
     framebufferio_framebufferdisplay_obj_t *self = native_display(pos_args[0]);
     uint32_t maximum_ms_per_real_frame = NO_FPS_LIMIT;
-    mp_int_t minimum_frames_per_second = args[ARG_minimum_frames_per_second].u_int;
+    // CIRCUITPY-CHANGE: same unchecked rates as busdisplay.refresh() -- zero divided
+    // by zero here, and anything above 1000 gave a zero millisecond period that the
+    // refresh later used as a modulus.
+    mp_int_t minimum_frames_per_second =
+        mp_arg_validate_int_range(args[ARG_minimum_frames_per_second].u_int, 0, 1000,
+            MP_QSTR_minimum_frames_per_second);
     if (minimum_frames_per_second > 0) {
         maximum_ms_per_real_frame = 1000 / minimum_frames_per_second;
     }
@@ -134,7 +139,9 @@ static mp_obj_t framebufferio_framebufferdisplay_obj_refresh(size_t n_args, cons
     if (args[ARG_target_frames_per_second].u_obj == mp_const_none) {
         target_ms_per_frame = NO_FPS_LIMIT;
     } else {
-        target_ms_per_frame = 1000 / mp_obj_get_int(args[ARG_target_frames_per_second].u_obj);
+        target_ms_per_frame = 1000 / mp_arg_validate_int_range(
+            mp_obj_get_int(args[ARG_target_frames_per_second].u_obj), 1, 1000,
+            MP_QSTR_target_frames_per_second);
     }
     return mp_obj_new_bool(common_hal_framebufferio_framebufferdisplay_refresh(self, target_ms_per_frame, maximum_ms_per_real_frame));
 }

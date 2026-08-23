@@ -171,6 +171,9 @@ static mp_obj_t busdisplay_busdisplay_make_new(const mp_obj_type_t *type, size_t
 
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(args[ARG_init_sequence].u_obj, &bufinfo, MP_BUFFER_READ);
+    // CIRCUITPY-CHANGE: the length is a size_t here but the common-hal parameter is
+    // uint16_t, so a longer sequence was silently parsed against a truncated length.
+    mp_arg_validate_length_max(bufinfo.len, UINT16_MAX, MP_QSTR_init_sequence);
 
     const mcu_pin_obj_t *backlight_pin =
         validate_obj_is_free_pin_or_none(args[ARG_backlight_pin].u_obj, MP_QSTR_backlight_pin);
@@ -191,13 +194,23 @@ static mp_obj_t busdisplay_busdisplay_make_new(const mp_obj_type_t *type, size_t
     primary_display_t *disp = allocate_display_or_raise();
     busdisplay_busdisplay_obj_t *self = &disp->display;
 
+    // CIRCUITPY-CHANGE: this is narrowed to uint16_t at the common-hal boundary and
+    // then used as "1000 / native_frames_per_second", so zero -- and 65536, which
+    // truncates to zero -- divided by zero. 1001 and up gave a zero millisecond
+    // period, which makes auto-refresh run on every single background pass.
+    mp_arg_validate_int_range(args[ARG_native_frames_per_second].u_int, 1, 1000,
+        MP_QSTR_native_frames_per_second);
+
     self->base.type = &busdisplay_busdisplay_type;
     common_hal_busdisplay_busdisplay_construct(
         self,
         display_bus, args[ARG_width].u_int, args[ARG_height].u_int, args[ARG_colstart].u_int, args[ARG_rowstart].u_int, rotation,
         color_depth, args[ARG_grayscale].u_bool,
         args[ARG_pixels_in_byte_share_row].u_bool,
-        args[ARG_bytes_per_cell].u_bool,
+        // CIRCUITPY-CHANGE: declared MP_ARG_INT but read as u_bool, so this took the
+        // inactive member of the argument union rather than converting -- reading a
+        // different representation of the value, not a boolean of it.
+        mp_arg_validate_int_range(args[ARG_bytes_per_cell].u_int, 1, 255, MP_QSTR_bytes_per_cell),
         args[ARG_reverse_pixels_in_byte].u_bool,
         args[ARG_reverse_bytes_in_word].u_bool,
         args[ARG_set_column_command].u_int, args[ARG_set_row_command].u_int,
@@ -271,7 +284,15 @@ static mp_obj_t busdisplay_busdisplay_obj_refresh(size_t n_args, const mp_obj_t 
 
     busdisplay_busdisplay_obj_t *self = native_display(pos_args[0]);
     uint32_t maximum_ms_per_real_frame = NO_FPS_LIMIT;
-    mp_int_t minimum_frames_per_second = args[ARG_minimum_frames_per_second].u_int;
+    // CIRCUITPY-CHANGE: neither rate was range checked. Zero divided by zero right
+    // here; anything above 1000 produced a zero millisecond period, and the refresh
+    // then took "elapsed % target_ms_per_frame", a modulo by zero. A negative
+    // minimum silently meant "disabled" while a large one made almost every elapsed
+    // interval raise RuntimeError. Periods are held in whole milliseconds, so 1000
+    // frames per second is the honest ceiling.
+    mp_int_t minimum_frames_per_second =
+        mp_arg_validate_int_range(args[ARG_minimum_frames_per_second].u_int, 0, 1000,
+            MP_QSTR_minimum_frames_per_second);
     if (minimum_frames_per_second > 0) {
         maximum_ms_per_real_frame = 1000 / minimum_frames_per_second;
     }
@@ -280,7 +301,9 @@ static mp_obj_t busdisplay_busdisplay_obj_refresh(size_t n_args, const mp_obj_t 
     if (args[ARG_target_frames_per_second].u_obj == mp_const_none) {
         target_ms_per_frame = NO_FPS_LIMIT;
     } else {
-        target_ms_per_frame = 1000 / mp_obj_get_int(args[ARG_target_frames_per_second].u_obj);
+        target_ms_per_frame = 1000 / mp_arg_validate_int_range(
+            mp_obj_get_int(args[ARG_target_frames_per_second].u_obj), 1, 1000,
+            MP_QSTR_target_frames_per_second);
     }
 
     return mp_obj_new_bool(common_hal_busdisplay_busdisplay_refresh(self, target_ms_per_frame, maximum_ms_per_real_frame));

@@ -102,8 +102,14 @@ bool common_hal_fourwire_fourwire_begin_transaction(mp_obj_t obj) {
     if (!common_hal_busio_spi_try_lock(self->bus)) {
         return false;
     }
-    common_hal_busio_spi_configure(self->bus, self->frequency, self->polarity,
-        self->phase, 8);
+    // CIRCUITPY-CHANGE: the result was discarded. A failed reconfigure leaves the
+    // bus in no state to transmit, and holding the lock past it strands every later
+    // display operation. Release it the same way the chip select failure below does.
+    if (!common_hal_busio_spi_configure(self->bus, self->frequency, self->polarity,
+        self->phase, 8)) {
+        common_hal_busio_spi_unlock(self->bus);
+        return false;
+    }
     if (self->chip_select != mp_const_none) {
         // IO Expander CS can fail due to an I2C lock.
         if (digitalinout_protocol_set_value(self->chip_select, false) != 0) {

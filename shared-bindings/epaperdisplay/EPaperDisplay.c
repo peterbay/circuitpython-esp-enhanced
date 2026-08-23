@@ -166,6 +166,11 @@ static mp_obj_t epaperdisplay_epaperdisplay_make_new(const mp_obj_type_t *type, 
     mp_get_buffer_raise(args[ARG_start_sequence].u_obj, &start_bufinfo, MP_BUFFER_READ);
     mp_buffer_info_t stop_bufinfo;
     mp_get_buffer_raise(args[ARG_stop_sequence].u_obj, &stop_bufinfo, MP_BUFFER_READ);
+    // CIRCUITPY-CHANGE: these lengths are size_t here but uint16_t in the stored
+    // struct, so a longer sequence was silently truncated and then parsed against
+    // the wrong length.
+    mp_arg_validate_length_max(start_bufinfo.len, UINT16_MAX, MP_QSTR_start_sequence);
+    mp_arg_validate_length_max(stop_bufinfo.len, UINT16_MAX, MP_QSTR_stop_sequence);
 
 
     const mcu_pin_obj_t *busy_pin = validate_obj_is_free_pin_or_none(args[ARG_busy_pin].u_obj, MP_QSTR_busy_pin);
