@@ -19,4 +19,9 @@ void common_hal_lvfontio_ondiskfont_construct(lvfontio_ondiskfont_t *self, const
 void common_hal_lvfontio_ondiskfont_deinit(lvfontio_ondiskfont_t *self);
 bool common_hal_lvfontio_ondiskfont_deinited(lvfontio_ondiskfont_t *self);
 int16_t common_hal_lvfontio_ondiskfont_cache_glyph(lvfontio_ondiskfont_t *self, uint32_t codepoint, bool *is_full_width);
+// CIRCUITPY-CHANGE: a caller that owns the cells has to know how many of them a
+// character will cover before it caches it, because a full-width glyph needs two
+// adjacent free slots and they only come free once both cells holding them are released.
+bool common_hal_lvfontio_ondiskfont_is_full_width(lvfontio_ondiskfont_t *self, uint32_t codepoint);
 void common_hal_lvfontio_ondiskfont_release_glyph(lvfontio_ondiskfont_t *self, uint32_t slot);
+void common_hal_lvfontio_ondiskfont_retain_glyph(lvfontio_ondiskfont_t *self, uint32_t slot);
