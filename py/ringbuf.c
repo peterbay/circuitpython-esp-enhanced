@@ -124,3 +124,27 @@ size_t ringbuf_get_n(ringbuf_t *r, uint8_t *buf, size_t bufsize) {
     }
     return bufsize;
 }
+
+// CIRCUITPY-CHANGE: reading buffered bytes always removed them, which forced callers that must size
+// an allocation from a buffered header to modify the buffer before they knew the allocation would
+// succeed.
+// Copies out bufsize bytes starting offset bytes after the read pointer, without consuming
+// anything. Returns bufsize, or 0 if fewer than offset + bufsize bytes are buffered.
+size_t ringbuf_peek_n(ringbuf_t *r, size_t offset, uint8_t *buf, size_t bufsize) {
+    if (r->used < offset + bufsize) {
+        return 0;
+    }
+    // Both terms are less than or equal to size, so a single wrap is enough.
+    size_t index = r->next_read + offset;
+    if (index >= r->size) {
+        index -= r->size;
+    }
+    for (size_t i = 0; i < bufsize; i++) {
+        buf[i] = r->buf[index];
+        index++;
+        if (index >= r->size) {
+            index = 0;
+        }
+    }
+    return bufsize;
+}
