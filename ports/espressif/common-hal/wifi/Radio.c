@@ -375,14 +375,25 @@ wifi_radio_error_t common_hal_wifi_radio_connect(wifi_radio_obj_t *self, uint8_t
         config->sta.ssid[ssid_len] = 0;
     }
     memcpy(&config->sta.password, password, password_len);
-    config->sta.password[password_len] = 0;
+    // CIRCUITPY-CHANGE: password_len is validated as 8..64 and the field is 64
+    // bytes, so a full length PSK terminated one past the end, into the low byte
+    // of scan_method. Guarded the same way the ssid above already is.
+    if (password_len < sizeof(config->sta.password)) {
+        config->sta.password[password_len] = 0;
+    }
     config->sta.channel = channel;
     // From esp_wifi_types.h:
     //   Generally, station_config.bssid_set needs to be 0; and it needs
     //   to be 1 only when users need to check the MAC address of the AP
     if (bssid_len > 0) {
         memcpy(&config->sta.bssid, bssid, bssid_len);
-        config->sta.bssid[bssid_len] = 0;
+        // CIRCUITPY-CHANGE: a BSSID is a fixed six byte MAC, not a string, and the
+        // field is exactly six bytes. Terminating it wrote into the channel set
+        // just above, so passing both bssid and channel silently lost the channel
+        // and the driver swept from channel 1 instead of starting on the known one.
+        if (bssid_len < sizeof(config->sta.bssid)) {
+            config->sta.bssid[bssid_len] = 0;
+        }
         config->sta.bssid_set = true;
     } else {
         config->sta.bssid_set = false;
