@@ -90,6 +90,14 @@ static mp_obj_t audioio_rawsample_make_new(const mp_obj_type_t *type, size_t n_a
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
+    // CIRCUITPY-CHANGE: channel_count was used unchecked. With double buffering the
+    // length test below divides by bytes_per_sample * channel_count * 2, and with a
+    // single buffer the zero is stored and get_buffer later takes
+    // "channel % channel_count". Negative or very large values were also narrowed
+    // into a uint8_t before anything looked at them.
+    mp_arg_validate_int_range(args[ARG_channel_count].u_int, 1, 2, MP_QSTR_channel_count);
+    mp_arg_validate_int_min(args[ARG_sample_rate].u_int, 1, MP_QSTR_sample_rate);
+
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(args[ARG_buffer].u_obj, &bufinfo, MP_BUFFER_READ);
     uint8_t bytes_per_sample = 1;
@@ -104,6 +112,9 @@ static mp_obj_t audioio_rawsample_make_new(const mp_obj_type_t *type, size_t n_a
     }
 
     audioio_rawsample_obj_t *self = mp_obj_malloc(audioio_rawsample_obj_t, &audioio_rawsample_type);
+    // Keep the buffer object itself, not just the pointer into it, so the collector
+    // cannot reclaim the samples while they are being played.
+    self->buffer_obj = args[ARG_buffer].u_obj;
     common_hal_audioio_rawsample_construct(self,
         ((uint8_t *)bufinfo.buf),
         bufinfo.len,

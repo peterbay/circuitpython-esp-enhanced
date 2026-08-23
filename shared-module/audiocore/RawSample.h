@@ -12,6 +12,13 @@
 
 typedef struct {
     audiosample_base_t base;
+    // CIRCUITPY-CHANGE: only the raw pointer was kept. A sliced memoryview hands
+    // over an interior pointer that is neither block aligned nor at the head of a
+    // GC block, so once the view and its source were dropped the collector was free
+    // to reclaim the samples while playback was still reading them. Holding the
+    // object itself keeps it traced. (A deliberate resize of the source can still
+    // move the storage; that is a separate hazard this does not close.)
+    mp_obj_t buffer_obj;
     uint8_t *buffer;
     uint8_t buffer_index;
 } audioio_rawsample_obj_t;
