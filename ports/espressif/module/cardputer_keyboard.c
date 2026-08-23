@@ -69,7 +69,10 @@ static MP_DEFINE_CONST_FUN_OBJ_0(attach_serial_obj, attach_serial);
 //|
 static mp_obj_t key_to_char(mp_obj_t key_obj, mp_obj_t shifted_obj) {
     mp_int_t key = mp_obj_get_int(key_obj);
-    if (key < 0 || key > (mp_int_t)(sizeof keymap / sizeof *keymap) || keymap[key] == 0) {
+    // CIRCUITPY-CHANGE: > allowed key == 56, one past the end of both arrays, against
+    // the contract the docstring above already states. It reads keymap_shifted[0]
+    // today only because the two arrays happen to be emitted back to back.
+    if (key < 0 || key >= (mp_int_t)(sizeof keymap / sizeof *keymap) || keymap[key] == 0) {
         return mp_const_none;
     } else if (shifted_obj == mp_const_true) {
         return mp_obj_new_str(&keymap_shifted[key], 1);
