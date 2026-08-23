@@ -144,14 +144,27 @@ static void send_command_sequence(epaperdisplay_epaperdisplay_obj_t *self,
     bool should_wait_for_busy, const uint8_t *sequence, uint32_t sequence_len) {
     uint32_t i = 0;
     while (i < sequence_len) {
+        // CIRCUITPY-CHANGE: two defects here. The extended length was assembled from
+        // two bytes into a uint8_t, so the high byte vanished immediately and the
+        // parser then read the payload and every following command at the wrong
+        // offset. And nothing checked what was left of the buffer before reading the
+        // header, the payload or the delay byte, so a short or malformed sequence
+        // read past the end and sent whatever it found to the display bus.
+        uint32_t header_len = self->two_byte_sequence_length ? 3 : 2;
+        if (sequence_len - i < header_len) {
+            mp_raise_ValueError_varg(MP_ERROR_TEXT("Invalid %q"), MP_QSTR_sequence);
+        }
         const uint8_t *cmd = sequence + i;
-        uint8_t data_size = *(cmd + 1);
+        uint16_t data_size = *(cmd + 1);
         bool delay = (data_size & DELAY) != 0;
         const uint8_t *data = cmd + 2;
         data_size &= ~DELAY;
         if (self->two_byte_sequence_length) {
-            data_size = ((data_size & ~DELAY) << 8) + *(cmd + 2);
+            data_size = (data_size << 8) + *(cmd + 2);
             data = cmd + 3;
+        }
+        if (sequence_len - i - header_len < (uint32_t)data_size + (delay ? 1 : 0)) {
+            mp_raise_ValueError_varg(MP_ERROR_TEXT("Invalid %q"), MP_QSTR_sequence);
         }
         while (!displayio_display_bus_begin_transaction(&self->bus) &&
                !mp_hal_is_interrupted()) {
@@ -394,7 +407,12 @@ static bool _clean_area(epaperdisplay_epaperdisplay_obj_t *self) {
     memset(buffer, 0x77, width / 2);
 
     uint8_t write_command = self->write_black_ram_command;
-    if (displayio_display_bus_begin_transaction(&self->bus)) {
+    // CIRCUITPY-CHANGE: the test was inverted. It returned on a successful acquire,
+    // so the whole clean pass below was dead code and the panel was never
+    // pre-cleared; and when the acquire genuinely failed it fell through, drove the
+    // bus without the mutex and then released a lock this task does not hold. The
+    // identical call in the loop below already has the test the right way round.
+    if (!displayio_display_bus_begin_transaction(&self->bus)) {
         return false;
     }
     self->bus.send(self->bus.bus, DISPLAY_COMMAND, self->chip_select, &write_command, 1);
