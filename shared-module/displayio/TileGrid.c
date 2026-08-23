@@ -425,6 +425,322 @@ void common_hal_displayio_tilegrid_set_top_left(displayio_tilegrid_t *self, uint
     self->full_change = true;
 }
 
+// Largest palette the fast path below can tabulate, one entry per colour.
+#define TILEGRID_FAST_MAX_COLORS (256)
+
+// Set to 1 to build a checking firmware: the fast path then writes into shadow
+// buffers, the general loop still produces the real output, and the two are
+// compared pixel by pixel with any difference reported on the serial console.
+#ifndef CIRCUITPY_TILEGRID_VERIFY_FASTPATH
+#define CIRCUITPY_TILEGRID_VERIFY_FASTPATH (0)
+#endif
+
+#if CIRCUITPY_TILEGRID_VERIFY_FASTPATH
+static uint32_t verify_ok_count = 0;
+static uint32_t verify_bad_count = 0;
+// Fast path calls whose area did not fit the shadow buffers below, so nothing
+// was compared. Printed alongside the others: a passing run means nothing if
+// this is where all the traffic went.
+static uint32_t verify_skipped_count = 0;
+// The same firmware also recomputes the general loop's tile lookup the long way
+// and compares it against the walked counters, pixel by pixel.
+static uint32_t walk_ok_count = 0;
+static uint32_t walk_bad_count = 0;
+typedef struct {
+    bool valid;
+    int16_t x, y;
+    uint16_t scale, width_in_tiles, height_in_tiles, tile_width, tile_height;
+    uint16_t top_left_x, top_left_y;
+    uint16_t xi, chk_xi, yi, chk_yi;
+    uint16_t tile, chk_tile, tx, chk_tx, ty, chk_ty;
+} tilegrid_walk_report_t;
+static tilegrid_walk_report_t walk_bad;
+#endif
+
+typedef struct {
+    displayio_bitmap_t *bitmap;
+    const void *tiles;
+    bool wide_tiles;
+    int16_t start_x, end_x, start_y, end_y;
+    int16_t x_shift, y_shift, y_stride;
+    uint16_t width_in_tiles, height_in_tiles;
+    uint16_t bitmap_width_in_tiles;
+    uint16_t tile_width, tile_height;
+    uint16_t top_left_x, top_left_y;
+    bool full_coverage;
+} tilegrid_fast_ctx_t;
+
+// Specialisation of the loop in displayio_tilegrid_fill_area for the most common
+// composition: an unscaled, unrotated grid of a plain Bitmap shaded by a
+// non-dithering Palette into a 16 bit buffer. The general loop recomputes tile
+// indices and unpacks the bitmap through common_hal_displayio_bitmap_get_pixel
+// for every pixel, which is about ten integer divisions and two calls per pixel
+// even though almost all of it changes only once per tile column.
+//
+// The walk is therefore two levels. The outer one steps whole tiles and does the
+// tile lookup and its two divisions once per crossing; the inner one runs along
+// a fixed bitmap row. Runs are cut at whichever comes first, the tile boundary or
+// the mask word boundary, so the inner body never has to ask which tile it is in.
+//
+// The colours are resolved through displayio_palette_get_color itself, once per
+// palette entry instead of once per pixel, so the output matches the general
+// path by construction rather than by reimplementing the conversion. Mask
+// handling, transparency and the coverage result are reproduced exactly.
+static bool tilegrid_fill_area_fast(const tilegrid_fast_ctx_t *ctx,
+    const _displayio_colorspace_t *colorspace, mp_obj_t pixel_shader,
+    uint32_t *mask, uint32_t *buffer) {
+
+    displayio_palette_t *palette = MP_OBJ_TO_PTR(pixel_shader);
+    // Only indices the palette actually holds; anything above is out of range and
+    // therefore transparent, same as displayio_palette_get_color decides.
+    uint32_t lut_len = common_hal_displayio_palette_get_len(palette);
+
+    uint16_t colors[TILEGRID_FAST_MAX_COLORS];
+    uint32_t opaque[TILEGRID_FAST_MAX_COLORS / 32];
+    memset(opaque, 0, sizeof(opaque));
+
+    displayio_input_pixel_t lut_input;
+    displayio_output_pixel_t lut_output;
+    memset(&lut_input, 0, sizeof(lut_input));
+    for (uint32_t i = 0; i < lut_len; i++) {
+        lut_input.pixel = i;
+        lut_output.pixel = 0;
+        lut_output.opaque = true;
+        displayio_palette_get_color(palette, colorspace, &lut_input, &lut_output);
+        colors[i] = lut_output.pixel;
+        if (lut_output.opaque) {
+            opaque[i / 32] |= 1u << (i % 32);
+        }
+    }
+
+    displayio_bitmap_t *bitmap = ctx->bitmap;
+    uint8_t bits_per_value = bitmap->bits_per_value;
+    uint8_t bytes_per_value = bits_per_value / 8;
+    uint8_t values_per_byte = bytes_per_value ? 1 : 8 / bits_per_value;
+    uint8_t bitmap_x_shift = bitmap->x_shift;
+    size_t bitmap_x_mask = bitmap->x_mask;
+    uint16_t bitmask = bitmap->bitmask;
+    uint16_t *out = (uint16_t *)buffer;
+    bool full_coverage = ctx->full_coverage;
+
+    // When every value the bitmap can hold maps to an opaque colour, no pixel can
+    // be skipped or fall out of range, so the inner run needs neither test.
+    bool all_opaque = true;
+    for (uint32_t i = 0; i < lut_len; i++) {
+        if ((opaque[i / 32] & (1u << (i % 32))) == 0) {
+            all_opaque = false;
+            break;
+        }
+    }
+    if (bits_per_value >= 32 || (1u << bits_per_value) > lut_len) {
+        all_opaque = false;
+    }
+    // The mask only matters to layers drawn underneath this one, and
+    // displayio_group_fill_area returns as soon as a layer reports full coverage,
+    // so nothing reads it back after that. all_opaque also means full_coverage can
+    // no longer be cleared below, hence skipping the writes is safe exactly here.
+    bool skip_mask = all_opaque && full_coverage;
+
+    const void *tiles = ctx->tiles;
+    const bool wide_tiles = ctx->wide_tiles;
+    const uint16_t tile_width = ctx->tile_width;
+    const uint16_t tile_height = ctx->tile_height;
+    const uint16_t width_in_tiles = ctx->width_in_tiles;
+    const uint16_t height_in_tiles = ctx->height_in_tiles;
+    const uint16_t bitmap_width_in_tiles = ctx->bitmap_width_in_tiles;
+
+    // Every row enters at the same column, so it enters the same tile at the same
+    // offset into it. Only the tile row changes from one row to the next.
+    const uint16_t row_x_in_tile = (uint16_t)(ctx->start_x % tile_width);
+    const uint16_t row_x_tile_index =
+        (uint16_t)((ctx->start_x / tile_width + ctx->top_left_x) % width_in_tiles);
+
+    // One instantiation of the walk per bitmap format, so the format test does not
+    // sit in the inner loop. A run whose mask bits are all clear is the normal case
+    // for the top layer and skips the per-pixel test entirely.
+    #define TILEGRID_FAST_WALK(READ_VALUE)                                              \
+    for (int16_t y = ctx->start_y; y < ctx->end_y; y++) {                               \
+        int32_t row_offset = (y - ctx->start_y + ctx->y_shift) * ctx->y_stride;          \
+        uint32_t tile_row_base =                                                        \
+            (uint32_t)((y / tile_height + ctx->top_left_y) % height_in_tiles)           \
+            * width_in_tiles;                                                            \
+        uint32_t local_y_in_tile = (uint32_t)(y % tile_height);                          \
+        uint32_t offset = (uint32_t)(row_offset + ctx->x_shift);                         \
+        uint32_t remaining = (uint32_t)(ctx->end_x - ctx->start_x);                      \
+        uint16_t x_in_tile = row_x_in_tile;                                              \
+        uint16_t x_tile_index = row_x_tile_index;                                        \
+        /* Kept as uint32_t * like common_hal_displayio_bitmap_get_pixel does, so */     \
+        /* the narrower views below only ever relax the alignment requirement. */        \
+        const uint32_t *row = NULL;                                                      \
+        uint32_t bitmap_x_base = 0;                                                      \
+        bool tile_changed = true;                                                        \
+        while (remaining > 0) {                                                          \
+            if (tile_changed) {                                                          \
+                tile_changed = false;                                                    \
+                uint32_t tile = wide_tiles                                               \
+                    ? ((const uint16_t *)tiles)[tile_row_base + x_tile_index]            \
+                    : ((const uint8_t *)tiles)[tile_row_base + x_tile_index];            \
+                bitmap_x_base = (tile % bitmap_width_in_tiles) * tile_width;             \
+                uint32_t bitmap_y =                                                      \
+                    (tile / bitmap_width_in_tiles) * tile_height + local_y_in_tile;      \
+                row = bitmap->data + bitmap_y * bitmap->stride;                          \
+            }                                                                            \
+            uint32_t word = offset >> 5;                                                 \
+            uint32_t bit = offset & 31;                                                  \
+            uint32_t run = 32 - bit;                                                     \
+            uint32_t to_tile_end = (uint32_t)(tile_width - x_in_tile);                   \
+            if (run > to_tile_end) {                                                     \
+                run = to_tile_end;                                                       \
+            }                                                                            \
+            if (run > remaining) {                                                       \
+                run = remaining;                                                         \
+            }                                                                            \
+            uint32_t bitmap_x = bitmap_x_base + x_in_tile;                               \
+            /* A tile boundary can cut a run short of the mask word, so the bits */      \
+            /* outside this run may already be set by an earlier segment of the */       \
+            /* same word. Test and merge only the run's own bits. */                     \
+            uint32_t run_mask =                                                          \
+                (run == 32 ? 0xffffffffu : ((1u << run) - 1)) << bit;                    \
+            uint32_t m = mask[word];                                                     \
+            if ((m & run_mask) == 0 && all_opaque) {                                     \
+                for (uint32_t i = 0; i < run; i++) {                                     \
+                    out[offset + i] = colors[READ_VALUE(bitmap_x + i)];                  \
+                }                                                                        \
+                if (!skip_mask) {                                                        \
+                    mask[word] = m | run_mask;                                           \
+                }                                                                        \
+            } else {                                                                     \
+                for (uint32_t i = 0; i < run; i++) {                                     \
+                    if ((m & (1u << (bit + i))) != 0) {                                  \
+                        continue;                                                        \
+                    }                                                                    \
+                    uint32_t value = READ_VALUE(bitmap_x + i);                           \
+                    if (value < lut_len && (opaque[value / 32] & (1u << (value % 32)))) { \
+                        m |= 1u << (bit + i);                                            \
+                        out[offset + i] = colors[value];                                 \
+                    } else {                                                             \
+                        /* A pixel is transparent so we haven't fully covered the */     \
+                        /* area ourselves. */                                            \
+                        full_coverage = false;                                           \
+                    }                                                                    \
+                }                                                                        \
+                mask[word] = m;                                                          \
+            }                                                                            \
+            offset += run;                                                               \
+            remaining -= run;                                                            \
+            x_in_tile += run;                                                            \
+            if (x_in_tile == tile_width) {                                               \
+                x_in_tile = 0;                                                            \
+                if (++x_tile_index == width_in_tiles) {                                  \
+                    x_tile_index = 0;                                                     \
+                }                                                                        \
+                tile_changed = true;                                                      \
+            }                                                                            \
+        }                                                                                \
+    }
+
+    #define TILEGRID_READ_SUB(bx) ((((const uint8_t *)row)[(bx) >> bitmap_x_shift] >> \
+    ((values_per_byte - ((bx) & bitmap_x_mask) - 1) * bits_per_value)) & bitmask)
+    #define TILEGRID_READ_8(bx) (((const uint8_t *)row)[(bx)])
+    #define TILEGRID_READ_16(bx) (((const uint16_t *)row)[(bx)])
+    #define TILEGRID_READ_32(bx) (row[(bx)])
+
+    switch (bytes_per_value) {
+        case 0:
+            TILEGRID_FAST_WALK(TILEGRID_READ_SUB)
+            break;
+        case 1:
+            TILEGRID_FAST_WALK(TILEGRID_READ_8)
+            break;
+        case 2:
+            TILEGRID_FAST_WALK(TILEGRID_READ_16)
+            break;
+        default:
+            TILEGRID_FAST_WALK(TILEGRID_READ_32)
+            break;
+    }
+
+    #undef TILEGRID_FAST_WALK
+    #undef TILEGRID_READ_SUB
+    #undef TILEGRID_READ_8
+    #undef TILEGRID_READ_16
+    #undef TILEGRID_READ_32
+
+    return full_coverage;
+}
+
+// common_hal_displayio_bitmap_get_pixel returns 0 for a read outside the bitmap,
+// and 0 is a real colour index, so the general loop silently shades those pixels
+// with palette entry 0. Reproducing that would put a bounds test back into the
+// inner run, so instead every tile the area touches is checked once up front and
+// anything that would need the clamp is left to the general loop. A tile is
+// wholly inside the bitmap exactly when it is below max_tile, given the caller
+// has established that a full row of tiles fits across the bitmap's width.
+//
+// Both Python routes to a tile value are now validated against tiles_in_bitmap,
+// which equals max_tile, so this cannot fail from Python. It is kept because
+// common_hal_displayio_tilegrid_set_tile is also called from C -- terminalio
+// passes glyph indices straight from the font -- and those callers bypass the
+// binding's range check entirely.
+static bool tilegrid_tiles_fit(const displayio_tilegrid_t *self, const void *tiles,
+    uint16_t first_tile_x, uint16_t n_tile_x,
+    uint16_t first_tile_y, uint16_t n_tile_y, uint32_t max_tile) {
+
+    bool wide_tiles = self->tiles_in_bitmap > 255;
+    uint16_t ty = first_tile_y;
+    for (uint16_t j = 0; j < n_tile_y; j++) {
+        uint32_t base = (uint32_t)ty * self->width_in_tiles;
+        uint16_t tx = first_tile_x;
+        for (uint16_t i = 0; i < n_tile_x; i++) {
+            uint32_t tile = wide_tiles
+                ? ((const uint16_t *)tiles)[base + tx]
+                : ((const uint8_t *)tiles)[base + tx];
+            if (tile >= max_tile) {
+                return false;
+            }
+            if (++tx == self->width_in_tiles) {
+                tx = 0;
+            }
+        }
+        if (++ty == self->height_in_tiles) {
+            ty = 0;
+        }
+    }
+    return true;
+}
+
+// CIRCUITPY-CHANGE: the general loop below computed nine divisions for every
+// pixel, but only two of them can change from one pixel to the next, and even
+// those change at most once per tile column. This walks the column with counters
+// instead. start_x is never negative -- it is a transformed overlap measured
+// from current_area -- so the counters can rely on truncation matching floor.
+// tile_changed stays set until the body consumes it, because the mask check
+// skips pixels without clearing the crossing that happened underneath.
+typedef struct {
+    uint16_t scale;
+    uint16_t scale_phase;
+    uint16_t tile_width;
+    uint16_t width_in_tiles;
+    uint16_t x_in_tile;
+    uint16_t x_tile_index;
+    bool tile_changed;
+} tilegrid_x_walk_t;
+
+static inline void tilegrid_x_walk_step(tilegrid_x_walk_t *walk) {
+    if (++walk->scale_phase < walk->scale) {
+        return;
+    }
+    walk->scale_phase = 0;
+    if (++walk->x_in_tile < walk->tile_width) {
+        return;
+    }
+    walk->x_in_tile = 0;
+    if (++walk->x_tile_index == walk->width_in_tiles) {
+        walk->x_tile_index = 0;
+    }
+    walk->tile_changed = true;
+}
+
 bool displayio_tilegrid_fill_area(displayio_tilegrid_t *self,
     const _displayio_colorspace_t *colorspace, const displayio_area_t *area,
     uint32_t *mask, uint32_t *buffer) {
@@ -512,13 +828,134 @@ bool displayio_tilegrid_fill_area(displayio_tilegrid_t *self,
         y_shift = temp_shift;
     }
 
+    // Everything tilegrid_fill_area_fast leaves out is only loop invariant under
+    // these conditions, so anything unusual keeps the general loop below.
+    #if CIRCUITPY_TILEGRID_VERIFY_FASTPATH
+    bool verify_ran = false;
+    bool verify_coverage = false;
+    // Large enough for a whole 240x135 screen at 16bpp, so a full refresh is
+    // compared rather than silently skipped. Checking firmware only.
+    static uint32_t verify_buffer[16384];
+    static uint32_t verify_mask[1100];
+    #endif
+    if (colorspace->depth == 16 && !colorspace->dither &&
+        self->absolute_transform->scale == 1 &&
+        self->transpose_xy == self->absolute_transform->transpose_xy &&
+        x_stride == 1 && start == 0 &&
+        y_stride == (int16_t)displayio_area_width(area) &&
+        // The walk divides by these and steps forwards from start_x, start_y.
+        self->tile_width > 0 && self->tile_height > 0 &&
+        start_x >= 0 && start_y >= 0 && start_x < end_x && start_y < end_y &&
+        mp_obj_is_type(self->bitmap, &displayio_bitmap_type) &&
+        mp_obj_is_type(self->pixel_shader, &displayio_palette_type) &&
+        !common_hal_displayio_palette_get_dither(MP_OBJ_TO_PTR(self->pixel_shader)) &&
+        common_hal_displayio_palette_get_len(MP_OBJ_TO_PTR(self->pixel_shader)) <= TILEGRID_FAST_MAX_COLORS &&
+        // Building the colour table has to stay cheaper than the area it serves.
+        common_hal_displayio_palette_get_len(MP_OBJ_TO_PTR(self->pixel_shader)) <= displayio_area_size(&overlap)) {
+
+        displayio_bitmap_t *fast_bitmap = MP_OBJ_TO_PTR(self->bitmap);
+        uint16_t fast_bwt = self->bitmap_width_in_tiles;
+        // With a whole row of tiles fitting across the bitmap, no tile's columns
+        // can leave it, so only the tile row has to be bounded.
+        uint32_t max_tile = 0;
+        if (fast_bwt > 0 && (uint32_t)fast_bwt * self->tile_width <= fast_bitmap->width) {
+            max_tile = (fast_bitmap->height / self->tile_height) * fast_bwt;
+        }
+
+        // Tile columns and rows the area actually reaches, so the check below
+        // scales with the dirty region rather than with the whole grid.
+        uint16_t first_tile_x =
+            (uint16_t)((start_x / self->tile_width + self->top_left_x) % self->width_in_tiles);
+        uint32_t n_tile_x = (uint32_t)((end_x - 1) / self->tile_width)
+            - (uint32_t)(start_x / self->tile_width) + 1;
+        if (n_tile_x > self->width_in_tiles) {
+            n_tile_x = self->width_in_tiles;
+        }
+        uint16_t first_tile_y =
+            (uint16_t)((start_y / self->tile_height + self->top_left_y) % self->height_in_tiles);
+        uint32_t n_tile_y = (uint32_t)((end_y - 1) / self->tile_height)
+            - (uint32_t)(start_y / self->tile_height) + 1;
+        if (n_tile_y > self->height_in_tiles) {
+            n_tile_y = self->height_in_tiles;
+        }
+
+        if (max_tile > 0 && tilegrid_tiles_fit(self, tiles, first_tile_x, (uint16_t)n_tile_x,
+            first_tile_y, (uint16_t)n_tile_y, max_tile)) {
+
+            tilegrid_fast_ctx_t ctx = {
+                .bitmap = fast_bitmap,
+                .tiles = tiles,
+                .wide_tiles = self->tiles_in_bitmap > 255,
+                .start_x = start_x, .end_x = end_x,
+                .start_y = start_y, .end_y = end_y,
+                .x_shift = x_shift, .y_shift = y_shift, .y_stride = y_stride,
+                .width_in_tiles = self->width_in_tiles,
+                .height_in_tiles = self->height_in_tiles,
+                .bitmap_width_in_tiles = fast_bwt,
+                .tile_width = self->tile_width,
+                .tile_height = self->tile_height,
+                .top_left_x = self->top_left_x,
+                .top_left_y = self->top_left_y,
+                .full_coverage = full_coverage,
+            };
+            #if CIRCUITPY_TILEGRID_VERIFY_FASTPATH
+            size_t area_pixels = displayio_area_size(area);
+            size_t mask_words = (area_pixels / 32) + 1;
+            if (area_pixels * 2 <= sizeof(verify_buffer) && mask_words * 4 <= sizeof(verify_mask)) {
+                memcpy(verify_buffer, buffer, area_pixels * 2);
+                memcpy(verify_mask, mask, mask_words * 4);
+                verify_coverage = tilegrid_fill_area_fast(&ctx, colorspace, self->pixel_shader,
+                    verify_mask, verify_buffer);
+                verify_ran = true;
+            } else {
+                verify_skipped_count++;
+            }
+            #else
+            return tilegrid_fill_area_fast(&ctx, colorspace, self->pixel_shader, mask, buffer);
+            #endif
+        }
+    }
+
     displayio_input_pixel_t input_pixel;
     displayio_output_pixel_t output_pixel;
 
+    // The grid geometry cannot change while this runs, so read it once instead of
+    // chasing self through two pointers for every pixel.
+    const uint16_t scale = self->absolute_transform->scale;
+    const uint16_t top_left_x = self->top_left_x;
+    const uint16_t top_left_y = self->top_left_y;
+    const uint16_t width_in_tiles = self->width_in_tiles;
+    const uint16_t height_in_tiles = self->height_in_tiles;
+    const uint16_t tile_width = self->tile_width;
+    const uint16_t tile_height = self->tile_height;
+    const uint16_t bitmap_width_in_tiles = self->bitmap_width_in_tiles;
+
+    // Every row starts at the same column, so its counters are the same too.
+    const int16_t local_x_start = start_x / scale;
+    const uint16_t row_scale_phase = start_x % scale;
+    const uint16_t row_x_in_tile = local_x_start % tile_width;
+    const uint16_t row_x_tile_index = (local_x_start / tile_width + top_left_x) % width_in_tiles;
+
+    tilegrid_x_walk_t walk = {
+        .scale = scale,
+        .tile_width = tile_width,
+        .width_in_tiles = width_in_tiles,
+    };
+
     for (input_pixel.y = start_y; input_pixel.y < end_y; ++input_pixel.y) {
         int16_t row_start = start + (input_pixel.y - start_y + y_shift) * y_stride; // in pixels
-        int16_t local_y = input_pixel.y / self->absolute_transform->scale;
-        for (input_pixel.x = start_x; input_pixel.x < end_x; ++input_pixel.x) {
+        int16_t local_y = input_pixel.y / scale;
+        uint16_t y_tile_index = (local_y / tile_height + top_left_y) % height_in_tiles;
+        uint16_t tile_row_base = y_tile_index * width_in_tiles;
+        uint16_t local_y_in_tile = local_y % tile_height;
+
+        walk.scale_phase = row_scale_phase;
+        walk.x_in_tile = row_x_in_tile;
+        walk.x_tile_index = row_x_tile_index;
+        walk.tile_changed = true;
+        uint16_t tile_x_base = 0;
+
+        for (input_pixel.x = start_x; input_pixel.x < end_x; ++input_pixel.x, tilegrid_x_walk_step(&walk)) {
             // Compute the destination pixel in the buffer and mask based on the transformations.
             int16_t offset = row_start + (input_pixel.x - start_x + x_shift) * x_stride; // in pixels
 
@@ -531,18 +968,59 @@ bool displayio_tilegrid_fill_area(displayio_tilegrid_t *self,
             if ((mask[offset / 32] & (1 << (offset % 32))) != 0) {
                 continue;
             }
-            int16_t local_x = input_pixel.x / self->absolute_transform->scale;
-            uint16_t x_tile_index = (local_x / self->tile_width + self->top_left_x) % self->width_in_tiles;
-            uint16_t y_tile_index = (local_y / self->tile_height + self->top_left_y) % self->height_in_tiles;
-            uint16_t tile_location = y_tile_index * self->width_in_tiles + x_tile_index;
-
-            if (self->tiles_in_bitmap > 255) {
-                input_pixel.tile = ((uint16_t *)tiles)[tile_location];
-            } else {
-                input_pixel.tile = ((uint8_t *)tiles)[tile_location];
+            if (walk.tile_changed) {
+                walk.tile_changed = false;
+                uint16_t tile_location = tile_row_base + walk.x_tile_index;
+                if (self->tiles_in_bitmap > 255) {
+                    input_pixel.tile = ((uint16_t *)tiles)[tile_location];
+                } else {
+                    input_pixel.tile = ((uint8_t *)tiles)[tile_location];
+                }
+                tile_x_base = (input_pixel.tile % bitmap_width_in_tiles) * tile_width;
+                input_pixel.tile_y = (input_pixel.tile / bitmap_width_in_tiles) * tile_height + local_y_in_tile;
             }
-            input_pixel.tile_x = (input_pixel.tile % self->bitmap_width_in_tiles) * self->tile_width + local_x % self->tile_width;
-            input_pixel.tile_y = (input_pixel.tile / self->bitmap_width_in_tiles) * self->tile_height + local_y % self->tile_height;
+            input_pixel.tile_x = tile_x_base + walk.x_in_tile;
+
+            #if CIRCUITPY_TILEGRID_VERIFY_FASTPATH
+            {
+                // Nothing may be printed from in here. The console is the display
+                // terminal, so writing to it scrolls the very TileGrid being
+                // rendered; top_left_y then changes underneath the comparison and
+                // it manufactures its own mismatches. The first difference is
+                // recorded and reported once the loop has finished.
+                int16_t chk_local_x = input_pixel.x / scale;
+                uint16_t chk_x_tile_index = (chk_local_x / tile_width + top_left_x) % width_in_tiles;
+                uint16_t chk_y_tile_index = (local_y / tile_height + top_left_y) % height_in_tiles;
+                uint16_t chk_location = chk_y_tile_index * width_in_tiles + chk_x_tile_index;
+                uint8_t chk_tile = self->tiles_in_bitmap > 255
+                    ? ((uint16_t *)tiles)[chk_location] : ((uint8_t *)tiles)[chk_location];
+                uint16_t chk_tile_x = (chk_tile % bitmap_width_in_tiles) * tile_width
+                    + chk_local_x % tile_width;
+                uint16_t chk_tile_y = (chk_tile / bitmap_width_in_tiles) * tile_height
+                    + local_y % tile_height;
+                if (chk_x_tile_index != walk.x_tile_index || chk_y_tile_index != y_tile_index ||
+                    chk_tile != input_pixel.tile ||
+                    chk_tile_x != input_pixel.tile_x || chk_tile_y != input_pixel.tile_y) {
+                    walk_bad_count++;
+                    if (!walk_bad.valid) {
+                        walk_bad = (tilegrid_walk_report_t) {
+                            .valid = true,
+                            .x = input_pixel.x, .y = input_pixel.y, .scale = scale,
+                            .width_in_tiles = width_in_tiles, .height_in_tiles = height_in_tiles,
+                            .tile_width = tile_width, .tile_height = tile_height,
+                            .top_left_x = top_left_x, .top_left_y = top_left_y,
+                            .xi = walk.x_tile_index, .chk_xi = chk_x_tile_index,
+                            .yi = y_tile_index, .chk_yi = chk_y_tile_index,
+                            .tile = input_pixel.tile, .chk_tile = chk_tile,
+                            .tx = input_pixel.tile_x, .chk_tx = chk_tile_x,
+                            .ty = input_pixel.tile_y, .chk_ty = chk_tile_y,
+                        };
+                    }
+                } else {
+                    walk_ok_count++;
+                }
+            }
+            #endif
 
             output_pixel.pixel = 0;
             input_pixel.pixel = 0;
@@ -558,7 +1036,7 @@ bool displayio_tilegrid_fill_area(displayio_tilegrid_t *self,
             output_pixel.opaque = true;
             #if CIRCUITPY_TILEPALETTEMAPPER
             if (mp_obj_is_type(self->pixel_shader, &tilepalettemapper_tilepalettemapper_type)) {
-                tilepalettemapper_tilepalettemapper_get_color(self->pixel_shader, colorspace, &input_pixel, &output_pixel, x_tile_index, y_tile_index);
+                tilepalettemapper_tilepalettemapper_get_color(self->pixel_shader, colorspace, &input_pixel, &output_pixel, walk.x_tile_index, y_tile_index);
             }
             #endif
             if (self->pixel_shader == mp_const_none) {
@@ -606,6 +1084,83 @@ bool displayio_tilegrid_fill_area(displayio_tilegrid_t *self,
             }
         }
     }
+
+    #if CIRCUITPY_TILEGRID_VERIFY_FASTPATH
+    if (walk_bad.valid) {
+        tilegrid_walk_report_t r = walk_bad;
+        walk_bad.valid = false;
+        mp_printf(&mp_plat_print,
+            "WALK x=%d y=%d scale %u tiles %ux%u tile %ux%u topleft %u,%u\n",
+            r.x, r.y, r.scale, r.width_in_tiles, r.height_in_tiles,
+            r.tile_width, r.tile_height, r.top_left_x, r.top_left_y);
+        mp_printf(&mp_plat_print,
+            "  xi %u/%u yi %u/%u tile %u/%u tx %u/%u ty %u/%u  celkem %u/%u\n",
+            r.xi, r.chk_xi, r.yi, r.chk_yi, r.tile, r.chk_tile,
+            r.tx, r.chk_tx, r.ty, r.chk_ty,
+            (unsigned)walk_bad_count, (unsigned)walk_ok_count);
+    } else if (walk_ok_count >= 200000) {
+        mp_printf(&mp_plat_print, "WALK shodne: %u, rozdilne: %u\n",
+            (unsigned)walk_ok_count, (unsigned)walk_bad_count);
+        walk_ok_count = 0;
+    }
+    if (verify_ran) {
+        size_t area_pixels = displayio_area_size(area);
+        size_t mask_words = (area_pixels / 32) + 1;
+        bool mismatch = false;
+        if (memcmp(verify_buffer, buffer, area_pixels * 2) != 0) {
+            mismatch = true;
+            for (size_t i = 0; i < area_pixels; i++) {
+                if (((uint16_t *)verify_buffer)[i] != ((uint16_t *)buffer)[i]) {
+                    uint16_t area_w = displayio_area_width(area);
+                    int16_t gx = i % area_w + start_x - x_shift;
+                    int16_t gy = i / area_w + start_y - y_shift;
+                    displayio_bitmap_t *dbg = MP_OBJ_TO_PTR(self->bitmap);
+                    mp_printf(&mp_plat_print,
+                        "FASTPATH pixel %u: fast %04x general %04x\n",
+                        (unsigned)i, ((uint16_t *)verify_buffer)[i], ((uint16_t *)buffer)[i]);
+                    mp_printf(&mp_plat_print,
+                        "  area %d,%d-%d,%d  start %d,%d end %d,%d shift %d,%d ystride %d\n",
+                        area->x1, area->y1, area->x2, area->y2,
+                        start_x, start_y, end_x, end_y, x_shift, y_shift, y_stride);
+                    mp_printf(&mp_plat_print,
+                        "  grid %d,%d  bitmap %dx%d bpv %d stride %d  value %u  mask %d\n",
+                        gx, gy, dbg->width, dbg->height, dbg->bits_per_value, dbg->stride,
+                        (unsigned)common_hal_displayio_bitmap_get_pixel(dbg, gx, gy),
+                        (int)((verify_mask[i / 32] >> (i % 32)) & 1));
+                    mp_printf(&mp_plat_print,
+                        "  palette len %u\n",
+                        (unsigned)common_hal_displayio_palette_get_len(MP_OBJ_TO_PTR(self->pixel_shader)));
+                    break;
+                }
+            }
+        }
+        // When the fast path reports full coverage it deliberately leaves the mask
+        // untouched, because the group walk stops there and nothing reads it back.
+        // Only compare it while it is still live.
+        if (!verify_coverage && memcmp(verify_mask, mask, mask_words * 4) != 0) {
+            mismatch = true;
+            mp_printf(&mp_plat_print, "FASTPATH mask differs\n");
+        }
+        if (verify_coverage != full_coverage) {
+            mismatch = true;
+            mp_printf(&mp_plat_print, "FASTPATH coverage: fast %d general %d\n",
+                verify_coverage, full_coverage);
+        }
+        // Positive evidence that the comparison actually ran, otherwise a passing
+        // check could just mean the fast path never triggered.
+        if (mismatch) {
+            verify_bad_count++;
+        } else {
+            verify_ok_count++;
+            if (verify_ok_count % 100 == 0) {
+                mp_printf(&mp_plat_print,
+                    "FASTPATH shodne: %u, rozdilne: %u, neporovnano: %u\n",
+                    (unsigned)verify_ok_count, (unsigned)verify_bad_count,
+                    (unsigned)verify_skipped_count);
+            }
+        }
+    }
+    #endif
     return full_coverage;
 }
 
