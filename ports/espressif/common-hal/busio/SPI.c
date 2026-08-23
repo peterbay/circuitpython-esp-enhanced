@@ -38,7 +38,7 @@ static int spi_probe_actual_freq(busio_spi_obj_t *self,
     return freq_khz * 1000;
 }
 
-static void set_spi_config(busio_spi_obj_t *self,
+static esp_err_t set_spi_config(busio_spi_obj_t *self,
     uint32_t baudrate, uint8_t polarity, uint8_t phase, uint8_t bits) {
     spi_device_interface_config_t device_config = {
         .clock_speed_hz = baudrate,
@@ -78,7 +78,14 @@ static void set_spi_config(busio_spi_obj_t *self,
     device_config.clock_speed_hz = target;
     esp_err_t result = spi_bus_add_device(self->host_id, &device_config, &spi_handle[self->host_id]);
     if (result != ESP_OK) {
-        mp_raise_RuntimeError(MP_ERROR_TEXT("SPI configuration failed"));
+        // ESP-IDF does not write the handle on failure, so it still holds whatever
+        // configure() just removed. Nothing may transmit through that, and
+        // requested_baudrate must not keep a value that configure() would take for a
+        // cache hit and then transmit through the null handle.
+        spi_handle[self->host_id] = NULL;
+        self->baudrate = 0;
+        self->requested_baudrate = 0;
+        return result;
     }
 
     // Report the frequency the driver actually settled on for the real device.
@@ -89,6 +96,7 @@ static void set_spi_config(busio_spi_obj_t *self,
     self->polarity = polarity;
     self->phase = phase;
     self->bits = bits;
+    return ESP_OK;
 }
 
 void common_hal_busio_spi_construct(busio_spi_obj_t *self,
@@ -133,7 +141,12 @@ void common_hal_busio_spi_construct(busio_spi_obj_t *self,
         mp_raise_RuntimeError(MP_ERROR_TEXT("Unable to create lock"));
     }
 
-    set_spi_config(self, 250000, 0, 0, 8);
+    if (set_spi_config(self, 250000, 0, 0, 8) != ESP_OK) {
+        vSemaphoreDelete(self->mutex);
+        self->mutex = NULL;
+        spi_bus_free(self->host_id);
+        mp_raise_RuntimeError(MP_ERROR_TEXT("SPI configuration failed"));
+    }
 
     self->MOSI = mosi;
     self->MISO = miso;
@@ -200,9 +213,15 @@ bool common_hal_busio_spi_configure(busio_spi_obj_t *self,
         bits == self->bits) {
         return true;
     }
-    spi_bus_remove_device(spi_handle[self->host_id]);
-    set_spi_config(self, baudrate, polarity, phase, bits);
-    return true;
+    // Invalidate before removing: if the re-add below fails there must be no way
+    // back to the freed device, and no stored rate that a later configure() with
+    // the same request could match and then transmit through it.
+    spi_device_handle_t old_handle = spi_handle[self->host_id];
+    spi_handle[self->host_id] = NULL;
+    self->baudrate = 0;
+    self->requested_baudrate = 0;
+    spi_bus_remove_device(old_handle);
+    return set_spi_config(self, baudrate, polarity, phase, bits) == ESP_OK;
 }
 
 // Wait as long as needed for the lock. This is used by SD card access from USB.
@@ -274,7 +293,14 @@ bool common_hal_busio_spi_transfer(busio_spi_obj_t *self,
 
         transactions[0].flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
         transactions[0].length = bits_to_send;
-        esp_err_t result = spi_device_transmit(spi_handle[self->host_id], &transactions[0]);
+        // Poll instead of queueing: at four bytes or fewer the transfer itself is
+        // under half a microsecond, while going through the queue costs an
+        // interrupt and two context switches. Measured on a display bus, where
+        // setting the address window is four such transfers, this is the
+        // difference between 255 us and the time the bytes actually take.
+        // Safe only because the queued path below always drains before returning;
+        // ESP-IDF forbids mixing polling with transactions still in the queue.
+        esp_err_t result = spi_device_polling_transmit(spi_handle[self->host_id], &transactions[0]);
         if (result != ESP_OK) {
             return false;
         }
@@ -287,7 +313,18 @@ bool common_hal_busio_spi_transfer(busio_spi_obj_t *self,
         int bits_remaining = bits_to_send;
         int cur_trans = 0;
 
-        while (bits_remaining && !mp_hal_is_interrupted()) {
+        // CIRCUITPY-CHANGE: this loop also tested mp_hal_is_interrupted() and then fell
+        // through to the "return true" below with bits_remaining still set, so any
+        // pending exception -- Ctrl-C, but also the reload exception reload_initiate()
+        // posts the moment a file lands on CIRCUITPY -- turned a transfer bigger than one
+        // queue batch into a short write reported as success. Returning false would not
+        // be enough: fourwire's send() is void, sdcardio discards the result of its block
+        // write, and BusDisplay now writes one window as chunks joined by
+        // MIPI_COMMAND_WRITE_MEMORY_CONTINUE, so the bytes that were dropped are not a
+        // gap -- every chunk after them lands at the wrong offset in the controller's
+        // RAM. Always shift out what was asked for. RUN_BACKGROUND_TASKS still runs while
+        // draining each batch, and the pending exception is taken as soon as we return.
+        while (bits_remaining) {
 
             cur_trans = 0;
             while (bits_remaining && (cur_trans != MAX_SPI_TRANSACTIONS)) {
@@ -310,14 +347,34 @@ bool common_hal_busio_spi_transfer(busio_spi_obj_t *self,
                 cur_trans++;
             }
 
+            // CIRCUITPY-CHANGE: spi_device_queue_trans can refuse the transaction
+            // without enqueueing it, most plausibly with ESP_ERR_NO_MEM when the
+            // driver needs a DMA bounce buffer and the internal heap is under
+            // pressure from WiFi or BLE. The result of that call used to be
+            // discarded and the drain loop below still waited for cur_trans
+            // results, so one refusal blocked the board forever in
+            // spi_device_get_trans_result with the bus mutex held: no traceback,
+            // no Ctrl-C, reset only. Count what actually made it into the queue,
+            // drain exactly that many -- leaving one behind would break the
+            // polling path of the next transfer -- and then report the failure.
+            int queued = 0;
+            esp_err_t queue_result = ESP_OK;
             for (int i = 0; i < cur_trans; i++) {
-                spi_device_queue_trans(spi_handle[self->host_id], &transactions[i], portMAX_DELAY);
+                queue_result = spi_device_queue_trans(spi_handle[self->host_id], &transactions[i], portMAX_DELAY);
+                if (queue_result != ESP_OK) {
+                    break;
+                }
+                queued++;
             }
 
             spi_transaction_t *rtrans;
-            for (int x = 0; x < cur_trans; x++) {
+            for (int x = 0; x < queued; x++) {
                 RUN_BACKGROUND_TASKS;
                 spi_device_get_trans_result(spi_handle[self->host_id], &rtrans, portMAX_DELAY);
+            }
+
+            if (queue_result != ESP_OK) {
+                return false;
             }
         }
     }
