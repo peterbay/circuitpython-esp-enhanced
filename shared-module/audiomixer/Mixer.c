@@ -250,10 +250,16 @@ static void mix_down_one_voice(audiomixer_mixer_obj_t *self,
                             word_buffer[i] = mult16signed(v, loudness);
                         }
                     } else {
-                        for (uint32_t i = 0; i < n; i += 2) {
+                        // CIRCUITPY-CHANGE: this loop stored word_buffer[n] when n is odd,
+                        // one word past the mix buffer; emit the last mono sample on its own.
+                        uint32_t i = 0;
+                        for (; i + 1 < n; i += 2) {
                             uint32_t v = src[i >> 1];
                             word_buffer[i] = mult16signed(copy16lsb(v), loudness);
                             word_buffer[i + 1] = mult16signed(copy16msb(v), loudness);
+                        }
+                        if (i < n) {
+                            word_buffer[i] = mult16signed(copy16lsb(src[i >> 1]), loudness);
                         }
                     }
                 } else {
