@@ -18,4 +18,13 @@
 #define mbedtls_sha256_update_ret mbedtls_sha256_update
 #define mbedtls_sha256_finish_ret mbedtls_sha256_finish
 
+// CIRCUITPY-CHANGE: same shim for the algorithms added alongside sha1/sha256.
+#define mbedtls_md5_starts_ret mbedtls_md5_starts
+#define mbedtls_md5_update_ret mbedtls_md5_update
+#define mbedtls_md5_finish_ret mbedtls_md5_finish
+
+#define mbedtls_sha512_starts_ret mbedtls_sha512_starts
+#define mbedtls_sha512_update_ret mbedtls_sha512_update
+#define mbedtls_sha512_finish_ret mbedtls_sha512_finish
+
 #endif

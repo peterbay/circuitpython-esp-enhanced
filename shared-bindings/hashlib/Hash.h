@@ -22,3 +22,6 @@ mp_obj_t hashlib_hash_update(mp_obj_t self_in, mp_obj_t buf_in);
 void common_hal_hashlib_hash_update(hashlib_hash_obj_t *self, const uint8_t *data, size_t datalen);
 void common_hal_hashlib_hash_digest(hashlib_hash_obj_t *self, uint8_t *data, size_t datalen);
 size_t common_hal_hashlib_hash_get_digest_size(hashlib_hash_obj_t *self);
+size_t common_hal_hashlib_hash_get_block_size(hashlib_hash_obj_t *self);
+const char *common_hal_hashlib_hash_get_name(hashlib_hash_obj_t *self);
+void common_hal_hashlib_hash_copy(hashlib_hash_obj_t *self, hashlib_hash_obj_t *other);
