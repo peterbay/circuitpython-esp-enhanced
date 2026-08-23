@@ -455,7 +455,14 @@ void common_hal_wifi_init(bool user_initiated) {
     common_hal_wifi_radio_obj.base.type = &wifi_radio_type;
 
     if (!wifi_ever_inited) {
-        ESP_ERROR_CHECK(esp_event_loop_create_default());
+        // CIRCUITPY-CHANGE: espidf.EventQueue creates the default loop too, since
+        // it may well be the first thing to want one. Creating it twice returns
+        // ESP_ERR_INVALID_STATE, and ESP_ERROR_CHECK would abort the board over a
+        // condition that is entirely normal.
+        esp_err_t loop_err = esp_event_loop_create_default();
+        if (loop_err != ESP_ERR_INVALID_STATE) {
+            ESP_ERROR_CHECK(loop_err);
+        }
         ESP_ERROR_CHECK(esp_netif_init());
         wifi_ever_inited = true;
     }

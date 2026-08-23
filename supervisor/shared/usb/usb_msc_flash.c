@@ -38,7 +38,17 @@
 #define SDCARD_COUNT 0
 #endif
 
-#define LUN_COUNT (1 + SAVES_COUNT + SDCARD_COUNT)
+// CIRCUITPY-CHANGE: a partition exposed by espidf.expose_partition().
+#if CIRCUITPY_PARTITION_DISK
+#include "supervisor/partition_disk.h"
+
+#define PARTITION_DISK_COUNT 1
+#define PARTITION_DISK_LUN (1 + SAVES_COUNT + SDCARD_COUNT)
+#else
+#define PARTITION_DISK_COUNT 0
+#endif
+
+#define LUN_COUNT (1 + SAVES_COUNT + SDCARD_COUNT + PARTITION_DISK_COUNT)
 
 // The ellipsis range in the designated initializer of `ejected` is not standard C,
 // but it works in both gcc and clang.
@@ -142,6 +152,13 @@ static fs_user_mount_t *get_vfs(int lun) {
             (saves->blockdev.flags & MP_BLOCKDEV_FLAG_NATIVE) != 0 && !gc_ptr_on_heap(saves)) {
             return saves;
         }
+    }
+    #endif
+    #ifdef PARTITION_DISK_LUN
+    if (lun == PARTITION_DISK_LUN) {
+        // Native and static, so it is safe to serve outside the VM and it
+        // survives an auto-reload.
+        return partition_disk_get_usermount();
     }
     #endif
     #ifdef SDCARD_LUN
@@ -398,6 +415,14 @@ bool tud_msc_test_unit_ready_cb(uint8_t lun) {
     if (lun >= LUN_COUNT) {
         return false;
     }
+
+    #ifdef PARTITION_DISK_LUN
+    if (lun == PARTITION_DISK_LUN) {
+        // Native and static, so it is safe to serve outside the VM and it
+        // survives an auto-reload.
+        return partition_disk_get_usermount();
+    }
+    #endif
 
     fs_user_mount_t *current_mount = get_vfs(lun);
     if (current_mount == NULL) {

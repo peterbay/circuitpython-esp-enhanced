@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include "supervisor/board.h"
 #include "supervisor/port.h"
+#include "supervisor/prof.h"
 #include "supervisor/filesystem.h"
 #include "supervisor/shared/reload.h"
 #include "supervisor/shared/serial.h"
@@ -357,6 +358,22 @@ void reset_port_early(void) {
 }
 
 void reset_port(void) {
+    // CIRCUITPY-CHANGE: the timer objects go away with the heap, so the ESP-IDF
+    // handles pointing at them have to be taken down first.
+    espidf_timer_reset();
+    espidf_event_reset();
+    #if CIRCUITPY_WIFI
+    espidf_eap_reset();
+    espidf_smartconfig_reset();
+    #endif
+    espidf_csi_reset();
+
+    #if CIRCUITPY_PROF
+    // The sampler task and its timer outlive a soft reset, so without this a run
+    // started before an auto reload keeps sampling through the reparse of the new
+    // code and mixes it into the results.
+    prof_sampler_stop();
+    #endif
 
     #if CIRCUITPY_SSL
     ssl_reset();

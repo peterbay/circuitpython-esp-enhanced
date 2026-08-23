@@ -14,7 +14,11 @@
 #include "supervisor/shared/tick.h"
 #include "shared-bindings/microcontroller/__init__.h"
 
-static volatile background_callback_t *volatile callback_head, *volatile callback_tail;
+// Not static: a port may test this straight from MICROPY_VM_HOOK_LOOP, so that a
+// tight Python loop does not call into flash on every jump only to find the queue
+// empty. The rest of the list stays private to this file.
+volatile background_callback_t *volatile callback_head;
+static volatile background_callback_t *volatile callback_tail;
 
 #ifndef CALLBACK_CRITICAL_BEGIN
 #define CALLBACK_CRITICAL_BEGIN (common_hal_mcu_disable_interrupts())
