@@ -18,6 +18,16 @@
 
 #define BLOCK_SIZE (126) // (2^7) - 2 // (DO NOT CHANGE!)
 
+// CIRCUITPY-CHANGE: construct writes the whole file header into the buffer and
+// only flushes at the end, so the buffer can never be smaller than that header:
+// 13 bytes of logical screen descriptor, a 384 byte global colour table and the
+// 19 byte Netscape looping block.
+#define GIF_HEADER_SIZE (13 + 128 * 3 + 19)
+// Each frame writes a 19 byte header ahead of the block data (8 for the
+// graphic control extension, 11 for the image descriptor) and a 3 byte end
+// code after it.
+#define GIF_FRAME_OVERHEAD (19 + 3)
+
 static void handle_error(gifio_gifwriter_t *self) {
     if (self->error != 0) {
         mp_raise_OSError(self->error);
@@ -68,8 +78,14 @@ void shared_module_gifio_gifwriter_construct(gifio_gifwriter_t *self, mp_obj_t *
     self->dither = dither;
     self->own_file = own_file;
 
-    size_t nblocks = (width * height + 125) / 126;
-    self->size = nblocks * 128 + 4;
+    size_t nblocks = (width * height + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    // CIRCUITPY-CHANGE: the old size of nblocks * 128 + 4 covered neither the
+    // per frame overhead nor the file header, and write_data only asserts the
+    // bound, which is compiled out. Frames overran whenever width * height was
+    // a multiple of 126 (a 63x2 image corrupts the object after the buffer and
+    // takes out module globals), and any image under 379 pixels -- a 16x16
+    // sprite included -- overran while still inside the constructor.
+    self->size = MAX(GIF_HEADER_SIZE, nblocks * 128 + GIF_FRAME_OVERHEAD);
     self->data = m_malloc_without_collect(self->size);
     self->cur = 0;
     self->error = 0;
