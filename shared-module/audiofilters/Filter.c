@@ -132,7 +132,10 @@ void audiofilters_filter_reset_buffer(audiofilters_filter_obj_t *self,
     memset(self->filter_buffer, 0, SYNTHIO_MAX_DUR * sizeof(int32_t));
 
     if (self->filter_states) {
-        for (uint8_t i = 0; i < self->filter_states_len; i++) {
+        // CIRCUITPY-CHANGE: filter_states_len is a size_t, but all three loops over
+        // it used uint8_t counters. With 256 or more Biquad objects the counter
+        // wrapped back to zero and the loop never terminated.
+        for (size_t i = 0; i < self->filter_states_len; i++) {
             synthio_biquad_filter_reset(&self->filter_states[i]);
         }
     }
@@ -207,7 +210,7 @@ audioio_get_buffer_result_t audiofilters_filter_get_buffer(audiofilters_filter_o
             (void)synthio_block_slot_get(&self->mix);
 
             // Tick biquad filters
-            for (uint8_t j = 0; j < self->filter_states_len; j++) {
+            for (size_t j = 0; j < self->filter_states_len; j++) {
                 common_hal_synthio_biquad_tick(self->filter_objs[j]);
             }
             if (self->base.samples_signed) {
@@ -265,7 +268,7 @@ audioio_get_buffer_result_t audiofilters_filter_get_buffer(audiofilters_filter_o
                     }
 
                     // Process biquad filters
-                    for (uint8_t j = 0; j < self->filter_states_len; j++) {
+                    for (size_t j = 0; j < self->filter_states_len; j++) {
                         mp_obj_t filter_obj = self->filter_objs[j];
                         common_hal_synthio_biquad_tick(filter_obj);
                         synthio_biquad_filter_samples(filter_obj, &self->filter_states[j], self->filter_buffer, n_samples);
