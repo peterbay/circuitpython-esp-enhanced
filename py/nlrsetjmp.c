@@ -30,7 +30,13 @@
 
 void nlr_jump(void *val) {
     MP_NLR_JUMP_HEAD(val, top);
+    #if MICROPY_NLR_SETJMP_BUILTIN
+    // This is where the register file flush happens instead, and only on an
+    // actual raise rather than on every call.
+    __builtin_longjmp(top->jmpbuf, 1);
+    #else
     longjmp(top->jmpbuf, 1);
+    #endif
 }
 
 #endif

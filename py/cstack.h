@@ -50,7 +50,17 @@ mp_uint_t mp_cstack_usage(void);
 
 #if MICROPY_STACK_CHECK
 
-void mp_cstack_check(void);
+MP_NORETURN void mp_raise_recursion_depth(void);
+
+// CIRCUITPY-CHANGE: inlined, it runs on every Python-level call. The depth is
+// measured in the caller's frame instead of inside mp_cstack_usage(), so the
+// reported usage is one leaf frame lower than before.
+static inline void mp_cstack_check(void) {
+    volatile int stack_dummy;
+    if ((mp_uint_t)(MP_STATE_THREAD(stack_top) - (char *)&stack_dummy) >= MP_STATE_THREAD(stack_limit)) {
+        mp_raise_recursion_depth();
+    }
+}
 
 #else
 

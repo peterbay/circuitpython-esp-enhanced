@@ -257,7 +257,7 @@ mp_code_state_t *mp_obj_fun_bc_prepare_codestate(mp_obj_t self_in, size_t n_args
 #endif
 
 // CIRCUITPY-CHANGE: PLACE_IN_ITCM
-static mp_obj_t PLACE_IN_ITCM(fun_bc_call)(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+mp_obj_t PLACE_IN_ITCM(mp_obj_fun_bc_call)(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_cstack_check();
 
     DEBUG_printf("Input n_args: " UINT_FMT ", n_kw: " UINT_FMT "\n", n_args, n_kw);
@@ -413,7 +413,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
     FUN_BC_MAKE_NEW
     FUN_BC_TYPE_PRINT
     FUN_BC_TYPE_ATTR
-    call, fun_bc_call
+    call, mp_obj_fun_bc_call
     );
 
 mp_obj_t mp_obj_new_fun_bc(const mp_obj_t *def_args, const byte *code, const mp_module_context_t *context, struct _mp_raw_code_t *const *child_table) {

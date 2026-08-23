@@ -164,7 +164,23 @@
 
 // *FORMAT-ON*
 
-#if MICROPY_NLR_SETJMP
+// On an architecture with register windows, the libc setjmp has to flush the
+// whole register file every time it is called, and nlr_push runs on every python
+// function call. GCC's own non-local goto saves only the frame and defers the
+// flush to __builtin_longjmp, which happens only when an exception is actually
+// raised. Measured on ESP32-S3: 305 cycles for setjmp against 6.
+// Note that this rules out the native code emitter: emitted code reaches setjmp
+// through mp_fun_table, and __builtin_setjmp cannot be called through a pointer,
+// because the buffer it fills is only valid in the frame that called it.
+#ifndef MICROPY_NLR_SETJMP_BUILTIN
+#define MICROPY_NLR_SETJMP_BUILTIN (0)
+#endif
+
+#if MICROPY_NLR_SETJMP_BUILTIN && MICROPY_EMIT_MACHINE_CODE
+#error "MICROPY_NLR_SETJMP_BUILTIN cannot be used with the native code emitter"
+#endif
+
+#if MICROPY_NLR_SETJMP && !MICROPY_NLR_SETJMP_BUILTIN
 #include <setjmp.h>
 #endif
 
@@ -181,7 +197,10 @@ struct _nlr_buf_t {
     // - otherwise it's always a concrete object (an exception instance)
     void *ret_val;
 
-    #if MICROPY_NLR_SETJMP
+    #if MICROPY_NLR_SETJMP && MICROPY_NLR_SETJMP_BUILTIN
+    // GCC documents this buffer as five words.
+    void *jmpbuf[5];
+    #elif MICROPY_NLR_SETJMP
     jmp_buf jmpbuf;
     #else
     void *regs[MICROPY_NLR_NUM_REGS];
@@ -226,7 +245,11 @@ struct _nlr_jump_callback_node_t {
 // nlr_push() must be defined as a macro, because "The stack context will be
 // invalidated if the function which called setjmp() returns."
 // For this case it is safe to call nlr_push_tail() first.
+#if MICROPY_NLR_SETJMP_BUILTIN
+#define nlr_push(buf) (nlr_push_tail(buf), __builtin_setjmp((buf)->jmpbuf))
+#else
 #define nlr_push(buf) (nlr_push_tail(buf), setjmp((buf)->jmpbuf))
+#endif
 #else
 unsigned int nlr_push(nlr_buf_t *);
 #endif
