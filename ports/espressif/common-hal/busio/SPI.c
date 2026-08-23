@@ -14,7 +14,8 @@
 #include "esp_private/spi_common_internal.h"
 
 #define SPI_MAX_DMA_BITS (SPI_MAX_DMA_LEN * 8)
-#define MAX_SPI_TRANSACTIONS 10
+// Increase queue depth for better display performance (up to 20 pending transactions)
+#define MAX_SPI_TRANSACTIONS 20
 
 static spi_device_handle_t spi_handle[SOC_SPI_PERIPH_NUM];
 
@@ -38,6 +39,12 @@ static int spi_probe_actual_freq(busio_spi_obj_t *self,
     return freq_khz * 1000;
 }
 
+// CIRCUITPY-CHANGE: this used to raise on failure. configure() calls it after it
+// has already removed the old device, and FourWire.begin_transaction calls
+// configure() with the bus mutex held and ignores the result, so raising here
+// longjmped out with the mutex locked for the rest of the session and
+// spi_handle[host_id] still holding the freed pointer. Report the error instead
+// and let each caller decide; construct still raises, configure now returns false.
 static esp_err_t set_spi_config(busio_spi_obj_t *self,
     uint32_t baudrate, uint8_t polarity, uint8_t phase, uint8_t bits) {
     spi_device_interface_config_t device_config = {
