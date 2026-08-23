@@ -204,9 +204,14 @@ static int characteristic_on_ble_gap_evt(struct ble_gap_event *event, void *para
         case BLE_GAP_EVENT_NOTIFY_RX: {
             // A remote service wrote to this characteristic.
 
-            // Must be a notification, and event handle must match the handle for my characteristic.
-            if (event->notify_rx.indication == 0 &&
-                event->notify_rx.attr_handle == self->handle) {
+            // CIRCUITPY-CHANGE: this also fires for indications, and requiring
+            // indication == 0 threw every one of them away. NimBLE has already sent
+            // the ATT confirmation itself by the time this runs, so the peer sees a
+            // healthy link and keeps sending while the data goes nowhere -- no
+            // error, no stall, nothing to notice. Indicate-only peripherals (CTS,
+            // battery and health services, several vendor UART clones) simply did
+            // not work as a client. The handle test is the one that matters.
+            if (event->notify_rx.attr_handle == self->handle) {
                 if (self->observer == mp_const_none) {
                     return 0;
                 }
