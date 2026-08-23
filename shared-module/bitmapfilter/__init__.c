@@ -16,6 +16,19 @@
 #include "shared-bindings/bitmapfilter/__init__.h"
 #include "shared-module/bitmapfilter/__init__.h"
 #include "shared-module/bitmapfilter/macros.h"
+#include "shared-module/displayio/Bitmap.h"
+
+// CIRCUITPY-CHANGE: none of the filters below marked the bitmap they write, so a
+// filter applied to a bitmap that is already on screen showed nothing from the
+// second frame on. The first frame works only because construct initialises
+// dirty_area to the whole bitmap, which is why this survives one-shot test
+// scripts. Marking also picks up the read-only check every other bitmap writer
+// does and these did not, since displayio_bitmap_set_dirty_area raises for free.
+// Only the destination is marked; mask, src1 and src2 are read here.
+static void mark_dirty(displayio_bitmap_t *bitmap) {
+    displayio_area_t area = { 0, 0, bitmap->width, bitmap->height, NULL };
+    displayio_bitmap_set_dirty_area(bitmap, &area);
+}
 
 #if defined(UNIX)
 #include <stdlib.h>
@@ -98,6 +111,7 @@ void shared_module_bitmapfilter_morph(
     bool threshold,
     int offset,
     bool invert) {
+    mark_dirty(bitmap);
 
     int brows = ksize + 1;
 
@@ -201,6 +215,7 @@ void shared_module_bitmapfilter_mix(
     displayio_bitmap_t *bitmap,
     displayio_bitmap_t *mask,
     const mp_float_t weights[12]) {
+    mark_dirty(bitmap);
 
     int wt[12];
     for (int i = 0; i < 12; i++) {
@@ -269,6 +284,7 @@ void shared_module_bitmapfilter_solarize(
     displayio_bitmap_t *bitmap,
     displayio_bitmap_t *mask,
     const mp_float_t threshold) {
+    mark_dirty(bitmap);
 
     int threshold_i = (int32_t)MICROPY_FLOAT_C_FUN(round)(256 * threshold);
     switch (bitmap->bits_per_value) {
@@ -301,6 +317,7 @@ void shared_module_bitmapfilter_lookup(
     displayio_bitmap_t *bitmap,
     displayio_bitmap_t *mask,
     const bitmapfilter_lookup_table_t *table) {
+    mark_dirty(bitmap);
 
     switch (bitmap->bits_per_value) {
         default:
@@ -334,6 +351,7 @@ void shared_module_bitmapfilter_false_color(
     displayio_bitmap_t *bitmap,
     displayio_bitmap_t *mask,
     _displayio_color_t palette[256]) {
+    mark_dirty(bitmap);
 
     uint16_t table[256];
     for (int i = 0; i < 256; i++) {
@@ -385,6 +403,7 @@ void shared_module_bitmapfilter_blend(
     displayio_bitmap_t *src2,
     displayio_bitmap_t *mask,
     const uint8_t lookup[4096]) {
+    mark_dirty(bitmap);
 
     check_matching_details(bitmap, src1);
     check_matching_details(bitmap, src2);
