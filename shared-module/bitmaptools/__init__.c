@@ -748,7 +748,12 @@ static void fill_row(displayio_bitmap_t *bitmap, int swap, int16_t *luminance_da
 static void write_pixels(displayio_bitmap_t *bitmap, int y, bool *data) {
     if (bitmap->bits_per_value == 1) {
         uint32_t *pixel_data = (uint32_t *)(bitmap->data + bitmap->stride * y);
-        for (int i = 0; i < bitmap->width; i++) {
+        // CIRCUITPY-CHANGE: each pass of this loop consumes 32 booleans and stores
+        // one word, so it runs once per word of the row, not once per pixel. It
+        // used to run bitmap->width times, writing 32x the row's length: for a
+        // 240 pixel row, 960 bytes into a 32 byte row, shredding the rest of the
+        // bitmap and running off the end of the allocation on the last row.
+        for (int i = 0; i < (bitmap->width + 31) / 32; i++) {
             uint32_t p = 0;
             for (int j = 0; j < 32; j++) {
                 p = (p << 1);
@@ -756,7 +761,12 @@ static void write_pixels(displayio_bitmap_t *bitmap, int y, bool *data) {
                     p |= 1;
                 }
             }
-            *pixel_data++ = p;
+            // CIRCUITPY-CHANGE: displayio addresses 1bpp pixels as byte x >> 3,
+            // bit 7 - (x & 7), so the first eight pixels of a row belong in the
+            // lowest addressed byte. Storing p directly puts them in the highest
+            // one on a little endian target, which moved every pixel across its
+            // word: a white run at x 0..7 came out at x 24..31.
+            *pixel_data++ = __builtin_bswap32(p);
         }
     } else {
         uint16_t *pixel_data = (uint16_t *)(bitmap->data + bitmap->stride * y);
@@ -787,6 +797,12 @@ void common_hal_bitmaptools_dither(displayio_bitmap_t *dest_bitmap, displayio_bi
     };
     // out holds one output row of pixels, and is padded to be a multiple of 32 so that the 1bpp storage loop can be simplified
     bool out[(width + 31) / 32 * 32];
+    // CIRCUITPY-CHANGE: only [0, width) is written per row, so clear the padding
+    // once. Without this the spare bits of the last 1bpp word come from whatever
+    // was on the stack.
+    for (int i = width; i < (width + 31) / 32 * 32; i++) {
+        out[i] = false;
+    }
 
     fill_row(source_bitmap, swap, rows[0], 0, info->mx);
     fill_row(source_bitmap, swap, rows[1], 1, info->mx);

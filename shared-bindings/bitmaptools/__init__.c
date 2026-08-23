@@ -14,6 +14,7 @@
 #include "py/binary.h"
 #include "py/enum.h"
 #include "py/obj.h"
+#include <limits.h>
 #include "py/runtime.h"
 
 #if MICROPY_VFS
@@ -569,8 +570,10 @@ static mp_obj_t bitmaptools_obj_boundary_fill(size_t n_args, const mp_obj_t *pos
         mp_raise_ValueError(MP_ERROR_TEXT("background value out of range of target"));
     }
 
-    int16_t x = args[ARG_x].u_int;
-    int16_t y = args[ARG_y].u_int;
+    // CIRCUITPY-CHANGE: narrowed to int16_t before any range check, so a value
+    // 65536 away from a legal one was indistinguishable from it.
+    int16_t x = mp_arg_validate_int_range(args[ARG_x].u_int, SHRT_MIN, SHRT_MAX, MP_QSTR_x);
+    int16_t y = mp_arg_validate_int_range(args[ARG_y].u_int, SHRT_MIN, SHRT_MAX, MP_QSTR_y);
 
     if (x < 0 || x >= destination->width) {
         mp_raise_ValueError(MP_ERROR_TEXT("out of range of target"));
@@ -625,10 +628,11 @@ static mp_obj_t bitmaptools_obj_draw_line(size_t n_args, const mp_obj_t *pos_arg
         mp_raise_ValueError(MP_ERROR_TEXT("out of range of target"));
     }
 
-    int16_t x1 = args[ARG_x1].u_int;
-    int16_t y1 = args[ARG_y1].u_int;
-    int16_t x2 = args[ARG_x2].u_int;
-    int16_t y2 = args[ARG_y2].u_int;
+    // CIRCUITPY-CHANGE: same narrowing before validation as draw_circle.
+    int16_t x1 = mp_arg_validate_int_range(args[ARG_x1].u_int, SHRT_MIN, SHRT_MAX, MP_QSTR_x1);
+    int16_t y1 = mp_arg_validate_int_range(args[ARG_y1].u_int, SHRT_MIN, SHRT_MAX, MP_QSTR_y1);
+    int16_t x2 = mp_arg_validate_int_range(args[ARG_x2].u_int, SHRT_MIN, SHRT_MAX, MP_QSTR_x2);
+    int16_t y2 = mp_arg_validate_int_range(args[ARG_y2].u_int, SHRT_MIN, SHRT_MAX, MP_QSTR_y2);
 
     common_hal_bitmaptools_draw_line(destination, x1, y1, x2, y2, value);
 
@@ -1045,9 +1049,11 @@ static mp_obj_t bitmaptools_obj_draw_circle(size_t n_args, const mp_obj_t *pos_a
     }
 
 
-    int16_t x = args[ARG_x].u_int;
-    int16_t y = args[ARG_y].u_int;
-    int16_t radius = args[ARG_radius].u_int;
+    // CIRCUITPY-CHANGE: narrowed before the range checks below, which then saw a
+    // wrapped value rather than the one that was passed.
+    int16_t x = mp_arg_validate_int_range(args[ARG_x].u_int, SHRT_MIN, SHRT_MAX, MP_QSTR_x);
+    int16_t y = mp_arg_validate_int_range(args[ARG_y].u_int, SHRT_MIN, SHRT_MAX, MP_QSTR_y);
+    int16_t radius = mp_arg_validate_int_range(args[ARG_radius].u_int, 0, SHRT_MAX, MP_QSTR_radius);
 
     mp_arg_validate_int_range(x, 0, destination->width, MP_QSTR_x);
     mp_arg_validate_int_range(y, 0, destination->height, MP_QSTR_y);
