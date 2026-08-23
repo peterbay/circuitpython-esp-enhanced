@@ -35,35 +35,69 @@ void common_hal_audioio_wavefile_construct(audioio_wavefile_obj_t *self,
     size_t buffer_size) {
     // Load the wave
     self->file = file;
-    uint8_t chunk_header[16];
+    uint8_t chunk_header[12];
     f_rewind(&self->file->fp);
     UINT bytes_read;
-    if (f_read(&self->file->fp, chunk_header, 16, &bytes_read) != FR_OK) {
+    if (f_read(&self->file->fp, chunk_header, 12, &bytes_read) != FR_OK) {
         mp_raise_OSError(MP_EIO);
     }
-    if (bytes_read != 16 ||
+    if (bytes_read != 12 ||
         memcmp(chunk_header, "RIFF", 4) != 0 ||
-        memcmp(chunk_header + 8, "WAVEfmt ", 8) != 0) {
+        memcmp(chunk_header + 8, "WAVE", 4) != 0) {
         mp_arg_error_invalid(MP_QSTR_file);
     }
-    uint32_t format_size;
-    if (f_read(&self->file->fp, &format_size, 4, &bytes_read) != FR_OK) {
-        mp_raise_OSError(MP_EIO);
+
+    // CIRCUITPY-CHANGE: this used to require the literal bytes "WAVEfmt " at offset
+    // 8, i.e. "fmt " had to be the very first subchunk. RIFF only requires it before
+    // "data"; a JUNK or LIST chunk ahead of it is perfectly valid and such a file
+    // was rejected outright. Walk the subchunks instead.
+    uint32_t format_size = 0;
+    {
+        uint8_t tag[4];
+        while (true) {
+            if (f_read(&self->file->fp, tag, 4, &bytes_read) != FR_OK || bytes_read != 4) {
+                mp_arg_error_invalid(MP_QSTR_file);
+            }
+            if (f_read(&self->file->fp, &format_size, 4, &bytes_read) != FR_OK || bytes_read != 4) {
+                mp_arg_error_invalid(MP_QSTR_file);
+            }
+            if (memcmp(tag, "fmt ", 4) == 0) {
+                break;
+            }
+            if (memcmp(tag, "data", 4) == 0) {
+                // "data" before "fmt " leaves nothing to describe the samples.
+                mp_arg_error_invalid(MP_QSTR_file);
+            }
+            if (f_lseek(&self->file->fp,
+                f_tell(&self->file->fp) + format_size + (format_size & 1)) != FR_OK) {
+                mp_raise_OSError(MP_EIO);
+            }
+        }
     }
-    if (bytes_read != 4 ||
-        format_size > sizeof(struct wave_format_chunk)) {
+    // CIRCUITPY-CHANGE: only an oversized chunk was rejected, so a short or zero
+    // length one was accepted and the unwritten fields of the struct below were then
+    // validated and copied out. The only sizes this parser understands are 16, 18
+    // and 40.
+    if (format_size != 16 && format_size != 18 && format_size != 40) {
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid format chunk size"));
     }
-    struct wave_format_chunk format;
+    // Zeroed because a 16 or 18 byte chunk leaves the rest of it unwritten.
+    struct wave_format_chunk format = {0};
     if (f_read(&self->file->fp, &format, format_size, &bytes_read) != FR_OK) {
         mp_raise_OSError(MP_EIO);
     }
+    // CIRCUITPY-CHANGE: this test had an empty body, so a short read fell straight
+    // through into the validation below with the struct only partly filled.
     if (bytes_read != format_size) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid format chunk size"));
     }
 
+    // CIRCUITPY-CHANGE: zero channels and zero bits per sample both passed these
+    // "not too large" tests, and either one divides by zero further along.
     if ((format_size != 40 && format.audio_format != 1) ||
-        format.num_channels > 2 ||
-        format.bits_per_sample > 16 ||
+        format.num_channels < 1 || format.num_channels > 2 ||
+        (format.bits_per_sample != 8 && format.bits_per_sample != 16) ||
+        format.sample_rate < 1 ||
         (format_size == 18 && format.extra_params != 0) ||
         (format_size == 40 &&
          (format.audio_format != 0xfffe ||
@@ -102,7 +136,12 @@ void common_hal_audioio_wavefile_construct(audioio_wavefile_obj_t *self,
         }
 
         if (!found_data_chunk) {
-            if (f_lseek(&self->file->fp, f_tell(&self->file->fp) + chunk_length) != FR_OK) {
+            // CIRCUITPY-CHANGE: a RIFF chunk of odd length is followed by one pad
+            // byte that is not counted in the length. Skipping only chunk_length
+            // left the read pointer one byte short and the next tag was read
+            // straddling the boundary.
+            if (f_lseek(&self->file->fp,
+                f_tell(&self->file->fp) + chunk_length + (chunk_length & 1)) != FR_OK) {
                 mp_raise_OSError(MP_EIO);
             }
         }
@@ -114,7 +153,13 @@ void common_hal_audioio_wavefile_construct(audioio_wavefile_obj_t *self,
     // Try to allocate two buffers, one will be loaded from file and the other
     // DMAed to DAC.
     if (buffer_size) {
-        self->len = buffer_size / 2;
+        // CIRCUITPY-CHANGE: each half has to be a whole number of words, because the
+        // final short read is rounded up to a word boundary in place. Without this a
+        // caller-supplied odd size left no room for that rounding.
+        self->len = (buffer_size / 2) & ~(size_t)(sizeof(uint32_t) - 1);
+        if (self->len == 0) {
+            mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be >= %d"), MP_QSTR_buffer_size, 8);
+        }
         self->buffer = buffer;
         self->second_buffer = buffer + self->len;
     } else {
@@ -192,19 +237,24 @@ audioio_get_buffer_result_t audioio_wavefile_get_buffer(audioio_wavefile_obj_t *
         }
         self->bytes_remaining -= length_read;
         // Pad the last buffer to word align it.
+        // CIRCUITPY-CHANGE: pad was the remainder rather than the number of bytes
+        // needed to reach the next word. A final block of length 3 mod 4 therefore
+        // grew by three instead of one and wrote two bytes past the allocation,
+        // while 1 mod 4 grew by one and stayed misaligned. self->len is now kept a
+        // multiple of four, so rounding a short read up can never leave the buffer.
         if (self->bytes_remaining == 0 && length_read % sizeof(uint32_t) != 0) {
-            uint32_t pad = length_read % sizeof(uint32_t);
+            uint32_t pad = sizeof(uint32_t) - (length_read % sizeof(uint32_t));
             length_read += pad;
             if (self->base.bits_per_sample == 8) {
                 for (uint32_t i = 0; i < pad; i++) {
-                    ((uint8_t *)(*buffer))[length_read / sizeof(uint8_t) - i - 1] = 0x80;
+                    ((uint8_t *)(*buffer))[length_read - i - 1] = 0x80;
                 }
             } else if (self->base.bits_per_sample == 16) {
-                // We know the buffer is aligned because we allocated it onto the heap ourselves.
-                #pragma GCC diagnostic push
-                #pragma GCC diagnostic ignored "-Wcast-align"
-                ((int16_t *)(*buffer))[length_read / sizeof(int16_t) - 1] = 0;
-                #pragma GCC diagnostic pop
+                // A caller-supplied buffer can be a sliced memoryview, which is not
+                // necessarily halfword aligned, so write the silent sample bytewise.
+                for (uint32_t i = 0; i < pad; i++) {
+                    ((uint8_t *)(*buffer))[length_read - i - 1] = 0;
+                }
             }
         }
         *buffer_length = length_read;

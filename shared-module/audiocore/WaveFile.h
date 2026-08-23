@@ -13,12 +13,18 @@
 
 typedef struct {
     audiosample_base_t base;
+    // CIRCUITPY-CHANGE: see RawSample.h. A caller-supplied buffer was kept only as a
+    // raw pointer, so a sliced memoryview could be collected out from under playback.
+    mp_obj_t buffer_obj;
     uint8_t *buffer;
     uint32_t buffer_length;
     uint8_t *second_buffer;
     uint32_t second_buffer_length;
     uint32_t file_length; // In bytes
-    uint16_t data_start; // Where the data values start
+    // CIRCUITPY-CHANGE: this is a file offset and was stored in 16 bits, so a WAV
+    // carrying more than 64 KiB of metadata before its data chunk seeked to the
+    // wrong place on every reset_buffer.
+    uint32_t data_start; // Where the data values start
     uint16_t buffer_index;
     uint32_t bytes_remaining;
 
