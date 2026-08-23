@@ -14,3 +14,4 @@ CIRCUITPY_ESPCAMERA = 0
 CIRCUITPY_MAX3421E = 0
 
 SRC_C += module/cardputer_keyboard.c
+FROZEN_MPY_DIRS += $(TOP)/frozen/register_map
