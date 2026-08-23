@@ -47,9 +47,24 @@ static void i2s_fill_buffer(i2s_t *self) {
                     &self->sample_data, &sample_buffer_length);
             self->sample_end = self->sample_data + sample_buffer_length;
             if (get_buffer_result == GET_BUFFER_DONE) {
-                if (self->loop) {
-                    audiosample_reset_buffer(self->sample, false, 0);
-                } else {
+                if (!self->loop) {
+                    self->stopping = true;
+                    break;
+                }
+                // CIRCUITPY-CHANGE: this reset the sample and then fell straight
+                // into the length test below. A decoder is entitled to report DONE
+                // with an empty final buffer -- MP3Decoder does exactly that -- so
+                // the zero length killed the playback that had just been rewound
+                // and loop=True never restarted an MP3 at all. The reset also left
+                // sample_data at the exhausted buffer, so nothing would have been
+                // played even without that. Fetch again after rewinding, and only
+                // give up if the sample has nothing for us twice running.
+                audiosample_reset_buffer(self->sample, false, 0);
+                get_buffer_result = audiosample_get_buffer(self->sample, false, 0,
+                    &self->sample_data, &sample_buffer_length);
+                self->sample_end = self->sample_data + sample_buffer_length;
+                if (get_buffer_result == GET_BUFFER_DONE && sample_buffer_length == 0) {
+                    // An empty sample would spin here forever.
                     self->stopping = true;
                     break;
                 }
