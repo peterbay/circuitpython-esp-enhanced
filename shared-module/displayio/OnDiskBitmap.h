@@ -15,10 +15,15 @@
 
 typedef struct {
     mp_obj_base_t base;
-    uint16_t width;
-    uint16_t height;
-    uint16_t data_offset;
-    uint16_t stride;
+    // CIRCUITPY-CHANGE: width, height and the data offset come out of a 32 bit
+    // header and the stride is computed from the width, but all four were stored
+    // in 16 bits. A negative height, which is how a valid top-down BMP is written,
+    // became a large positive one, and a file whose pixel data starts past 65535
+    // seeked somewhere else entirely.
+    uint32_t width;
+    uint32_t height;
+    uint32_t data_offset;
+    uint32_t stride;
     uint32_t r_bitmask;
     uint32_t g_bitmask;
     uint32_t b_bitmask;

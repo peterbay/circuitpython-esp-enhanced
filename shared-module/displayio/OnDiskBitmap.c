@@ -22,13 +22,19 @@
 
 
 static uint32_t read_word(uint16_t *bmp_header, uint16_t index) {
-    return bmp_header[index] | bmp_header[index + 1] << 16;
+    // CIRCUITPY-CHANGE: the high half promotes to signed int before the shift, so a
+    // value from 0x8000 up produced a result the type cannot represent.
+    return bmp_header[index] | ((uint32_t)bmp_header[index + 1] << 16);
 }
 
 void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self, pyb_file_obj_t *file) {
     // Load the wave
     self->file = file;
-    uint16_t bmp_header[69];
+    // CIRCUITPY-CHANGE: this was left uninitialised, and a 12 byte BITMAPCOREHEADER
+    // only fills the first 26 bytes of it while the code below reads compression
+    // from byte 30. Zeroing does not make the parse correct -- that is handled
+    // separately -- but it does stop it reading whatever was on the stack.
+    uint16_t bmp_header[69] = {0};
     f_rewind(&self->file->fp);
     UINT bytes_read;
 
@@ -72,9 +78,42 @@ void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self,
     self->data_offset = read_word(bmp_header, 5);
 
     self->bitfield_compressed = (compression == 3);
-    self->bits_per_pixel = bmp_header[14];
-    self->width = read_word(bmp_header, 9);
-    self->height = read_word(bmp_header, 11);
+    // CIRCUITPY-CHANGE: a BITMAPCOREHEADER was accepted but then read entirely
+    // through Windows INFOHEADER offsets: 16 bit width and height at bytes 18 and
+    // 20 were read as one 32 bit width, the bit count at byte 24 was read from byte
+    // 28, and compression was read from bytes the file does not even have. Every
+    // field of a CORE bitmap was wrong. Parse it where it actually lives.
+    if (header_size == 12) {
+        self->width = bmp_header[9];
+        self->height = bmp_header[10];
+        self->bits_per_pixel = bmp_header[12];
+    } else {
+        self->bits_per_pixel = bmp_header[14];
+        self->width = read_word(bmp_header, 9);
+        int32_t signed_height = (int32_t)read_word(bmp_header, 11);
+        // A negative height is a valid top-down BMP; it used to become a huge
+        // positive one on the way into a uint16_t field.
+        self->height = signed_height < 0 ? (uint32_t)-signed_height : (uint32_t)signed_height;
+    }
+
+    // CIRCUITPY-CHANGE: the depth came straight out of the file and nothing checked
+    // it. Zero divides by zero computing pixels_per_byte; 9 to 15 make
+    // pixels_per_byte zero and the single-byte branch in get_pixel then takes
+    // x % 0; and from 40 up bytes_per_pixel is 5 or more, so the f_read in
+    // get_pixel reads that many bytes into a uint32_t local and walks the stack.
+    // Only the depths the rest of this file actually handles are allowed through.
+    switch (self->bits_per_pixel) {
+        case 1:
+        case 2:
+        case 4:
+        case 8:
+        case 16:
+        case 24:
+        case 32:
+            break;
+        default:
+            mp_raise_ValueError_varg(MP_ERROR_TEXT("Invalid %q"), MP_QSTR_bits_per_pixel);
+    }
 
     DISPLAYIO_ODBMP_DEBUG("data offset: %d\n", self->data_offset);
     DISPLAYIO_ODBMP_DEBUG("width: %d\n", self->width);
@@ -103,18 +142,30 @@ void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self,
         if (header_size >= 40) {
             number_of_colors = read_word(bmp_header, 23);
         }
-        if (number_of_colors == 0) {
-            number_of_colors = 1 << self->bits_per_pixel;
+        // CIRCUITPY-CHANGE: colors_used is a 32 bit field in the file, but the
+        // palette constructor, the size below and the loop counter were all 16 bit.
+        // A large declared count truncated differently in different places, so the
+        // allocation stopped matching the iteration and the counter could wrap. An
+        // indexed BMP can never have more entries than its depth allows, so clamp
+        // there and keep the arithmetic in size_t.
+        uint32_t max_colors = 1u << self->bits_per_pixel;
+        if (number_of_colors == 0 || number_of_colors > max_colors) {
+            number_of_colors = max_colors;
         }
 
         displayio_palette_t *palette = mp_obj_malloc(displayio_palette_t, &displayio_palette_type);
         common_hal_displayio_palette_construct(palette, number_of_colors, false);
 
         if (number_of_colors > 1) {
-            uint16_t palette_size = number_of_colors * sizeof(uint32_t);
+            // CIRCUITPY-CHANGE: a BITMAPCOREHEADER palette is 3 byte RGBTRIPLEs, not
+            // 4 byte RGBQUADs. Reading it as quads shifted every colour and ran into
+            // the pixel data.
+            size_t entry_size = (header_size == 12) ? 3 : sizeof(uint32_t);
+            size_t palette_size = (size_t)number_of_colors * entry_size;
             uint16_t palette_offset = 0xe + header_size;
 
-            uint32_t *palette_data = m_malloc_without_collect(palette_size);
+            uint32_t *palette_data = m_malloc_without_collect(
+                (size_t)number_of_colors * sizeof(uint32_t));
 
             f_rewind(&self->file->fp);
             f_lseek(&self->file->fp, palette_offset);
@@ -126,18 +177,24 @@ void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self,
             if (palette_bytes_read != palette_size) {
                 mp_raise_ValueError(MP_ERROR_TEXT("Unable to read color palette data"));
             }
-            for (uint16_t i = 0; i < number_of_colors; i++) {
-                common_hal_displayio_palette_set_color(palette, i, palette_data[i]);
+            const uint8_t *raw = (const uint8_t *)palette_data;
+            for (uint32_t i = 0; i < number_of_colors; i++) {
+                // Both layouts store blue, green, red in that order; the quad has a
+                // fourth ignored byte.
+                const uint8_t *e = raw + (size_t)i * entry_size;
+                common_hal_displayio_palette_set_color(palette, i,
+                    ((uint32_t)e[2] << 16) | ((uint32_t)e[1] << 8) | e[0]);
             }
 
             #if MICROPY_MALLOC_USES_ALLOCATED_SIZE
-            m_free(palette_data, palette_size);
+            m_free(palette_data, (size_t)number_of_colors * sizeof(uint32_t));
             #else
             m_free(palette_data);
             #endif
         } else {
+            // CIRCUITPY-CHANGE: one declared colour allocates one entry, but this
+            // wrote index 1 as well, one past the palette.
             common_hal_displayio_palette_set_color(palette, 0, 0x0);
-            common_hal_displayio_palette_set_color(palette, 1, 0xffffff);
         }
         self->palette = palette;
     }
@@ -163,7 +220,8 @@ void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self,
 
 uint32_t common_hal_displayio_ondiskbitmap_get_pixel(displayio_ondiskbitmap_t *self,
     int16_t x, int16_t y) {
-    if (x < 0 || x >= self->width || y < 0 || y >= self->height) {
+    // The dimensions are unsigned now, so compare after establishing the sign.
+    if (x < 0 || y < 0 || (uint32_t)x >= self->width || (uint32_t)y >= self->height) {
         return 0;
     }
 
