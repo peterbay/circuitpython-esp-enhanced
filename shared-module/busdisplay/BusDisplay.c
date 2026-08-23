@@ -22,6 +22,8 @@
 #include "shared-bindings/time/__init__.h"
 #include "shared-module/displayio/__init__.h"
 #include "shared-module/displayio/display_core.h"
+#include "shared-module/displayio/mipi_constants.h"
+#include "supervisor/prof.h"
 #include "supervisor/shared/display.h"
 #include "supervisor/shared/tick.h"
 
@@ -222,9 +224,14 @@ static const displayio_area_t *_get_refresh_areas(busdisplay_busdisplay_obj_t *s
     return NULL;
 }
 
-static void _send_pixels(busdisplay_busdisplay_obj_t *self, uint8_t *pixels, uint32_t length) {
+// continue_write picks write memory continue over write memory start, which
+// appends to the address counter left by the previous chunk instead of jumping
+// back to the origin of the window.
+static void _send_pixels(busdisplay_busdisplay_obj_t *self, uint8_t *pixels, uint32_t length,
+    bool continue_write) {
     if (!self->bus.data_as_commands) {
-        self->bus.send(self->bus.bus, DISPLAY_COMMAND, CHIP_SELECT_TOGGLE_EVERY_BYTE, &self->write_ram_command, 1);
+        uint8_t command = continue_write ? MIPI_COMMAND_WRITE_MEMORY_CONTINUE : self->write_ram_command;
+        self->bus.send(self->bus.bus, DISPLAY_COMMAND, CHIP_SELECT_TOGGLE_EVERY_BYTE, &command, 1);
     }
     self->bus.send(self->bus.bus, DISPLAY_DATA, CHIP_SELECT_UNTOUCHED, pixels, length);
 }
@@ -237,6 +244,7 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
     if (!displayio_display_core_clip_area(&self->core, area, &clipped)) {
         return true;
     }
+    PROF_BEGIN(PROF_REFRESH_AREA);
     uint16_t rows_per_buffer = displayio_area_height(&clipped);
     uint8_t pixels_per_word = (sizeof(uint32_t) * 8) / self->core.colorspace.depth;
     uint16_t pixels_per_buffer = displayio_area_size(&clipped);
@@ -278,6 +286,20 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
 
     uint16_t remaining_rows = displayio_area_height(&clipped);
 
+    // Every subrectangle shares the same column range and they follow each other by
+    // rows, so the pixels of the whole area form one continuous run in the
+    // controller's memory. Program the window once and keep writing into it instead
+    // of resending column, page and write memory start for each chunk. Only for
+    // controllers that auto-increment inside the window: page addressed ones and
+    // buses that carry commands as data keep the original behaviour.
+    bool single_window = !self->bus.SH1107_addressing && !self->bus.data_as_commands &&
+        self->write_ram_command == MIPI_COMMAND_WRITE_MEMORY_START;
+    if (single_window) {
+        PROF_BEGIN(PROF_SET_REGION);
+        displayio_display_bus_set_region_to_update(&self->bus, &self->core, &clipped);
+        PROF_END(PROF_SET_REGION);
+    }
+
     for (uint16_t j = 0; j < subrectangles; j++) {
         displayio_area_t subrectangle = {
             .x1 = clipped.x1,
@@ -300,15 +322,23 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
         memset(mask, 0, mask_length * sizeof(mask[0]));
         memset(buffer, 0, buffer_size * sizeof(buffer[0]));
 
+        PROF_BEGIN(PROF_FILL_AREA);
         displayio_display_core_fill_area(&self->core, &subrectangle, mask, buffer);
+        PROF_END(PROF_FILL_AREA);
 
-        displayio_display_bus_set_region_to_update(&self->bus, &self->core, &subrectangle);
+        if (!single_window) {
+            PROF_BEGIN(PROF_SET_REGION);
+            displayio_display_bus_set_region_to_update(&self->bus, &self->core, &subrectangle);
+            PROF_END(PROF_SET_REGION);
+        }
 
         // Can't acquire display bus; skip the rest of the data.
         if (!displayio_display_bus_begin_transaction(&self->bus)) {
             return false;
         }
-        _send_pixels(self, (uint8_t *)buffer, subrectangle_size_bytes);
+        PROF_BEGIN(PROF_SEND_PIXELS);
+        _send_pixels(self, (uint8_t *)buffer, subrectangle_size_bytes, single_window && j > 0);
+        PROF_END(PROF_SEND_PIXELS);
         displayio_display_bus_end_transaction(&self->bus);
 
         // Run background tasks so they can run during an explicit refresh.
@@ -324,6 +354,7 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
     // Drain any remaining asynchronous transfers.
     displayio_display_bus_flush(&self->bus);
 
+    PROF_END(PROF_REFRESH_AREA);
     return true;
 }
 

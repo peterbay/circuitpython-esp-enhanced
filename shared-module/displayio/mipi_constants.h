@@ -11,4 +11,7 @@ enum mipi_command {
     MIPI_COMMAND_SET_COLUMN_ADDRESS = 0x2a,
     MIPI_COMMAND_SET_PAGE_ADDRESS = 0x2b,
     MIPI_COMMAND_WRITE_MEMORY_START = 0x2c,
+    // Continues the write started by MIPI_COMMAND_WRITE_MEMORY_START at the
+    // current address counter instead of restarting at the window origin.
+    MIPI_COMMAND_WRITE_MEMORY_CONTINUE = 0x3c,
 };
