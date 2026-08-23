@@ -14,6 +14,12 @@
 #include "shared-bindings/_bleio/ScanEntry.h"
 #include "shared-bindings/_bleio/ScanResults.h"
 
+// Layout of one packet in the ring buffer, written by shared_module_bleio_scanresults_append() and
+// read back by common_hal_bleio_scanresults_next(): type, ticks_ms, rssi, address, address type,
+// data length, data. Both sides derive their sizes from these so the two cannot drift apart.
+#define SCAN_PACKET_LENGTH_OFFSET (sizeof(uint8_t) + sizeof(uint64_t) + sizeof(int8_t) + NUM_BLEIO_ADDRESS_BYTES + sizeof(uint8_t))
+#define SCAN_PACKET_HEADER_SIZE (SCAN_PACKET_LENGTH_OFFSET + sizeof(uint16_t))
+
 bleio_scanresults_obj_t *shared_module_bleio_new_scanresults(size_t buffer_size, uint8_t *prefixes, size_t prefixes_len, mp_int_t minimum_rssi) {
     bleio_scanresults_obj_t *self = mp_obj_malloc(bleio_scanresults_obj_t, &bleio_scanresults_type);
     ringbuf_alloc(&self->buf, buffer_size);
@@ -33,6 +39,22 @@ mp_obj_t common_hal_bleio_scanresults_next(bleio_scanresults_obj_t *self) {
 
     // Create a ScanEntry out of the data on the buffer.
 
+    // CIRCUITPY-CHANGE: the advertisement data object was allocated between
+    // common_hal_mcu_disable_interrupts() and common_hal_mcu_enable_interrupts(). That allocation
+    // can run the collector while the BLE host task is locked out, and when it fails it raises
+    // MemoryError, which skips the enable and leaves the lock held and the nesting count stuck: the
+    // interrupt watchdog then resets the board instead of the error reaching Python. Size the object
+    // from a peek and allocate before anything is removed, so a raise leaves the packet queued, the
+    // buffer consistent and the lock free.
+    uint16_t len = 0;
+    common_hal_mcu_disable_interrupts();
+    // append() writes each packet inside one critical section, so a non-empty buffer always starts
+    // with a whole packet and this peek cannot come up short.
+    ringbuf_peek_n(&self->buf, SCAN_PACKET_LENGTH_OFFSET, (uint8_t *)&len, sizeof(len));
+    common_hal_mcu_enable_interrupts();
+
+    mp_obj_str_t *o = MP_OBJ_TO_PTR(mp_obj_new_bytes_of_zeros(len));
+
     // Remove data atomically.
     common_hal_mcu_disable_interrupts();
 
@@ -45,10 +67,9 @@ mp_obj_t common_hal_bleio_scanresults_next(bleio_scanresults_obj_t *self) {
     uint8_t peer_addr[NUM_BLEIO_ADDRESS_BYTES];
     ringbuf_get_n(&self->buf, peer_addr, sizeof(peer_addr));
     uint8_t addr_type = ringbuf_get(&self->buf);
-    uint16_t len;
+    // Take the length back out of the buffer, but copy o->len bytes: that is what was allocated.
     ringbuf_get_n(&self->buf, (uint8_t *)&len, sizeof(len));
-    mp_obj_str_t *o = MP_OBJ_TO_PTR(mp_obj_new_bytes_of_zeros(len));
-    ringbuf_get_n(&self->buf, (uint8_t *)o->data, len);
+    ringbuf_get_n(&self->buf, (uint8_t *)o->data, o->len);
 
     common_hal_mcu_enable_interrupts();
 
@@ -98,8 +119,7 @@ void shared_module_bleio_scanresults_append(bleio_scanresults_obj_t *self,
     common_hal_mcu_disable_interrupts();
 
     // Check whether  will fit.
-    int32_t packet_size = sizeof(uint8_t) + sizeof(ticks_ms) + sizeof(rssi) + NUM_BLEIO_ADDRESS_BYTES +
-        sizeof(addr_type) + sizeof(len) + len;
+    int32_t packet_size = SCAN_PACKET_HEADER_SIZE + len;
     int32_t empty_space = self->buf.size - ringbuf_num_filled(&self->buf);
 
     if (packet_size <= empty_space) {
