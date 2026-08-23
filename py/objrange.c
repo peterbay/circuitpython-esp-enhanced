@@ -27,6 +27,7 @@
 #include <stdlib.h>
 
 #include "py/runtime.h"
+#include "py/smallint.h"
 
 /******************************************************************************/
 /* range iterator                                                             */
@@ -43,6 +44,11 @@ static mp_obj_t range_it_iternext(mp_obj_t o_in) {
     if ((o->step > 0 && o->cur < o->stop) || (o->step < 0 && o->cur > o->stop)) {
         mp_int_t cur = o->cur;
         o->cur += o->step;
+        // CIRCUITPY-CHANGE: every pass of a range loop lands here, and the value
+        // almost always fits in a small int, so do not pay for the call.
+        if (MP_SMALL_INT_FITS(cur)) {
+            return MP_OBJ_NEW_SMALL_INT(cur);
+        }
         return mp_obj_new_int(cur);
     } else {
         return MP_OBJ_STOP_ITERATION;

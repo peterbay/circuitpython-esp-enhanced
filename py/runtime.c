@@ -66,6 +66,20 @@
 #define DEBUG_OP_printf(...) (void)0
 #endif
 
+// CIRCUITPY-CHANGE: see the comment in mp_load_global.
+#if MICROPY_OPT_LOAD_GLOBAL_CACHE
+typedef struct {
+    qstr name;
+    const mp_map_t *globals;
+    uint32_t mutation;
+    mp_obj_t value;
+} mp_load_global_cache_t;
+
+// No explicit clearing needed anywhere: tearing a module down goes through
+// mp_map_clear or mp_map_deinit, both of which bump the mutation count.
+static mp_load_global_cache_t mp_load_global_cache[MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
+#endif
+
 const mp_obj_module_t mp_module___main__ = {
     .base = { &mp_type_module },
     .globals = (mp_obj_dict_t *)&MP_STATE_VM(dict_main),
@@ -244,7 +258,34 @@ mp_obj_t MICROPY_WRAP_MP_LOAD_NAME(mp_load_name)(qstr qst) {
 mp_obj_t MICROPY_WRAP_MP_LOAD_GLOBAL(mp_load_global)(qstr qst) {
     // logic: search globals, builtins
     DEBUG_OP_printf("load global %s\n", qstr_str(qst));
-    mp_map_elem_t *elem = mp_map_lookup(&mp_globals_get()->map, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);
+    mp_map_t *globals_map = &mp_globals_get()->map;
+
+    #if MICROPY_OPT_LOAD_GLOBAL_CACHE
+    // A name that lives in builtins costs two lookups: one that misses in the
+    // module's globals and one that finds it. The miss is the expensive half and
+    // nothing about it can be cached by the map lookup cache, which only records
+    // where a key was found. Remember the outcome instead, and keep it only while
+    // no map anywhere has gained or lost a key, because that is exactly when a
+    // module could have started shadowing the name.
+    //
+    // Only results from the constant builtins table are stored. Those values live
+    // in ROM, so the cache never holds a reference the collector would need to
+    // know about. When builtins have been overridden at runtime the cache steps
+    // aside completely.
+    mp_load_global_cache_t *cache_entry = &mp_load_global_cache[qst % MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
+    bool cacheable = true;
+    #if MICROPY_CAN_OVERRIDE_BUILTINS
+    cacheable = MP_STATE_VM(mp_module_builtins_override_dict) == NULL;
+    #endif
+    if (cacheable
+        && cache_entry->name == qst
+        && cache_entry->globals == globals_map
+        && cache_entry->mutation == mp_map_mutation_count) {
+        return cache_entry->value;
+    }
+    #endif
+
+    mp_map_elem_t *elem = mp_map_lookup(globals_map, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);
     if (elem == NULL) {
         #if MICROPY_CAN_OVERRIDE_BUILTINS
         if (MP_STATE_VM(mp_module_builtins_override_dict) != NULL) {
@@ -256,6 +297,14 @@ mp_obj_t MICROPY_WRAP_MP_LOAD_GLOBAL(mp_load_global)(qstr qst) {
         }
         #endif
         elem = mp_map_lookup((mp_map_t *)&mp_module_builtins_globals.map, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);
+        #if MICROPY_OPT_LOAD_GLOBAL_CACHE
+        if (elem != NULL && cacheable) {
+            cache_entry->name = qst;
+            cache_entry->globals = globals_map;
+            cache_entry->mutation = mp_map_mutation_count;
+            cache_entry->value = elem->value;
+        }
+        #endif
         if (elem == NULL) {
             #if MICROPY_ERROR_REPORTING <= MICROPY_ERROR_REPORTING_TERSE
             mp_raise_msg(&mp_type_NameError, MP_ERROR_TEXT("name not defined"));

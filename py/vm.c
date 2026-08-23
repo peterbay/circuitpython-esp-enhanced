@@ -32,6 +32,9 @@
 #include "py/emitglue.h"
 #include "py/objtype.h"
 #include "py/objfun.h"
+#include "py/objarray.h"
+#include "py/objstr.h"
+#include "py/smallint.h"
 #include "py/runtime.h"
 #include "py/bc0.h"
 #include "py/profile.h"
@@ -113,11 +116,103 @@
 #define TOP() (*sp)
 #define SET_TOP(val) *sp = (val)
 
+#if MICROPY_OPT_TRUTH_FAST_PATH
+// CIRCUITPY-CHANGE: mp_obj_is_true is a call out of this translation unit, and for
+// anything that is not a small int it then reaches the type's unary_op slot through
+// another indirect jump only to read a length. The containers whose length is right
+// there in the object are settled here; everything else is handed over unchanged.
+static inline bool vm_is_true(mp_obj_t o) {
+    if (mp_obj_is_small_int(o)) {
+        return o != MP_OBJ_NEW_SMALL_INT(0);
+    }
+    if (o == mp_const_false || o == mp_const_none) {
+        return false;
+    }
+    if (o == mp_const_true) {
+        return true;
+    }
+    if (mp_obj_is_obj(o)) {
+        // The layouts differ, so each type needs its own branch: a list keeps its
+        // length after the allocation size, a tuple right after the header, and a
+        // string after its hash.
+        const mp_obj_type_t *type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(o))->type;
+        if (type == &mp_type_list) {
+            return ((mp_obj_list_t *)MP_OBJ_TO_PTR(o))->len != 0;
+        }
+        if (type == &mp_type_tuple) {
+            return ((mp_obj_tuple_t *)MP_OBJ_TO_PTR(o))->len != 0;
+        }
+        if (type == &mp_type_dict) {
+            return ((mp_obj_dict_t *)MP_OBJ_TO_PTR(o))->map.used != 0;
+        }
+        if (type == &mp_type_str || type == &mp_type_bytes) {
+            return ((mp_obj_str_t *)MP_OBJ_TO_PTR(o))->len != 0;
+        }
+    }
+    return mp_obj_is_true(o);
+}
+#else
+#define vm_is_true(o) mp_obj_is_true(o)
+#endif
+
+#if MICROPY_OPT_CALL_BUILTIN_FAST_PATH
+// CIRCUITPY-CHANGE: a builtin reached through mp_call_function_n_kw costs a frame,
+// a type lookup, an indirect jump through the type's call slot, and then the slot
+// function's own frame and argument count check. All of that is decidable here.
+// Returns false for anything it does not handle, including a wrong argument count,
+// so the general path still reports the error.
+static inline bool vm_call_builtin(mp_obj_t fun, size_t n_args, const mp_obj_t *args, mp_obj_t *res) {
+    if (!mp_obj_is_obj(fun)) {
+        return false;
+    }
+    const mp_obj_type_t *type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(fun))->type;
+    const mp_obj_fun_builtin_fixed_t *f = MP_OBJ_TO_PTR(fun);
+    if (type == &mp_type_fun_builtin_1) {
+        if (n_args == 1) {
+            *res = f->fun._1(args[0]);
+            return true;
+        }
+    } else if (type == &mp_type_fun_builtin_2) {
+        if (n_args == 2) {
+            *res = f->fun._2(args[0], args[1]);
+            return true;
+        }
+    } else if (type == &mp_type_fun_builtin_var) {
+        const mp_obj_fun_builtin_var_t *v = MP_OBJ_TO_PTR(fun);
+        uint32_t sig = v->sig;
+        // The reverse of MP_OBJ_FUN_MAKE_SIG. Bit 0 says the function wants a
+        // keyword map, and then fun.var is the wrong member to call.
+        if ((sig & 1) == 0 && n_args >= (sig >> 17) && n_args <= ((sig >> 1) & 0xffff)) {
+            *res = v->fun.var(n_args, args);
+            return true;
+        }
+    } else if (type == &mp_type_fun_builtin_3) {
+        if (n_args == 3) {
+            *res = f->fun._3(args[0], args[1], args[2]);
+            return true;
+        }
+    } else if (type == &mp_type_fun_builtin_0) {
+        if (n_args == 0) {
+            *res = f->fun._0();
+            return true;
+        }
+    }
+    return false;
+}
+#endif
+
 #if MICROPY_PY_SYS_EXC_INFO
 #define CLEAR_SYS_EXC_INFO() MP_STATE_VM(cur_exception) = NULL;
 #else
 #define CLEAR_SYS_EXC_INFO()
 #endif
+
+// CIRCUITPY-CHANGE: keep code_state->exc_sp_idx in step with exc_sp. The dispatch
+// loop and the exception handler live in separate functions, so the handler cannot
+// see the loop's local exc_sp and has to rebuild it from the code state. Entering
+// and leaving a try block is rare next to ordinary opcodes, so the extra store
+// costs nothing measurable.
+#define SYNC_EXC_SP() (code_state->exc_sp_idx = MP_CODE_STATE_EXC_SP_IDX_FROM_PTR(exc_stack, exc_sp))
 
 #define PUSH_EXC_BLOCK(with_or_finally) do { \
     DECODE_ULABEL; /* except labels are always forward */ \
@@ -125,10 +220,12 @@
     exc_sp->handler = ip + ulab; \
     exc_sp->val_sp = MP_TAGPTR_MAKE(sp, ((with_or_finally) << 1)); \
     exc_sp->prev_exc = NULL; \
+    SYNC_EXC_SP(); \
 } while (0)
 
 #define POP_EXC_BLOCK() \
     exc_sp--; /* pop back to previous exception handler */ \
+    SYNC_EXC_SP(); \
     CLEAR_SYS_EXC_INFO() /* just clear sys.exc_info(), not compliant, but it shouldn't be used in 1st place */
 
 #define CANCEL_ACTIVE_FINALLY(sp) do { \
@@ -227,7 +324,12 @@ MP_NOINLINE static mp_obj_t *build_slice_stack_allocated(byte op, mp_obj_t *sp, 
 //  MP_VM_RETURN_NORMAL, sp valid, return value in *sp
 //  MP_VM_RETURN_YIELD, ip, sp valid, yielded value in *sp
 //  MP_VM_RETURN_EXCEPTION, exception in state[0]
-mp_vm_return_kind_t MICROPY_WRAP_MP_EXECUTE_BYTECODE(mp_execute_bytecode)(mp_code_state_t *code_state, volatile mp_obj_t inject_exc) {
+// CIRCUITPY-CHANGE: the dispatch loop is its own function so that the setjmp in
+// the wrapper below cannot pessimise it. A function containing setjmp has to keep
+// everything live across the call in memory, and on a register window machine the
+// wrapper also wants the compiler's own non-local goto, which constrains its frame
+// further. Keeping the two apart lets the loop compile as if no setjmp existed.
+static mp_vm_return_kind_t mp_execute_bytecode_loop(mp_code_state_t *code_state, mp_obj_t inject_exc) {
 
 #define SELECTIVE_EXC_IP (0)
 // When disabled, code_state->ip is updated unconditionally during op
@@ -281,11 +383,10 @@ mp_vm_return_kind_t MICROPY_WRAP_MP_EXECUTE_BYTECODE(mp_execute_bytecode)(mp_cod
     #define ENTRY_DEFAULT default
 #endif
 
-    // nlr_raise needs to be implemented as a goto, so that the C compiler's flow analyser
-    // sees that it's possible for us to jump from the dispatch loop to the exception
-    // handler.  Without this, the code may have a different stack layout in the dispatch
-    // loop and the exception handler, leading to very obscure bugs.
-    #define RAISE(o) do { nlr_pop(); nlr.ret_val = MP_OBJ_TO_PTR(o); goto exception_handler; } while (0)
+    // CIRCUITPY-CHANGE: the handler is in another function now, so a raise simply
+    // leaves this one. The flow analysis problem the goto used to work around
+    // cannot arise when the two are not sharing a frame.
+    #define RAISE(o) nlr_raise(o)
 
 #if MICROPY_STACKLESS
 run_code_state: ;
@@ -306,20 +407,16 @@ FRAME_SETUP();
         exc_stack = (mp_exc_stack_t*)(code_state->state + n_state);
     }
 
-    // variables that are visible to the exception handler (declared volatile)
-    mp_exc_stack_t *volatile exc_sp = MP_CODE_STATE_EXC_SP_IDX_TO_PTR(exc_stack, code_state->exc_sp_idx); // stack grows up, exc_sp points to top of stack
+    // No longer needs to be volatile: nothing longjmps back into this function, and
+    // the handler reads the position back out of code_state, see SYNC_EXC_SP.
+    mp_exc_stack_t *exc_sp = MP_CODE_STATE_EXC_SP_IDX_TO_PTR(exc_stack, code_state->exc_sp_idx); // stack grows up, exc_sp points to top of stack
 
     #if MICROPY_PY_THREAD_GIL && MICROPY_PY_THREAD_GIL_VM_DIVISOR
-    // This needs to be volatile and outside the VM loop so it persists across handling
-    // of any exceptions.  Otherwise it's possible that the VM never gives up the GIL.
-    volatile int gil_divisor = MICROPY_PY_THREAD_GIL_VM_DIVISOR;
+    int gil_divisor = MICROPY_PY_THREAD_GIL_VM_DIVISOR;
     #endif
 
-    // outer exception handling loop
-    for (;;) {
-        nlr_buf_t nlr;
-outer_dispatch_loop:
-        if (nlr_push(&nlr) == 0) {
+    {
+        {
             // local variables that are not visible to the exception handler
             const byte *ip = code_state->ip;
             mp_obj_t *sp = code_state->sp;
@@ -460,6 +557,44 @@ dispatch_loop:
                 ENTRY(MP_BC_LOAD_METHOD): {
                     MARK_EXC_IP_SELECTIVE();
                     DECODE_QSTR;
+                    // CIRCUITPY-CHANGE: loading an attribute has a shortcut here but
+                    // loading a method did not, even though it is the same shape of
+                    // lookup. The general path walks six calls to reach the two map
+                    // lookups that actually decide the answer: a miss in the instance
+                    // members, which cannot be skipped because an instance attribute
+                    // shadows a class method, and a hit in the class locals.
+                    //
+                    // Only a plain bytecode function is bound here. That is the one
+                    // case mp_convert_member_lookup turns into (method, self), and it
+                    // leaves staticmethod, classmethod, property and native functions
+                    // to the general path. __class__ is left alone too, because
+                    // mp_load_method_maybe answers it specially.
+                    #if MICROPY_OPT_LOAD_METHOD_FAST_PATH
+                    {
+                        mp_obj_t recv = *sp;
+                        if (mp_obj_is_obj(recv)) {
+                            const mp_obj_type_t *recv_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(recv))->type;
+                            if (mp_obj_is_instance_type(recv_type)
+                                && !(recv_type->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS)
+                                && qst != MP_QSTR___class__
+                                && MP_OBJ_TYPE_HAS_SLOT(recv_type, locals_dict)) {
+                                mp_obj_instance_t *self = MP_OBJ_TO_PTR(recv);
+                                mp_obj_t key = MP_OBJ_NEW_QSTR(qst);
+                                if (mp_map_lookup(&self->members, key, MP_MAP_LOOKUP) == NULL) {
+                                    mp_map_elem_t *found = mp_map_lookup(
+                                        &MP_OBJ_TYPE_GET_SLOT(recv_type, locals_dict)->map,
+                                        key, MP_MAP_LOOKUP);
+                                    if (found != NULL && mp_obj_is_type(found->value, &mp_type_fun_bc)) {
+                                        sp[0] = found->value;
+                                        sp[1] = recv;
+                                        sp += 1;
+                                        DISPATCH();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    #endif
                     mp_load_method(*sp, qst, sp);
                     sp += 1;
                     DISPATCH();
@@ -481,7 +616,65 @@ dispatch_loop:
                 ENTRY(MP_BC_LOAD_SUBSCR): {
                     MARK_EXC_IP_SELECTIVE();
                     mp_obj_t index = POP();
-                    SET_TOP(mp_obj_subscr(TOP(), index, MP_OBJ_SENTINEL));
+                    // CIRCUITPY-CHANGE: a list or tuple indexed by a plain in-range
+                    // index is the overwhelmingly common case and reaching it through
+                    // mp_obj_subscr costs several calls and type tests. Only a small
+                    // int has bit 0 set in this object representation, so the test is
+                    // one and. Negative and out of range indices, and everything else,
+                    // fall through to the general path untouched.
+                    mp_obj_t base = TOP();
+                    #if MICROPY_OPT_DICT_SUBSCR_FAST_PATH
+                    // A dict key is usually not an integer, so this cannot sit under
+                    // the small int test below. Comparing the type exactly keeps
+                    // OrderedDict and subclasses on the general path, and a miss falls
+                    // through so that the general path still raises KeyError.
+                    if (mp_obj_is_obj(base)
+                        && ((mp_obj_base_t *)MP_OBJ_TO_PTR(base))->type == &mp_type_dict) {
+                        mp_map_elem_t *elem = mp_map_lookup(
+                            &((mp_obj_dict_t *)MP_OBJ_TO_PTR(base))->map, index, MP_MAP_LOOKUP);
+                        if (elem != NULL) {
+                            SET_TOP(elem->value);
+                            DISPATCH();
+                        }
+                    }
+                    #endif
+                    // CIRCUITPY-CHANGE: bit 0 is only a small-int marker in object
+                    // representations A and C. In B and D a qstr object has it too, so a
+                    // run-time qstr could enter the integer path and have its index read
+                    // as a number. This port uses C, but py/ is shared.
+                    if (mp_obj_is_small_int(index) && mp_obj_is_obj(base)) {
+                        // The two layouts differ: a tuple carries its items inline,
+                        // a list keeps a pointer to them. Comparing the type exactly
+                        // also keeps subclasses on the general path, where their
+                        // overrides still apply.
+                        const mp_obj_type_t *base_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(base))->type;
+                        mp_int_t i = MP_OBJ_SMALL_INT_VALUE(index);
+                        if (i >= 0) {
+                            if (base_type == &mp_type_list) {
+                                mp_obj_list_t *seq = MP_OBJ_TO_PTR(base);
+                                if ((size_t)i < seq->len) {
+                                    SET_TOP(seq->items[i]);
+                                    DISPATCH();
+                                }
+                            } else if (base_type == &mp_type_tuple) {
+                                mp_obj_tuple_t *seq = MP_OBJ_TO_PTR(base);
+                                if ((size_t)i < seq->len) {
+                                    SET_TOP(seq->items[i]);
+                                    DISPATCH();
+                                }
+                            }
+                            #if MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH && MICROPY_PY_BUILTINS_BYTEARRAY
+                            else if (base_type == &mp_type_bytearray) {
+                                mp_obj_array_t *ba = MP_OBJ_TO_PTR(base);
+                                if ((size_t)i < ba->len) {
+                                    SET_TOP(MP_OBJ_NEW_SMALL_INT(((uint8_t *)ba->items)[i]));
+                                    DISPATCH();
+                                }
+                            }
+                            #endif
+                        }
+                    }
+                    SET_TOP(mp_obj_subscr(base, index, MP_OBJ_SENTINEL));
                     DISPATCH();
                 }
 
@@ -515,16 +708,91 @@ dispatch_loop:
                     FRAME_UPDATE();
                     MARK_EXC_IP_SELECTIVE();
                     DECODE_QSTR;
+                    // CIRCUITPY-CHANGE: the counterpart of the load fast path above.
+                    // A class without property or descriptors stores straight into the
+                    // instance members map; that is exactly what
+                    // mp_obj_instance_store_attr does once it has skipped the special
+                    // accessor checks, only it gets there through several calls.
+                    #if MICROPY_OPT_LOAD_ATTR_FAST_PATH
+                    {
+                        mp_obj_t dest_obj = sp[0];
+                        if (mp_obj_is_obj(dest_obj)) {
+                            const mp_obj_type_t *dest_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(dest_obj))->type;
+                            if (mp_obj_is_instance_type(dest_type)
+                                && !(dest_type->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS)) {
+                                mp_obj_instance_t *self = MP_OBJ_TO_PTR(dest_obj);
+                                mp_map_lookup(&self->members, MP_OBJ_NEW_QSTR(qst),
+                                    MP_MAP_LOOKUP_ADD_IF_NOT_FOUND)->value = sp[-1];
+                                sp -= 2;
+                                DISPATCH();
+                            }
+                        }
+                    }
+                    #endif
                     mp_store_attr(sp[0], qst, sp[-1]);
                     sp -= 2;
                     DISPATCH();
                 }
 
-                ENTRY(MP_BC_STORE_SUBSCR):
+                ENTRY(MP_BC_STORE_SUBSCR): {
                     MARK_EXC_IP_SELECTIVE();
-                    mp_obj_subscr(sp[-1], sp[0], sp[-2]);
+                    // CIRCUITPY-CHANGE: same shortcut as the load above, list only,
+                    // since a tuple cannot be assigned to.
+                    mp_obj_t index = sp[0];
+                    mp_obj_t base = sp[-1];
+                    mp_obj_t value = sp[-2];
+                    // "del base[index]" is compiled as a store of MP_OBJ_NULL, which
+                    // mp_obj_subscr reads as a delete. None of the shortcuts below can
+                    // handle that, so leave it to the general path.
+                    if (value != MP_OBJ_NULL) {
+                        #if MICROPY_OPT_DICT_SUBSCR_FAST_PATH
+                        // Same as the load above. This is what mp_obj_dict_store does,
+                        // three frames further down.
+                        // CIRCUITPY-CHANGE: the general path calls mp_ensure_not_fixed()
+                        // first and raises TypeError for a fixed map; this shortcut went
+                        // straight to mp_map_lookup with ADD_IF_NOT_FOUND. A fixed dict is
+                        // reachable from Python as a builtin module's __dict__, and those
+                        // tables can live in ROM, so the shortcut turned a controlled
+                        // exception into an assert or a write to read-only memory.
+                        if (mp_obj_is_obj(base)
+                            && ((mp_obj_base_t *)MP_OBJ_TO_PTR(base))->type == &mp_type_dict
+                            && !((mp_obj_dict_t *)MP_OBJ_TO_PTR(base))->map.is_fixed) {
+                            mp_map_lookup(&((mp_obj_dict_t *)MP_OBJ_TO_PTR(base))->map, index,
+                                MP_MAP_LOOKUP_ADD_IF_NOT_FOUND)->value = value;
+                            sp -= 3;
+                            DISPATCH();
+                        }
+                        #endif
+                        if (mp_obj_is_small_int(index) && mp_obj_is_obj(base)) {
+                            const mp_obj_type_t *base_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(base))->type;
+                            mp_int_t i = MP_OBJ_SMALL_INT_VALUE(index);
+                            if (base_type == &mp_type_list) {
+                                mp_obj_list_t *seq = MP_OBJ_TO_PTR(base);
+                                if (i >= 0 && (size_t)i < seq->len) {
+                                    seq->items[i] = value;
+                                    sp -= 3;
+                                    DISPATCH();
+                                }
+                            }
+                            #if MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH && MICROPY_PY_BUILTINS_BYTEARRAY
+                            // Only plain small ints in range; anything else falls through
+                            // so that the generic path reports the overflow.
+                            else if (base_type == &mp_type_bytearray && (((mp_int_t)value) & 1) != 0) {
+                                mp_obj_array_t *ba = MP_OBJ_TO_PTR(base);
+                                mp_uint_t val = (mp_uint_t)MP_OBJ_SMALL_INT_VALUE(value);
+                                if (i >= 0 && (size_t)i < ba->len && val <= 255) {
+                                    ((uint8_t *)ba->items)[i] = (uint8_t)val;
+                                    sp -= 3;
+                                    DISPATCH();
+                                }
+                            }
+                            #endif
+                        }
+                    }
+                    mp_obj_subscr(base, index, value);
                     sp -= 3;
                     DISPATCH();
+                }
 
                 ENTRY(MP_BC_DELETE_FAST): {
                     MARK_EXC_IP_SELECTIVE();
@@ -599,7 +867,7 @@ dispatch_loop:
 
                 ENTRY(MP_BC_POP_JUMP_IF_TRUE): {
                     DECODE_SLABEL;
-                    if (mp_obj_is_true(POP())) {
+                    if (vm_is_true(POP())) {
                         ip += slab;
                     }
                     DISPATCH_WITH_PEND_EXC_CHECK();
@@ -607,7 +875,7 @@ dispatch_loop:
 
                 ENTRY(MP_BC_POP_JUMP_IF_FALSE): {
                     DECODE_SLABEL;
-                    if (!mp_obj_is_true(POP())) {
+                    if (!vm_is_true(POP())) {
                         ip += slab;
                     }
                     DISPATCH_WITH_PEND_EXC_CHECK();
@@ -615,7 +883,7 @@ dispatch_loop:
 
                 ENTRY(MP_BC_JUMP_IF_TRUE_OR_POP): {
                     DECODE_ULABEL;
-                    if (mp_obj_is_true(TOP())) {
+                    if (vm_is_true(TOP())) {
                         ip += ulab;
                     } else {
                         sp--;
@@ -625,7 +893,7 @@ dispatch_loop:
 
                 ENTRY(MP_BC_JUMP_IF_FALSE_OR_POP): {
                     DECODE_ULABEL;
-                    if (mp_obj_is_true(TOP())) {
+                    if (vm_is_true(TOP())) {
                         sp--;
                     } else {
                         ip += ulab;
@@ -816,7 +1084,25 @@ unwind_jump:;
                     } else {
                         obj = MP_OBJ_FROM_PTR(&sp[-MP_OBJ_ITER_BUF_NSLOTS + 1]);
                     }
-                    mp_obj_t value = mp_iternext_allow_raise(obj);
+                    // CIRCUITPY-CHANGE: a plain iterator, which is what range, list,
+                    // tuple, str and dict all produce, only needs its iternext slot
+                    // called. Doing that here saves the frame into mp_iternext_allow_raise
+                    // on every single pass of every loop. The test picks out types whose
+                    // iter slot really is iternext and are not streams, where the slot
+                    // means something else; everything else falls through unchanged.
+                    mp_obj_t value;
+                    #if MICROPY_OPT_ITERNEXT_FAST_PATH
+                    if (mp_obj_is_obj(obj)
+                        && (((mp_obj_base_t *)MP_OBJ_TO_PTR(obj))->type->flags
+                            & MP_TYPE_FLAG_ITER_IS_STREAM) == MP_TYPE_FLAG_ITER_IS_ITERNEXT) {
+                        const mp_obj_type_t *it_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(obj))->type;
+                        MP_STATE_THREAD(stop_iteration_arg) = MP_OBJ_NULL;
+                        value = ((mp_fun_1_t)MP_OBJ_TYPE_GET_SLOT(it_type, iter))(obj);
+                    } else
+                    #endif
+                    {
+                        value = mp_iternext_allow_raise(obj);
+                    }
                     if (value == MP_OBJ_STOP_ITERATION) {
                         sp -= MP_OBJ_ITER_BUF_NSLOTS; // pop the exhausted iterator
                         ip += ulab; // jump to after for-block
@@ -1003,6 +1289,21 @@ unwind_jump:;
                         }
                     }
                     #endif
+                    #if MICROPY_OPT_CALL_FUN_BC_FAST_PATH
+                    if (mp_obj_is_type(*sp, &mp_type_fun_bc)) {
+                        SET_TOP(mp_obj_fun_bc_call(*sp, unum & 0xff, (unum >> 8) & 0xff, sp + 1));
+                        DISPATCH();
+                    }
+                    #endif
+                    #if MICROPY_OPT_CALL_BUILTIN_FAST_PATH
+                    if (((unum >> 8) & 0xff) == 0) {
+                        mp_obj_t res;
+                        if (vm_call_builtin(*sp, unum & 0xff, sp + 1, &res)) {
+                            SET_TOP(res);
+                            DISPATCH();
+                        }
+                    }
+                    #endif
                     SET_TOP(mp_call_function_n_kw(*sp, unum & 0xff, (unum >> 8) & 0xff, sp + 1));
                     DISPATCH();
                 }
@@ -1085,6 +1386,26 @@ unwind_jump:;
                             code_state = new_state;
                             nlr_pop();
                             goto run_code_state;
+                        }
+                    }
+                    #endif
+                    #if MICROPY_OPT_CALL_FUN_BC_FAST_PATH
+                    if (mp_obj_is_type(*sp, &mp_type_fun_bc)) {
+                        size_t adjust = (sp[1] == MP_OBJ_NULL) ? 0 : 1;
+                        SET_TOP(mp_obj_fun_bc_call(*sp, (unum & 0xff) + adjust,
+                            (unum >> 8) & 0xff, sp + 2 - adjust));
+                        // CIRCUITPY-CHANGE
+                        DISPATCH_WITH_PEND_EXC_CHECK();
+                    }
+                    #endif
+                    #if MICROPY_OPT_CALL_BUILTIN_FAST_PATH
+                    if (((unum >> 8) & 0xff) == 0) {
+                        size_t adjust = (sp[1] == MP_OBJ_NULL) ? 0 : 1;
+                        mp_obj_t res;
+                        if (vm_call_builtin(*sp, (unum & 0xff) + adjust, sp + 2 - adjust, &res)) {
+                            SET_TOP(res);
+                            // CIRCUITPY-CHANGE
+                            DISPATCH_WITH_PEND_EXC_CHECK();
                         }
                     }
                     #endif
@@ -1173,7 +1494,7 @@ unwind_return:
                         }
                         POP_EXC_BLOCK();
                     }
-                    nlr_pop();
+                    // CIRCUITPY-CHANGE: the wrapper owns the nlr buffer and pops it.
                     code_state->sp = sp;
                     assert(exc_sp == exc_stack - 1);
                     MICROPY_VM_HOOK_RETURN
@@ -1242,7 +1563,6 @@ unwind_return:
 
                 ENTRY(MP_BC_YIELD_VALUE):
 yield:
-                    nlr_pop();
                     code_state->ip = ip;
                     code_state->sp = sp;
                     code_state->exc_sp_idx = MP_CODE_STATE_EXC_SP_IDX_FROM_PTR(exc_stack, exc_sp);
@@ -1331,9 +1651,135 @@ yield:
 
                 ENTRY(MP_BC_BINARY_OP_MULTI): {
                     MARK_EXC_IP_SELECTIVE();
+                    mp_uint_t op = ip[-1] - MP_BC_BINARY_OP_MULTI;
                     mp_obj_t rhs = POP();
                     mp_obj_t lhs = TOP();
-                    SET_TOP(mp_binary_op(ip[-1] - MP_BC_BINARY_OP_MULTI, lhs, rhs));
+                    // CIRCUITPY-CHANGE: settle the common case here instead of
+                    // walking into mp_binary_op, which first works through four
+                    // operator comparisons and a jump table before it even asks
+                    // what the operands are. Both operands being small ints is the
+                    // one case worth the code: with this object representation a
+                    // small int is the only value with bit 0 set, so the test
+                    // cannot let a float through, and the tag keeps the ordering
+                    // of the values, so a comparison is just a comparison of the
+                    // tagged words. Anything else falls through unchanged.
+                    if ((((mp_int_t)lhs) & ((mp_int_t)rhs) & 1) != 0) {
+                        switch (op) {
+                            case MP_BINARY_OP_LESS:
+                                SET_TOP(mp_obj_new_bool((mp_int_t)lhs < (mp_int_t)rhs));
+                                DISPATCH();
+                            case MP_BINARY_OP_MORE:
+                                SET_TOP(mp_obj_new_bool((mp_int_t)lhs > (mp_int_t)rhs));
+                                DISPATCH();
+                            case MP_BINARY_OP_LESS_EQUAL:
+                                SET_TOP(mp_obj_new_bool((mp_int_t)lhs <= (mp_int_t)rhs));
+                                DISPATCH();
+                            case MP_BINARY_OP_MORE_EQUAL:
+                                SET_TOP(mp_obj_new_bool((mp_int_t)lhs >= (mp_int_t)rhs));
+                                DISPATCH();
+                            case MP_BINARY_OP_EQUAL:
+                                SET_TOP(mp_obj_new_bool(lhs == rhs));
+                                DISPATCH();
+                            case MP_BINARY_OP_NOT_EQUAL:
+                                SET_TOP(mp_obj_new_bool(lhs != rhs));
+                                DISPATCH();
+                            case MP_BINARY_OP_ADD:
+                            case MP_BINARY_OP_INPLACE_ADD: {
+                                mp_int_t v = MP_OBJ_SMALL_INT_VALUE(lhs) + MP_OBJ_SMALL_INT_VALUE(rhs);
+                                if (MP_SMALL_INT_FITS(v)) {
+                                    SET_TOP(MP_OBJ_NEW_SMALL_INT(v));
+                                    DISPATCH();
+                                }
+                                break;
+                            }
+                            case MP_BINARY_OP_SUBTRACT:
+                            case MP_BINARY_OP_INPLACE_SUBTRACT: {
+                                mp_int_t v = MP_OBJ_SMALL_INT_VALUE(lhs) - MP_OBJ_SMALL_INT_VALUE(rhs);
+                                if (MP_SMALL_INT_FITS(v)) {
+                                    SET_TOP(MP_OBJ_NEW_SMALL_INT(v));
+                                    DISPATCH();
+                                }
+                                break;
+                            }
+                            // The bitwise operations need no unpacking at all. With
+                            // the tag being the low bit, and & b keeps it set and
+                            // or does too, so the tagged words can be combined
+                            // directly; xor clears it, so it is put back. The
+                            // result always fits: a small int has its top two bits
+                            // equal, and a bitwise operation of two such values
+                            // keeps that true, so no range check is needed.
+                            case MP_BINARY_OP_AND:
+                            case MP_BINARY_OP_INPLACE_AND:
+                                SET_TOP((mp_obj_t)((mp_int_t)lhs & (mp_int_t)rhs));
+                                DISPATCH();
+                            case MP_BINARY_OP_OR:
+                            case MP_BINARY_OP_INPLACE_OR:
+                                SET_TOP((mp_obj_t)((mp_int_t)lhs | (mp_int_t)rhs));
+                                DISPATCH();
+                            case MP_BINARY_OP_XOR:
+                            case MP_BINARY_OP_INPLACE_XOR:
+                                SET_TOP((mp_obj_t)(((mp_int_t)lhs ^ (mp_int_t)rhs) | 1));
+                                DISPATCH();
+                            case MP_BINARY_OP_MULTIPLY:
+                            case MP_BINARY_OP_INPLACE_MULTIPLY: {
+                                mp_int_t v;
+                                if (!mp_mul_mp_int_t_overflow(MP_OBJ_SMALL_INT_VALUE(lhs),
+                                    MP_OBJ_SMALL_INT_VALUE(rhs), &v) && MP_SMALL_INT_FITS(v)) {
+                                    SET_TOP(MP_OBJ_NEW_SMALL_INT(v));
+                                    DISPATCH();
+                                }
+                                break;
+                            }
+                            case MP_BINARY_OP_FLOOR_DIVIDE:
+                            case MP_BINARY_OP_INPLACE_FLOOR_DIVIDE: {
+                                mp_int_t d = MP_OBJ_SMALL_INT_VALUE(rhs);
+                                if (d != 0) {
+                                    // Overflows only for MIN // -1, caught by the fits test.
+                                    mp_int_t v = mp_small_int_floor_divide(MP_OBJ_SMALL_INT_VALUE(lhs), d);
+                                    if (MP_SMALL_INT_FITS(v)) {
+                                        SET_TOP(MP_OBJ_NEW_SMALL_INT(v));
+                                        DISPATCH();
+                                    }
+                                }
+                                break;
+                            }
+                            case MP_BINARY_OP_MODULO:
+                            case MP_BINARY_OP_INPLACE_MODULO: {
+                                mp_int_t d = MP_OBJ_SMALL_INT_VALUE(rhs);
+                                if (d != 0) {
+                                    mp_int_t v = mp_small_int_modulo(MP_OBJ_SMALL_INT_VALUE(lhs), d);
+                                    if (MP_SMALL_INT_FITS(v)) {
+                                        SET_TOP(MP_OBJ_NEW_SMALL_INT(v));
+                                        DISPATCH();
+                                    }
+                                }
+                                break;
+                            }
+                            case MP_BINARY_OP_LSHIFT:
+                            case MP_BINARY_OP_INPLACE_LSHIFT: {
+                                mp_int_t l = MP_OBJ_SMALL_INT_VALUE(lhs);
+                                mp_int_t r = MP_OBJ_SMALL_INT_VALUE(rhs);
+                                if (r >= 0 && r < (mp_int_t)(sizeof(mp_int_t) * MP_BITS_PER_BYTE)
+                                    && l <= (MP_SMALL_INT_MAX >> r) && l >= (MP_SMALL_INT_MIN >> r)) {
+                                    SET_TOP(MP_OBJ_NEW_SMALL_INT((mp_uint_t)l << r));
+                                    DISPATCH();
+                                }
+                                break;
+                            }
+                            case MP_BINARY_OP_RSHIFT:
+                            case MP_BINARY_OP_INPLACE_RSHIFT: {
+                                mp_int_t r = MP_OBJ_SMALL_INT_VALUE(rhs);
+                                if (r >= 0 && r < (mp_int_t)(sizeof(mp_int_t) * MP_BITS_PER_BYTE)) {
+                                    SET_TOP(MP_OBJ_NEW_SMALL_INT(MP_OBJ_SMALL_INT_VALUE(lhs) >> r));
+                                    DISPATCH();
+                                }
+                                break;
+                            }
+                            default:
+                                break;
+                        }
+                    }
+                    SET_TOP(mp_binary_op(op, lhs, rhs));
                     DISPATCH();
                 }
 
@@ -1362,7 +1808,6 @@ yield:
                 #endif // MICROPY_OPT_COMPUTED_GOTO
                 {
                     mp_obj_t obj = mp_obj_new_exception_msg(&mp_type_NotImplementedError, MP_ERROR_TEXT("opcode"));
-                    nlr_pop();
                     code_state->state[0] = obj;
                     FRAME_LEAVE();
                     return MP_VM_RETURN_EXCEPTION;
@@ -1427,8 +1872,34 @@ pending_exception_check:
 
             } // for loop
 
+        }
+    }
+}
+
+// CIRCUITPY-CHANGE: wrapper holding the setjmp and the exception handler. Kept
+// small on purpose; everything the handler needs it reads back out of code_state.
+mp_vm_return_kind_t MICROPY_WRAP_MP_EXECUTE_BYTECODE(mp_execute_bytecode)(mp_code_state_t *code_state, volatile mp_obj_t inject_exc) {
+    mp_obj_t *fastn;
+    mp_exc_stack_t *exc_stack;
+    {
+        size_t n_state = code_state->n_state;
+        fastn = &code_state->state[n_state - 1];
+        exc_stack = (mp_exc_stack_t *)(code_state->state + n_state);
+    }
+    (void)fastn;
+    mp_exc_stack_t *exc_sp = MP_CODE_STATE_EXC_SP_IDX_TO_PTR(exc_stack, code_state->exc_sp_idx);
+
+    for (;;) {
+        nlr_buf_t nlr;
+        if (nlr_push(&nlr) == 0) {
+            mp_vm_return_kind_t kind = mp_execute_bytecode_loop(code_state, inject_exc);
+            nlr_pop();
+            return kind;
         } else {
-exception_handler:
+            // The loop keeps code_state->exc_sp_idx current, so this is where the
+            // handler picks the exception stack position back up.
+            exc_sp = MP_CODE_STATE_EXC_SP_IDX_TO_PTR(exc_stack, code_state->exc_sp_idx);
+            inject_exc = MP_OBJ_NULL;
             // exception occurred
 
             #if MICROPY_PY_SYS_EXC_INFO
@@ -1447,14 +1918,14 @@ exception_handler:
                     DECODE_ULABEL; // the jump offset if iteration finishes; for labels are always forward
                     code_state->ip = ip + ulab; // jump to after for-block
                     code_state->sp -= MP_OBJ_ITER_BUF_NSLOTS; // pop the exhausted iterator
-                    goto outer_dispatch_loop; // continue with dispatch loop
+                    continue; // CIRCUITPY-CHANGE: back to the wrapper loop, which re-enters dispatch
                 } else if (*code_state->ip == MP_BC_YIELD_FROM) {
                     // StopIteration inside yield from call means return a value of
                     // yield from, so inject exception's value as yield from's result
                     // (Instead of stack pop then push we just replace exhausted gen with value)
                     *code_state->sp = mp_obj_exception_get_value(MP_OBJ_FROM_PTR(nlr.ret_val));
                     code_state->ip++; // yield from is over, move to next instruction
-                    goto outer_dispatch_loop; // continue with dispatch loop
+                    continue; // CIRCUITPY-CHANGE: back to the wrapper loop, which re-enters dispatch
                 }
             }
 
