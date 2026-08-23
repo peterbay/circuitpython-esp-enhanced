@@ -27,3 +27,40 @@ void common_hal_hashlib_hash_digest(hashlib_hash_obj_t *self, uint8_t *data, siz
 size_t common_hal_hashlib_hash_get_digest_size(hashlib_hash_obj_t *self) {
     return PSA_HASH_LENGTH(self->hash_alg);
 }
+
+// CIRCUITPY-CHANGE: the block size HMAC pads its key to. It is a property of the
+// algorithm rather than of the operation, so it comes from the identifier.
+size_t common_hal_hashlib_hash_get_block_size(hashlib_hash_obj_t *self) {
+    return PSA_HASH_BLOCK_LENGTH(self->hash_alg);
+}
+
+// CIRCUITPY-CHANGE: CPython names the algorithm on the object, and both
+// adafruit_hashlib and circuitpython_hmac read it.
+const char *common_hal_hashlib_hash_get_name(hashlib_hash_obj_t *self) {
+    switch (self->hash_alg) {
+        case PSA_ALG_MD5:
+            return "md5";
+        case PSA_ALG_SHA_1:
+            return "sha1";
+        case PSA_ALG_SHA_224:
+            return "sha224";
+        case PSA_ALG_SHA_256:
+            return "sha256";
+        case PSA_ALG_SHA_384:
+            return "sha384";
+        case PSA_ALG_SHA_512:
+            return "sha512";
+        default:
+            return "unknown";
+    }
+}
+
+// CIRCUITPY-CHANGE: HMAC has to fork a partially fed state, and both
+// adafruit_hashlib and circuitpython_hmac test for this method before using it.
+// psa_hash_clone requires an inactive destination, which is what
+// psa_hash_operation_init leaves behind.
+void common_hal_hashlib_hash_copy(hashlib_hash_obj_t *self, hashlib_hash_obj_t *other) {
+    other->hash_alg = self->hash_alg;
+    other->hash_op = psa_hash_operation_init();
+    psa_hash_clone(&self->hash_op, &other->hash_op);
+}
