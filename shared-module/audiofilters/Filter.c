@@ -225,7 +225,9 @@ audioio_get_buffer_result_t audiofilters_filter_get_buffer(audiofilters_filter_o
                     }
 
                     // Process biquad filters
-                    for (uint8_t j = 0; j < self->filter.objs_len; j++) {
+                    // CIRCUITPY-CHANGE: objs_len is a size_t, so a uint8_t counter wrapped
+                    // back to zero at 256 filters and the loop never terminated.
+                    for (size_t j = 0; j < self->filter.objs_len; j++) {
                         mp_obj_t filter_obj = self->filter.objs[j];
                         common_hal_synthio_biquad_tick(filter_obj);
                         for (uint8_t k = 0; k < self->base.channel_count; k++) {
