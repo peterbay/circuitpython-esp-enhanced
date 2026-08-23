@@ -78,10 +78,40 @@ static void release_current_glyph(displayio_tilegrid_t *tilegrid, mp_obj_t font,
         return;
     }
     uint16_t current_tile = common_hal_displayio_tilegrid_get_tile(tilegrid, x, y);
-    if (current_tile == 0) {
-    }
+    // CIRCUITPY-CHANGE: an empty "if (current_tile == 0) {}" stood here. It is dropped
+    // rather than given a body: lvfontio hands out slot 0 like any other, so a cell
+    // showing it owns a reference that has to come back. Skipping slot 0 would pin it for
+    // the lifetime of the font and let its uint16_t count wrap once the character living
+    // there had been written 65536 times, after which it would be evicted on screen.
     common_hal_lvfontio_ondiskfont_release_glyph(MP_OBJ_TO_PTR(font), current_tile);
     #endif
+}
+
+// CIRCUITPY-CHANGE: the release above deliberately happens before the replacement glyph
+// is cached, so that on a full terminal the outgoing cell's slot can be reused by the
+// incoming one. But every path that then left the cell unchanged kept the lost reference,
+// so a slot still on screen looked unused and was handed out under the cell displaying
+// it. Those paths give the reference back through here.
+static void reacquire_current_glyph(displayio_tilegrid_t *tilegrid, mp_obj_t font, uint16_t x, uint16_t y) {
+    #if CIRCUITPY_LVFONTIO
+    if (!mp_obj_is_type(font, &lvfontio_ondiskfont_type)) {
+        return;
+    }
+    uint16_t current_tile = common_hal_displayio_tilegrid_get_tile(tilegrid, x, y);
+    common_hal_lvfontio_ondiskfont_retain_glyph(MP_OBJ_TO_PTR(font), current_tile);
+    #endif
+}
+
+// CIRCUITPY-CHANGE: how many cells a character covers has to be known before any cell is
+// released, so that a full-width glyph has both of the slots it needs free by the time it
+// is cached. Fonts without full-width glyphs answer false without any work.
+static bool character_is_full_width(mp_obj_t font, mp_uint_t character) {
+    #if CIRCUITPY_LVFONTIO
+    if (mp_obj_is_type(font, &lvfontio_ondiskfont_type)) {
+        return common_hal_lvfontio_ondiskfont_is_full_width(MP_OBJ_TO_PTR(font), character);
+    }
+    #endif
+    return false;
 }
 
 static void terminalio_terminal_set_tile(terminalio_terminal_obj_t *self, bool status_bar, mp_uint_t character, bool release_glyphs) {
@@ -97,35 +127,73 @@ static void terminalio_terminal_set_tile(terminalio_terminal_obj_t *self, bool s
         w = self->status_bar->width_in_tiles;
         h = self->status_bar->height_in_tiles;
     }
-    if (release_glyphs) {
-        release_current_glyph(tilegrid, self->font, *x, *y);
-    }
-    bool is_full_width;
-    uint16_t new_tile = terminalio_terminal_get_glyph_index(self->font, character, &is_full_width);
-    if (new_tile == 0xffff) {
-        // Missing glyph.
-        return;
-    }
+    // CIRCUITPY-CHANGE: only the cell under the cursor was released before the glyph was
+    // cached, and the second cell of a full-width glyph not until afterwards. A full-width
+    // glyph needs two adjacent free slots, which a single release can never produce, so on
+    // a saturated cache it was refused and the cell kept its old character. Ask how wide
+    // the character is first and release every cell it will cover, which is what frees the
+    // slot pair the outgoing full-width character was holding.
+    bool wide = character_is_full_width(self->font, character);
+
     // If there is only half width left, then fill it with a space and wrap to the next line.
-    if (is_full_width && *x == w - 1) {
-        uint16_t space = terminalio_terminal_get_glyph_index(self->font, ' ', NULL);
-        common_hal_displayio_tilegrid_set_tile(tilegrid, *x, *y, space);
-        *x = *x + 1;
-        wrap_cursor(w, h, x, y);
+    if (wide && *x == w - 1) {
         if (release_glyphs) {
             release_current_glyph(tilegrid, self->font, *x, *y);
         }
+        uint16_t space = terminalio_terminal_get_glyph_index(self->font, ' ', NULL);
+        // CIRCUITPY-CHANGE: the space was stored without checking for the missing-glyph
+        // marker. 0xffff is past tiles_in_bitmap, so set_tile raised ValueError with no
+        // nlr handler above it on the supervisor's terminal, and it is the other way the
+        // cell released just above was left unreplaced with its reference gone.
+        if (space != 0xffff) {
+            common_hal_displayio_tilegrid_set_tile(tilegrid, *x, *y, space);
+        } else if (release_glyphs) {
+            reacquire_current_glyph(tilegrid, self->font, *x, *y);
+        }
+        *x = *x + 1;
+        wrap_cursor(w, h, x, y);
+    }
+
+    // The cell after the cursor, which a full-width character covers as well.
+    uint16_t second_x = *x + 1;
+    uint16_t second_y = *y;
+    wrap_cursor(w, h, &second_x, &second_y);
+    bool second_released = wide && release_glyphs;
+    if (release_glyphs) {
+        release_current_glyph(tilegrid, self->font, *x, *y);
+        if (second_released) {
+            release_current_glyph(tilegrid, self->font, second_x, second_y);
+        }
+    }
+
+    bool is_full_width;
+    uint16_t new_tile = terminalio_terminal_get_glyph_index(self->font, character, &is_full_width);
+    if (new_tile == 0xffff) {
+        // Missing glyph. Nothing was cached, so both cells keep what they were showing and
+        // both released references go back to the slots that are still on screen.
+        if (release_glyphs) {
+            reacquire_current_glyph(tilegrid, self->font, *x, *y);
+            if (second_released) {
+                reacquire_current_glyph(tilegrid, self->font, second_x, second_y);
+            }
+        }
+        return;
     }
     common_hal_displayio_tilegrid_set_tile(tilegrid, *x, *y, new_tile);
     *x = *x + 1;
     wrap_cursor(w, h, x, y);
     if (is_full_width) {
-        if (release_glyphs) {
+        // The width above is a prediction, so the second cell may still hold its reference.
+        if (release_glyphs && !second_released) {
             release_current_glyph(tilegrid, self->font, *x, *y);
         }
         common_hal_displayio_tilegrid_set_tile(tilegrid, *x, *y, new_tile + 1);
         *x = *x + 1;
         wrap_cursor(w, h, x, y);
+    } else if (second_released) {
+        // Released for a character that did not turn out to be full width after all. The
+        // cell is left as it was, so it keeps its reference.
+        reacquire_current_glyph(tilegrid, self->font, second_x, second_y);
     }
 }
 
@@ -202,11 +270,35 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
 
     const byte *i = data;
     uint16_t start_y = self->cursor_y;
+
+    // CIRCUITPY-CHANGE: the escape parser below looks ahead as far as i[11] with no
+    // regard for the end of the buffer, and then advances i by the length the
+    // sequence would have had, which could take i past the end. mp_stream_rw
+    // subtracts the return value from an unsigned remaining count, so a return
+    // larger than len wrapped it and the write loop never terminated: a hang, with
+    // heap contents rendered onto the display on the way. A read past the end now
+    // yields 0, which matches no branch below and ends the digit loops, and every
+    // advance saturates at the end so i - data can never exceed len. Malformed and
+    // truncated sequences were undefined before, so only they change behaviour.
+    // Not covered here: utf8_get_char/utf8_next_char at the top of the loop take no
+    // length and can still walk continuation bytes past the end. That is a
+    // pre-existing hole needing a cursor both the decoder and the parser share; the
+    // saturation below at least keeps it from reaching the caller.
+    #define TERM_PEEK(offset) ((i) + (offset) < data + len ? (i)[offset] : 0)
+    #define TERM_ADVANCE(n) do { \
+        size_t _avail = (size_t)(data + len - i); \
+        size_t _n = (n); \
+        i += (_n < _avail ? _n : _avail); \
+} while (0)
+
     while (i < data + len) {
         unichar c = utf8_get_char(i);
         i = utf8_next_char(i);
+        if (i > data + len) {
+            i = data + len;
+        }
         if (self->in_osc_command) {
-            if (c == 0x1b && i[0] == '\\') {
+            if (c == 0x1b && TERM_PEEK(0) == '\\') {
                 self->in_osc_command = false;
                 self->status_x = 0;
                 self->status_y = 0;
@@ -245,41 +337,43 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
                 uint8_t n_args = 1;
                 #endif
                 for (; j < 6; j++) {
-                    if ('0' <= i[j] && i[j] <= '9') {
-                        vt_args[0] = vt_args[0] * 10 + (i[j] - '0');
+                    byte d = TERM_PEEK(j);
+                    if ('0' <= d && d <= '9') {
+                        vt_args[0] = vt_args[0] * 10 + (d - '0');
                     } else {
-                        c = i[j];
+                        c = d;
                         break;
                     }
                 }
-                if (i[0] == '[') {
+                if (TERM_PEEK(0) == '[') {
                     for (uint8_t i_args = 1; i_args < 3 && c == ';'; i_args++) {
                         vt_args[i_args] = 0;
                         for (++j; j < 12; j++) {
-                            if ('0' <= i[j] && i[j] <= '9') {
-                                vt_args[i_args] = vt_args[i_args] * 10 + (i[j] - '0');
+                            byte d = TERM_PEEK(j);
+                            if ('0' <= d && d <= '9') {
+                                vt_args[i_args] = vt_args[i_args] * 10 + (d - '0');
                                 #if CIRCUITPY_TERMINALIO_VT100
                                 n_args = i_args + 1;
                                 #endif
                             } else {
-                                c = i[j];
+                                c = d;
                                 break;
                             }
                         }
                     }
                     if (c == '?') {
                         #if CIRCUITPY_TERMINALIO_VT100
-                        if (i[2] == '2' && i[3] == '5') {
+                        if (TERM_PEEK(2) == '2' && TERM_PEEK(3) == '5') {
                             // cursor visibility commands
-                            if (i[4] == 'h') {
+                            if (TERM_PEEK(4) == 'h') {
                                 // make cursor visible
                                 // not implemented yet
-                            } else if (i[4] == 'l') {
+                            } else if (TERM_PEEK(4) == 'l') {
                                 // make cursor invisible
                                 // not implemented yet
                             }
                         }
-                        i += 5;
+                        TERM_ADVANCE(5);
                         #endif
                     } else {
                         if (c == 'K') {
@@ -355,10 +449,10 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
                             start_y = self->cursor_y;
                         #endif
                         }
-                        i += j + 1;
+                        TERM_ADVANCE(j + 1);
                     }
                 #if CIRCUITPY_TERMINALIO_VT100
-                } else if (i[0] == 'M') {
+                } else if (TERM_PEEK(0) == 'M') {
                     if (self->cursor_y != SCRNMOD(self->vt_scroll_top)) {
                         if (self->cursor_y > 0) {
                             self->cursor_y = self->cursor_y - 1;
@@ -400,14 +494,14 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
                     }
                     start_y = self->cursor_y;
                     i++;
-                } else if (i[0] == 'D') {
+                } else if (TERM_PEEK(0) == 'D') {
                     self->cursor_y++;
                     i++;
                 #endif
-                } else if (i[0] == ']' && c == ';') {
+                } else if (TERM_PEEK(0) == ']' && c == ';') {
                     self->in_osc_command = true;
                     self->osc_command = vt_args[0];
-                    i += j + 1;
+                    TERM_ADVANCE(j + 1);
                 }
             }
         } else {
@@ -450,7 +544,11 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
             start_y = self->cursor_y;
         }
     }
-    return i - data;
+    #undef TERM_PEEK
+    #undef TERM_ADVANCE
+    // A truncated escape sequence still advances i by the length it would have had,
+    // which can land past the end. Report what we were actually given.
+    return MIN((size_t)(i - data), len);
 }
 
 uint16_t common_hal_terminalio_terminal_get_cursor_x(terminalio_terminal_obj_t *self) {
