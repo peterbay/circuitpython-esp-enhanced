@@ -14,6 +14,9 @@ typedef struct {
     ledc_timer_config_t tim_handle;
     ledc_channel_config_t chan_handle;
     const mcu_pin_obj_t *pin;
+    // CIRCUITPY-CHANGE: the requested 16-bit duty was not kept anywhere, so it could not be
+    // rescaled when the timer's duty resolution changed.
+    uint16_t duty_cycle;
     uint8_t duty_resolution;
     bool variable_frequency : 1;
     bool deinited : 1;

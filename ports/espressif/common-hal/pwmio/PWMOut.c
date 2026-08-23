@@ -20,6 +20,11 @@ static uint8_t reserved_channels[LEDC_CHANNEL_MAX] = { [0 ... LEDC_CHANNEL_MAX -
 static uint32_t calculate_duty_cycle(uint32_t frequency) {
     uint32_t duty_bits = 0;
     uint32_t interval = APB_CLK_FREQ / frequency;
+    // CIRCUITPY-CHANGE: for frequency > APB_CLK_FREQ interval is 0, so the loop below evaluated
+    // i - 1 at i == 0 and underflowed to 0xFFFFFFFF, which the clamp then turned into a plausible 13.
+    if (interval == 0) {
+        return 0;
+    }
     for (size_t i = 0; i < 32; i++) {
         if (!(interval >> i)) {
             duty_bits = i - 1;
@@ -158,6 +163,9 @@ void common_hal_pwmio_pwmout_deinit(pwmio_pwmout_obj_t *self) {
 }
 
 void common_hal_pwmio_pwmout_set_duty_cycle(pwmio_pwmout_obj_t *self, uint16_t duty) {
+    // CIRCUITPY-CHANGE: only the resolution-scaled value reached the hardware, so the requested
+    // fraction was lost and could not be restored when the timer's duty resolution changed.
+    self->duty_cycle = duty;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, self->chan_handle.channel, duty >> (16 - self->duty_resolution));
     ledc_update_duty(LEDC_LOW_SPEED_MODE, self->chan_handle.channel);
 }
@@ -172,8 +180,32 @@ void common_hal_pwmio_pwmout_set_frequency(pwmio_pwmout_obj_t *self, uint32_t fr
     if (duty_bits == 0) {
         mp_arg_error_invalid(MP_QSTR_frequency);
     }
+    // CIRCUITPY-CHANGE: the new duty resolution was stored and ledc_set_freq called without
+    // reconfiguring the timer, so a frequency needing a different resolution left the duty scaling,
+    // the cached tim_handle and the hardware disagreeing; the LEDC result was discarded too, so a
+    // frequency the hardware rejected was still reported as a success.
+    // Prefer ledc_set_freq while the resolution is unchanged: unlike
+    // ledc_timer_config it does not reset the timer counter, so an unchanged
+    // resolution does not glitch the output. It cannot change the resolution, and it
+    // re-reads the timer's concrete clock source from hardware, so it can neither
+    // switch the LEDC global clock; fall back to a full reconfigure whenever it
+    // refuses, because ledc_timer_config asks for LEDC_AUTO_CLK and may well find a
+    // source that works. Only raise when both have failed.
+    if (duty_bits == self->duty_resolution &&
+        ledc_set_freq(LEDC_LOW_SPEED_MODE, self->tim_handle.timer_num, frequency) == ESP_OK) {
+        self->tim_handle.freq_hz = frequency;
+        return;
+    }
+    ledc_timer_config_t new_tim_handle = self->tim_handle;
+    new_tim_handle.duty_resolution = duty_bits;
+    new_tim_handle.freq_hz = frequency;
+    if (ledc_timer_config(&new_tim_handle) != ESP_OK) {
+        mp_arg_error_invalid(MP_QSTR_frequency);
+    }
+    self->tim_handle = new_tim_handle;
     self->duty_resolution = duty_bits;
-    ledc_set_freq(LEDC_LOW_SPEED_MODE, self->tim_handle.timer_num, frequency);
+    // The channel's duty counts in timer resolution units, so rewrite it for the new scale.
+    common_hal_pwmio_pwmout_set_duty_cycle(self, self->duty_cycle);
 }
 
 uint32_t common_hal_pwmio_pwmout_get_frequency(pwmio_pwmout_obj_t *self) {
