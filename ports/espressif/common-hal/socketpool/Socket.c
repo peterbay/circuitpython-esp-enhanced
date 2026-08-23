@@ -315,6 +315,11 @@ int socketpool_socket_accept(socketpool_socket_obj_t *self, mp_obj_t *peer_out, 
         accepted->pool = self->pool;
         accepted->connected = true;
         accepted->type = self->type;
+        // CIRCUITPY-CHANGE: timeout_ms was never carried over, so an accepted socket
+        // behaved as non-blocking no matter how the listener was configured. Done
+        // here rather than only in common_hal_socketpool_socket_accept so the
+        // caller-supplied path gets it too.
+        accepted->timeout_ms = self->timeout_ms;
     }
 
     if (peer_out) {
@@ -338,6 +343,9 @@ socketpool_socket_obj_t *common_hal_socketpool_socket_accept(socketpool_socket_o
         sock->pool = self->pool;
         sock->connected = true;
         sock->type = self->type;
+        // CIRCUITPY-CHANGE: timeout_ms was never initialised here, so an accepted
+        // socket was always non-blocking no matter how the listener was configured.
+        sock->timeout_ms = self->timeout_ms;
 
         return sock;
     } else {
@@ -598,24 +606,47 @@ mp_uint_t common_hal_socketpool_socket_recv_into(socketpool_socket_obj_t *self, 
     return received;
 }
 
+// CIRCUITPY-CHANGE: every socket is O_NONBLOCK at the lwip level, so a full send
+// buffer was reported as EAGAIN even on a socket with a timeout or with no timeout
+// at all, and the -MP_EBADF for a closed socket was discarded in favour of a stale
+// errno.
 int socketpool_socket_send(socketpool_socket_obj_t *self, const uint8_t *buf, uint32_t len) {
-    int sent = -1;
-    if (self->num != -1) {
-        // LWIP Socket
-        // TODO: deal with potential failure/add timeout?
-        sent = lwip_send(self->num, buf, len, 0);
-    } else {
-        sent = -MP_EBADF;
+    if (self->num == -1) {
+        return -MP_EBADF;
     }
 
-    if (sent < 0) {
-        if (errno == ECONNRESET || errno == ENOTCONN) {
-            self->connected = false;
+    // LWIP Socket
+    while (true) {
+        int sent = lwip_send(self->num, buf, len, 0);
+        if (sent >= 0) {
+            return sent;
         }
-        return -errno;
+        // Latch errno before RUN_BACKGROUND_TASKS below can overwrite it.
+        int send_errno = errno;
+        if (send_errno != EAGAIN && send_errno != EWOULDBLOCK) {
+            if (send_errno == ECONNRESET || send_errno == ENOTCONN) {
+                self->connected = false;
+            }
+            return -send_errno;
+        }
+        // Only a socket with no timeout at all waits here. A socket with an
+        // explicit timeout, finite or zero, keeps getting EAGAIN exactly as it did
+        // before: every retry loop in the tree keys off that one code and treats
+        // anything else as fatal, so returning ETIMEDOUT after a finite timeout
+        // would abort adafruit_httpserver and adafruit_requests mid-response
+        // instead of letting them spin until the peer drains.
+        if (self->timeout_ms != (uint)-1) {
+            return -MP_EAGAIN;
+        }
+        RUN_BACKGROUND_TASKS;
+        // Let the user break out of a blocking send with a KeyboardInterrupt. The
+        // pending exception does not clear by retrying, so this must not come back
+        // as EAGAIN: the two C callers in the web workflow loop on that code and
+        // would spin forever.
+        if (mp_hal_is_interrupted()) {
+            return -MP_EINTR;
+        }
     }
-
-    return sent;
 }
 
 mp_uint_t common_hal_socketpool_socket_send(socketpool_socket_obj_t *self, const uint8_t *buf, uint32_t len) {

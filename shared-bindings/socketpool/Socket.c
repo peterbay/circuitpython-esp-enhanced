@@ -274,8 +274,10 @@ static mp_obj_t _socketpool_socket_sendall(mp_obj_t self_in, mp_obj_t buf_in) {
         if (bufinfo.len > 0) {
             RUN_BACKGROUND_TASKS;
             // Allow user to break out of sendall with a KeyboardInterrupt.
+            // CIRCUITPY-CHANGE: returning 0 from a function returning mp_obj_t pushed
+            // MP_OBJ_NULL onto the Python stack and left the pending exception unraised.
             if (mp_hal_is_interrupted()) {
-                return 0;
+                mp_handle_pending(true);
             }
         }
     }
