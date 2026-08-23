@@ -67,6 +67,15 @@ void tilepalettemapper_tilepalettemapper_get_color(tilepalettemapper_tilepalette
         }
         return;
     }
+    // CIRCUITPY-CHANGE: the tile indices are checked above but the colour index
+    // was not, and it comes straight from the bitmap, bounded only by its bits
+    // per value. A bitmap with more values than input_color_count read past the
+    // end of the mapping row on every pixel. Transparent matches what
+    // displayio_palette_get_color does for an out of range index.
+    if (input_pixel->pixel >= self->input_color_count) {
+        output_color->opaque = false;
+        return;
+    }
     uint16_t tile_index = y_tile_index * self->width_in_tiles + x_tile_index;
     uint32_t mapped_index = self->tile_mappings[tile_index][input_pixel->pixel];
     displayio_input_pixel_t tmp_pixel;
