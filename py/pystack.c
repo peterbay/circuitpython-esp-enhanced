@@ -36,22 +36,10 @@ void mp_pystack_init(void *start, void *end) {
     MP_STATE_THREAD(pystack_cur) = start;
 }
 
-// CIRCUITPY-CHANGE: PLACE_IN_ITCM
-void *PLACE_IN_ITCM(mp_pystack_alloc)(size_t n_bytes) {
-    n_bytes = (n_bytes + (MICROPY_PYSTACK_ALIGN - 1)) & ~(MICROPY_PYSTACK_ALIGN - 1);
-    #if MP_PYSTACK_DEBUG
-    n_bytes += MICROPY_PYSTACK_ALIGN;
-    #endif
-    if (MP_STATE_THREAD(pystack_cur) + n_bytes > MP_STATE_THREAD(pystack_end)) {
-        // out of memory in the pystack
-        mp_raise_type_arg(&mp_type_RuntimeError, MP_OBJ_NEW_QSTR(MP_QSTR_pystack_space_exhausted));
-    }
-    void *ptr = MP_STATE_THREAD(pystack_cur);
-    MP_STATE_THREAD(pystack_cur) += n_bytes;
-    #if MP_PYSTACK_DEBUG
-    *(size_t *)(MP_STATE_THREAD(pystack_cur) - MICROPY_PYSTACK_ALIGN) = n_bytes;
-    #endif
-    return ptr;
+// CIRCUITPY-CHANGE: the allocation itself is inlined in pystack.h; only this
+// cold branch is out of line.
+MP_NORETURN void mp_pystack_alloc_fail(void) {
+    mp_raise_type_arg(&mp_type_RuntimeError, MP_OBJ_NEW_QSTR(MP_QSTR_pystack_space_exhausted));
 }
 
 #endif

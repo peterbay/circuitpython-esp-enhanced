@@ -146,6 +146,27 @@ static void mp_setup_code_state_helper(mp_code_state_t *code_state, size_t n_arg
     mp_obj_t *code_state_state = code_state->sp + 1;
     code_state->exc_sp_idx = 0;
 
+    // CIRCUITPY-CHANGE: the overwhelmingly common call is n positional arguments
+    // matching the function's n positional parameters and nothing else. Everything
+    // from here to the end of the function exists for the other shapes, so take
+    // that case out of the way first. Clearing stops where the arguments start,
+    // because those slots are written immediately afterwards anyway.
+    if (n_kw == 0 && n_kwonly_args == 0 && n_args == n_pos_args
+        && (scope_flags & (MP_SCOPE_FLAG_VARARGS | MP_SCOPE_FLAG_DEFKWARGS | MP_SCOPE_FLAG_VARKEYWORDS)) == 0) {
+        memset(code_state_state, 0, (n_state - n_args) * sizeof(*code_state->state));
+        for (size_t i = 0; i < n_args; i++) {
+            code_state_state[n_state - 1 - i] = args[i];
+        }
+        const uint8_t *fast_ip = code_state->ip + n_info;
+        for (; n_cell; --n_cell) {
+            size_t local_num = *fast_ip++;
+            code_state_state[n_state - 1 - local_num] =
+                mp_obj_new_cell(code_state_state[n_state - 1 - local_num]);
+        }
+        code_state->ip = fast_ip;
+        return;
+    }
+
     // zero out the local stack to begin with
     memset(code_state_state, 0, n_state * sizeof(*code_state->state));
 
