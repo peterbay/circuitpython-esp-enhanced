@@ -224,21 +224,33 @@ static bool synth_note_into_buffer(synthio_synth_t *synth, int chan, int32_t *ou
     uint32_t lim = waveform_length << SYNTHIO_FREQUENCY_SHIFT;
     uint32_t accum = synth->accum[chan];
 
-    if (dds_rate > lim / 2) {
+    // CIRCUITPY-CHANGE: accum walks [offset, lim), so the span a single subtraction
+    // in the loop below can wrap is lim - offset, not lim. Guarding against lim / 2
+    // was only correct for a note with no loop: with waveform_loop_start above zero
+    // a rate between (lim - offset) and lim / 2 passed here, and then one
+    // subtraction per sample could not keep up. accum grew without bound, idx ran
+    // off the end of the waveform and, being int16_t, eventually went negative and
+    // read up to 64 kB below the buffer.
+    if (dds_rate > (lim - offset) / 2) {
         // beyond nyquist, can't play note
         return false;
     }
 
+    // CIRCUITPY-CHANGE: lim is waveform_length shifted, so accum == lim indexes
+    // waveform[waveform_length], one int16 past the end. The comparison has to
+    // include equality. The old renormalisation was wrong for a looped waveform
+    // too: accum % lim is in [0, lim), so adding offset could land at or past lim
+    // again. Fold into the loop region instead.
     // can happen if note waveform gets set mid-note, but the expensive modulo is usually avoided
-    if (accum > lim) {
-        accum = accum % lim + offset;
+    if (accum >= lim) {
+        accum = accum < offset ? offset : offset + (accum - offset) % (lim - offset);
     }
 
     // first, fill with waveform
     for (uint16_t i = 0; i < dur; i++) {
         accum += dds_rate;
         // because dds_rate is low enough, the subtraction is guaranteed to go back into range, no expensive modulo needed
-        if (accum > lim) {
+        if (accum >= lim) {
             accum = accum - lim + offset;
         }
         int16_t idx = accum >> SYNTHIO_FREQUENCY_SHIFT;
@@ -247,26 +259,29 @@ static bool synth_note_into_buffer(synthio_synth_t *synth, int chan, int32_t *ou
     synth->accum[chan] = accum;
 
     if (ring_dds_rate) {
-        if (ring_dds_rate > lim / 2) {
-            // beyond nyquist, can't play ring (but did synth main sound so
-            // return true)
-            return true;
-        }
-
+        // CIRCUITPY-CHANGE: this compared the ring rate against the MAIN waveform's
+        // lim, because offset and lim were only reassigned afterwards. Take the ring
+        // waveform's own span first, then check against it.
         // now modulate by ring and accumulate
         accum = synth->ring_accum[chan];
         offset = ring_waveform_start << SYNTHIO_FREQUENCY_SHIFT;
         lim = ring_waveform_length << SYNTHIO_FREQUENCY_SHIFT;
 
+        if (ring_dds_rate > (lim - offset) / 2) {
+            // beyond nyquist, can't play ring (but did synth main sound so
+            // return true)
+            return true;
+        }
+
         // can happen if note waveform gets set mid-note, but the expensive modulo is usually avoided
-        if (accum > lim) {
-            accum = accum % lim + offset;
+        if (accum >= lim) {
+            accum = accum < offset ? offset : offset + (accum - offset) % (lim - offset);
         }
 
         for (uint16_t i = 0; i < dur; i++) {
             accum += ring_dds_rate;
             // because dds_rate is low enough, the subtraction is guaranteed to go back into range, no expensive modulo needed
-            if (accum > lim) {
+            if (accum >= lim) {
                 accum = accum - lim + offset;
             }
             int16_t idx = accum >> SYNTHIO_FREQUENCY_SHIFT;
