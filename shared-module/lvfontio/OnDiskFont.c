@@ -49,7 +49,8 @@ static inline void free_memory(lvfontio_ondiskfont_t *self, void *ptr) {
 // Forward declarations for helper functions
 static int16_t find_codepoint_slot(lvfontio_ondiskfont_t *self, uint32_t codepoint);
 static bool slot_has_active_full_width_partner(lvfontio_ondiskfont_t *self, uint16_t slot);
-static uint16_t find_free_slot(lvfontio_ondiskfont_t *self, uint32_t codepoint);
+static void invalidate_full_width_partner(lvfontio_ondiskfont_t *self, uint16_t slot);
+static uint16_t find_free_slot(lvfontio_ondiskfont_t *self, uint32_t codepoint, uint16_t slots_needed);
 static FRESULT read_bits(FIL *file, size_t num_bits, uint8_t *byte_val, uint8_t *remaining_bits, uint32_t *result);
 static FRESULT read_glyph_dimensions(FIL *file, lvfontio_ondiskfont_t *self, uint32_t *advance_width, int32_t *bbox_x, int32_t *bbox_y, uint32_t *bbox_w, uint32_t *bbox_h, uint8_t *byte_val, uint8_t *remaining_bits);
 
@@ -117,6 +118,13 @@ static bool load_font_header(lvfontio_ondiskfont_t *self, FIL *file, size_t *max
             // Parse format information
             self->header.index_to_loc_format = head_buf[26];
             self->header.bits_per_pixel = head_buf[29];
+            // CIRCUITPY-CHANGE: the format allows 1 to 4 and the field was never
+            // checked. Anything larger fed "1 << bits_per_pixel" below, and a value
+            // near 32 makes that shift undefined as well as producing a nonsense
+            // cache size.
+            if (self->header.bits_per_pixel < 1 || self->header.bits_per_pixel > 4) {
+                return false;
+            }
             self->header.glyph_bbox_xy_bits = head_buf[30];
             self->header.glyph_bbox_wh_bits = head_buf[31];
             self->header.glyph_advance_bits = head_buf[32];
@@ -203,6 +211,15 @@ static bool load_font_header(lvfontio_ondiskfont_t *self, FIL *file, size_t *max
             self->glyf_table_offset = current_position;
             size_t advances[2] = {0, 0};
             size_t advance_count[2] = {0, 0};
+            // CIRCUITPY-CHANGE: the two buckets latch onto the first two distinct advance
+            // widths in glyph order and never move, so they describe nothing about a font
+            // that has more than two. The widest advance actually seen is what the cell has
+            // to hold in that case.
+            size_t max_advance = 0;
+            // Glyphs whose advance width matches neither bucket. Counted as full width
+            // below because that is the worst case for the slot count.
+            size_t other_count = 0;
+            bool census_complete = true;
 
             if (self->header.default_advance_width != 0) {
                 advances[0] = self->header.default_advance_width;
@@ -211,7 +228,16 @@ static bool load_font_header(lvfontio_ondiskfont_t *self, FIL *file, size_t *max
             // Set the default advance width based on the first character in the
             // file.
             size_t cid = 0;
-            while (cid < self->max_cid - 1) {
+            // CIRCUITPY-CHANGE: max_cid comes out of the file and the old bound
+            // underflowed to SIZE_MAX for max_cid == 0. The FR_OK checks below do not
+            // bound it either: read_bits returns FR_OK without touching the file when
+            // it is asked for zero bits, so a header declaring zero-width glyph fields
+            // spins here doing no I/O at all. The max_glyphs term is an early exit
+            // rather than a safety one -- max_slots is only ever used as a MIN against
+            // max_glyphs and every glyph contributes at least one slot, so once that
+            // many have been counted the answer cannot change, and the rest of the
+            // table costs one f_read per byte, twice per boot.
+            while (cid + 1 < self->max_cid && cid < UINT16_MAX && cid < self->max_glyphs) {
                 // Read glyph header fields
                 uint32_t glyph_advance;
                 int32_t bbox_x, bbox_y;
@@ -220,11 +246,29 @@ static bool load_font_header(lvfontio_ondiskfont_t *self, FIL *file, size_t *max
                 uint8_t byte_val = 0;
                 uint8_t remaining_bits = 0;
 
+                // CIRCUITPY-CHANGE: neither read below was checked. Past the end of the
+                // glyph data read_glyph_dimensions returns before assigning
+                // glyph_advance and then keeps failing, so the census went on counting
+                // one uninitialized value; and max_cid comes from the file, so a max_cid
+                // of 0 made the condition above cid < SIZE_MAX and the loop ran until the
+                // whole rest of the file had been read a byte at a time.
                 // Use the helper function to read glyph dimensions
-                read_glyph_dimensions(file, self, &glyph_advance, &bbox_x, &bbox_y, &bbox_w, &bbox_h, &byte_val, &remaining_bits);
+                res = read_glyph_dimensions(file, self, &glyph_advance, &bbox_x, &bbox_y, &bbox_w, &bbox_h, &byte_val, &remaining_bits);
+                if (res != FR_OK) {
+                    census_complete = false;
+                    break;
+                }
 
                 // Throw away the bitmap bits.
-                read_bits(file, self->header.bits_per_pixel * bbox_w * bbox_h, &byte_val, &remaining_bits, NULL);
+                res = read_bits(file, self->header.bits_per_pixel * bbox_w * bbox_h, &byte_val, &remaining_bits, NULL);
+                if (res != FR_OK) {
+                    census_complete = false;
+                    break;
+                }
+
+                if (glyph_advance > max_advance) {
+                    max_advance = glyph_advance;
+                }
 
                 if (glyph_advance == 0) {
                     // Ignore zero-advance glyphs when inferring the terminal cell width.
@@ -241,30 +285,56 @@ static bool load_font_header(lvfontio_ondiskfont_t *self, FIL *file, size_t *max
                     advances[1] = glyph_advance;
                     advance_count[1] = 1;
                 } else {
-                    break;
+                    // CIRCUITPY-CHANGE: a third distinct advance width abandoned the
+                    // census here. max_glyphs is capped to what it reports, so a font with
+                    // mixed advance widths sized the whole glyph cache from the handful of
+                    // glyphs seen before that third width appeared and the terminal left
+                    // every cell that no longer fit blank.
+                    other_count++;
                 }
                 cid++;
             }
 
             if (self->header.default_advance_width == 0) {
+                // CIRCUITPY-CHANGE: halving the wider bucket recovers the cell of a font that
+                // has exactly two advance widths, one about twice the other. It was applied to
+                // any font with more than one, and the buckets hold whichever two advances
+                // appeared first, so a proportional font got half of an arbitrary early glyph:
+                // Arial at size 16 runs from 3 to 16 px and this produced 3. cache_glyph then
+                // called nearly every glyph full width, and two cells of 3 px do not hold a
+                // 16 px glyph either -- load_glyph_bitmap clips against the whole bitmap, not
+                // against the slot, so each glyph overwrote the ones cached after it. A third
+                // distinct advance means the font is not dual width and no half-width cell can
+                // be inferred, so use the widest advance the census saw: the narrowest cell
+                // that holds every glyph on its own.
                 if (advance_count[1] == 0) {
                     self->header.default_advance_width = advances[0];
-                    *max_slots = advance_count[0];
+                } else if (other_count != 0) {
+                    self->header.default_advance_width = max_advance;
+                } else if (advances[0] > advances[1]) {
+                    self->header.default_advance_width = advances[0] / 2;
                 } else {
-                    if (advances[0] > advances[1]) {
-                        self->header.default_advance_width = advances[0] / 2;
-                        *max_slots = advance_count[0] * 2 + advance_count[1];
-                    } else {
-                        self->header.default_advance_width = advances[1] / 2;
-                        *max_slots = advance_count[1] * 2 + advance_count[0];
-                    }
+                    self->header.default_advance_width = advances[1] / 2;
                 }
-            } else {
-                *max_slots = advance_count[0] + advance_count[1];
             }
 
             if (self->header.default_advance_width == 0) {
                 self->header.default_advance_width = 1;
+            }
+
+            // CIRCUITPY-CHANGE: the slot count charged one slot per glyph to every bucket
+            // except the one the inference had picked as full width, but cache_glyph gives
+            // two slots to any glyph wider than the cell. Under-counting here caps
+            // max_glyphs below the number of cells the terminal has and those cells stay
+            // blank, so the count now follows the same rule the cache does.
+            *max_slots = other_count * 2;
+            for (size_t i = 0; i < 2; i++) {
+                *max_slots += advance_count[i] * (advances[i] > self->header.default_advance_width ? 2 : 1);
+            }
+            if (!census_complete) {
+                // Nothing else bounds the cache, so a census that stopped early must not
+                // be allowed to shrink it.
+                *max_slots = UINT16_MAX;
             }
             if (*max_slots == 0) {
                 *max_slots = 1;
@@ -378,6 +448,49 @@ static int32_t get_char_id(lvfontio_ondiskfont_t *self, uint32_t codepoint) {
     return -1; // Not found
 }
 
+// CIRCUITPY-CHANGE: locating a codepoint's glyph data was inline in cache_glyph. It is
+// shared now, because the width of a glyph has to be answerable without caching it.
+// Leaves the file positioned for read_glyph_dimensions. The file must already be open.
+static bool seek_to_glyph_data(lvfontio_ondiskfont_t *self, uint32_t codepoint) {
+    int32_t char_id = get_char_id(self, codepoint);
+    if (char_id < 0 || (uint32_t)char_id >= self->max_cid) {
+        return false; // Invalid character
+    }
+
+    // Get glyph offset from location table
+    uint32_t loca_offset = self->loca_table_offset + char_id *
+        (self->header.index_to_loc_format == 1 ? 4 : 2);
+
+    FRESULT res = f_lseek(&self->file, loca_offset);
+    if (res != FR_OK) {
+        return false;
+    }
+
+    uint32_t glyph_offset = 0;
+    UINT bytes_read;
+    if (self->header.index_to_loc_format == 1) {
+        // 4-byte offset
+        uint8_t offset_buf[4];
+        res = f_read(&self->file, offset_buf, 4, &bytes_read);
+        if (res != FR_OK || bytes_read < 4) {
+            return false;
+        }
+        glyph_offset = offset_buf[0] | (offset_buf[1] << 8) |
+            (offset_buf[2] << 16) | (offset_buf[3] << 24);
+    } else {
+        // 2-byte offset
+        uint8_t offset_buf[2];
+        res = f_read(&self->file, offset_buf, 2, &bytes_read);
+        if (res != FR_OK || bytes_read < 2) {
+            return false;
+        }
+        glyph_offset = offset_buf[0] | (offset_buf[1] << 8);
+    }
+
+    // Seek to glyph data
+    return f_lseek(&self->file, self->glyf_table_offset + glyph_offset) == FR_OK;
+}
+
 // Load glyph bitmap data into a slot
 // This function assumes the file is already open and positioned after reading the glyph dimensions
 static bool load_glyph_bitmap(FIL *file, lvfontio_ondiskfont_t *self, uint32_t codepoint, uint16_t slot,
@@ -395,6 +508,14 @@ static bool load_glyph_bitmap(FIL *file, lvfontio_ondiskfont_t *self, uint32_t c
             uint32_t pixel_value;
             FRESULT res = read_bits(file, self->header.bits_per_pixel, byte_val, remaining_bits, &pixel_value);
             if (res != FR_OK) {
+                // CIRCUITPY-CHANGE: the claim staked out above was left behind on
+                // this path, so cache_glyph returned -1 with a reference already
+                // taken. Callers reasonably read -1 as "nothing was cached" and
+                // reacquire the slot they had released, which then sat at two
+                // references for a single cell and could never be reused. Undo the
+                // claim so -1 really does mean no reference was taken.
+                self->codepoints[slot] = LVFONTIO_INVALID_CODEPOINT;
+                self->reference_counts[slot] = 0;
                 return false;
             }
 
@@ -432,6 +553,14 @@ void common_hal_lvfontio_ondiskfont_construct(lvfontio_ondiskfont_t *self,
     self->file_path = file_path; // Store the provided path string directly
     self->max_glyphs = max_glyphs;
     self->cmap_ranges = NULL;
+    // CIRCUITPY-CHANGE: allocate_memory() runs deinit before returning NULL, and
+    // deinit frees these three. The supervisor builds its font in a stack local
+    // (supervisor/shared/display.c), which port_malloc does not zero, so a failed
+    // allocation deinited through indeterminate pointers long before any caller
+    // could check the NULL. Only cmap_ranges was cleared here.
+    self->bitmap = NULL;
+    self->codepoints = NULL;
+    self->reference_counts = NULL;
     self->file_is_open = false;
 
     // Determine which filesystem to use based on the path
@@ -470,6 +599,13 @@ void common_hal_lvfontio_ondiskfont_construct(lvfontio_ondiskfont_t *self,
     // Cap the number of slots to the number of slots needed by the font. That way
     // small font files don't need a bunch of extra cache space.
     max_glyphs = MIN(max_glyphs, max_slots);
+    // CIRCUITPY-CHANGE: self->max_glyphs was set from the uncapped argument above
+    // while everything below is sized with the capped one. The supervisor asks for
+    // width_in_tiles * height_in_tiles slots, around 240 on this board, so any font
+    // whose header census yields fewer made every later scan of codepoints[] and
+    // reference_counts[] run off the end of its allocation, and load_glyph_bitmap
+    // wrote past them.
+    self->max_glyphs = max_glyphs;
 
     // Allocate codepoints array. allocate_memory will raise an exception if
     // allocation fails and the VM is active.
@@ -496,13 +632,22 @@ void common_hal_lvfontio_ondiskfont_construct(lvfontio_ondiskfont_t *self,
 
     // Create bitmap for glyph cache
     displayio_bitmap_t *bitmap = allocate_memory(self, sizeof(displayio_bitmap_t));
-    bitmap->base.type = &displayio_bitmap_type;
+    // CIRCUITPY-CHANGE: the type was stored before the null check, so a failed
+    // allocation wrote through a null pointer instead of returning. allocate_memory
+    // only returns NULL when the VM is not active to raise, i.e. on the supervisor
+    // path, which is exactly where a crash is hardest to read.
     if (bitmap == NULL) {
         return;
     }
+    bitmap->base.type = &displayio_bitmap_type;
 
-    // Calculate bitmap stride
-    uint32_t bits_per_pixel = 1 << self->header.bits_per_pixel;
+    // CIRCUITPY-CHANGE: the header field is the real bits per pixel, 1 to 4 -- that
+    // is what read_bits() is handed when the glyph is decoded. Using
+    // "1 << bits_per_pixel" as the bitmap's storage depth therefore asked for 2, 4,
+    // 8 or 16 bits where 1, 2, 4 and 4 are needed, so the glyph cache took two to
+    // four times the RAM it should. displayio stores at 1, 2 or 4 bits, so round the
+    // source depth up to the nearest of those.
+    uint32_t bits_per_pixel = self->header.bits_per_pixel > 2 ? 4 : self->header.bits_per_pixel;
     uint32_t width = self->header.default_advance_width * max_glyphs;
     uint32_t row_width = width * bits_per_pixel;
     uint16_t stride = (row_width + 31) / 32; // Align to uint32_t (32 bits)
@@ -521,7 +666,7 @@ void common_hal_lvfontio_ondiskfont_construct(lvfontio_ondiskfont_t *self,
     common_hal_displayio_bitmap_construct_from_buffer(bitmap,
         self->header.default_advance_width * max_glyphs,
         self->header.font_size,
-        1 << self->header.bits_per_pixel,
+        bits_per_pixel,
             bitmap_buffer,
             false);
     self->bitmap = bitmap;
@@ -583,6 +728,43 @@ void common_hal_lvfontio_ondiskfont_get_dimensions(const lvfontio_ondiskfont_t *
     }
 }
 
+// CIRCUITPY-CHANGE: a full-width glyph needs two adjacent free slots, so the terminal has
+// to release both of the cells it is about to overwrite before cache_glyph runs, and it
+// can only know that there are two by asking first. This makes the same advance width
+// test cache_glyph makes, without claiming a slot or reading a bitmap.
+bool common_hal_lvfontio_ondiskfont_is_full_width(lvfontio_ondiskfont_t *self, uint32_t codepoint) {
+    int16_t existing_slot = find_codepoint_slot(self, codepoint);
+    if (existing_slot >= 0) {
+        // Answer from the cache the same way cache_glyph does, so the two agree.
+        uint16_t next_slot = (existing_slot + 1) % self->max_glyphs;
+        return self->codepoints[next_slot] == codepoint;
+    }
+
+    if (self->header.glyph_advance_bits == 0) {
+        // The advance is not stored per glyph, so read_glyph_dimensions would hand back
+        // the default for every one of them. Answer without touching the file.
+        return self->header.default_advance_width > self->half_width_px;
+    }
+
+    if (!self->file_is_open || !seek_to_glyph_data(self, codepoint)) {
+        return false;
+    }
+
+    uint32_t glyph_advance;
+    int32_t bbox_x, bbox_y;
+    uint32_t bbox_w, bbox_h;
+    uint8_t byte_val = 0;
+    uint8_t remaining_bits = 0;
+    // A glyph whose header cannot be read cannot be cached either, so the caller ends up
+    // on its missing glyph path having released only the one cell, as it did before.
+    if (read_glyph_dimensions(&self->file, self, &glyph_advance, &bbox_x, &bbox_y,
+        &bbox_w, &bbox_h, &byte_val, &remaining_bits) != FR_OK) {
+        return false;
+    }
+
+    return glyph_advance > self->half_width_px;
+}
+
 int16_t common_hal_lvfontio_ondiskfont_cache_glyph(lvfontio_ondiskfont_t *self, uint32_t codepoint, bool *is_full_width) {
     // Check if already cached
     int16_t existing_slot = find_codepoint_slot(self, codepoint);
@@ -616,44 +798,7 @@ int16_t common_hal_lvfontio_ondiskfont_cache_glyph(lvfontio_ondiskfont_t *self, 
         return -1;
     }
 
-    // Find character ID from codepoint
-    int32_t char_id = get_char_id(self, codepoint);
-    if (char_id < 0 || (uint32_t)char_id >= self->max_cid) {
-        return -1; // Invalid character
-    }
-
-    // Get glyph offset from location table
-    uint32_t glyph_offset = 0;
-    uint32_t loca_offset = self->loca_table_offset + char_id *
-        (self->header.index_to_loc_format == 1 ? 4 : 2);
-
-    FRESULT res = f_lseek(&self->file, loca_offset);
-    if (res != FR_OK) {
-        return -1;
-    }
-
-    UINT bytes_read;
-    if (self->header.index_to_loc_format == 1) {
-        // 4-byte offset
-        uint8_t offset_buf[4];
-        res = f_read(&self->file, offset_buf, 4, &bytes_read);
-        if (res != FR_OK || bytes_read < 4) {
-            return -1;
-        }
-        glyph_offset = offset_buf[0] | (offset_buf[1] << 8) |
-            (offset_buf[2] << 16) | (offset_buf[3] << 24);
-    } else {
-        // 2-byte offset
-        uint8_t offset_buf[2];
-        res = f_read(&self->file, offset_buf, 2, &bytes_read);
-        if (res != FR_OK || bytes_read < 2) {
-            return -1;
-        }
-        glyph_offset = offset_buf[0] | (offset_buf[1] << 8);
-    }
-    // Seek to glyph data
-    res = f_lseek(&self->file, self->glyf_table_offset + glyph_offset);
-    if (res != FR_OK) {
+    if (!seek_to_glyph_data(self, codepoint)) {
         return -1;
     }
 
@@ -667,7 +812,7 @@ int16_t common_hal_lvfontio_ondiskfont_cache_glyph(lvfontio_ondiskfont_t *self, 
     uint8_t remaining_bits = 0;
 
     // Use the helper function to read glyph dimensions
-    res = read_glyph_dimensions(&self->file, self, &glyph_advance, &bbox_x, &bbox_y, &bbox_w, &bbox_h, &byte_val, &remaining_bits);
+    FRESULT res = read_glyph_dimensions(&self->file, self, &glyph_advance, &bbox_x, &bbox_y, &bbox_w, &bbox_h, &byte_val, &remaining_bits);
     if (res != FR_OK) {
         return -1;
     }
@@ -682,25 +827,25 @@ int16_t common_hal_lvfontio_ondiskfont_cache_glyph(lvfontio_ondiskfont_t *self, 
     // Find an appropriate slot (or consecutive slots for full-width)
     uint16_t slot = UINT16_MAX;
 
-    if (slots_needed == 1) {
-        // For regular width, find a free slot starting at codepoint's position
-        slot = find_free_slot(self, codepoint);
-    } else {
-        // For full-width, find two consecutive free slots
-        for (uint16_t i = 0; i < self->max_glyphs - 1; i++) {
-            if (self->codepoints[i] == LVFONTIO_INVALID_CODEPOINT &&
-                self->reference_counts[i] == 0 &&
-                self->codepoints[i + 1] == LVFONTIO_INVALID_CODEPOINT &&
-                self->reference_counts[i + 1] == 0) {
-                slot = i;
-                break;
-            }
-        }
-    }
+    // CIRCUITPY-CHANGE: full-width glyphs had a slot search of their own that only
+    // accepted two adjacent slots still marked INVALID, started at 0 and never wrapped.
+    // codepoints[] is reset to INVALID only at construction and half-width slots are
+    // handed out from codepoint % max_glyphs, so the adjacent INVALID pairs were gone
+    // once roughly half the slots had been touched, and from then on no full-width glyph
+    // could be cached even with the whole cache unreferenced and evictable.
+    slot = find_free_slot(self, codepoint, slots_needed);
 
     // Check if we found appropriate slot(s)
     if (slot == UINT16_MAX) {
         return -1; // No slots available
+    }
+
+    // CIRCUITPY-CHANGE: taking over one half of an unreferenced full-width pair left the
+    // other half still carrying that codepoint with no bitmap behind it, so the next
+    // lookup for that character matched the leftover and drew half of the old glyph in a
+    // cell of its own. codepoints[] was only ever reset at construction.
+    for (uint16_t i = 0; i < slots_needed; i++) {
+        invalidate_full_width_partner(self, slot + i);
     }
 
     // Load glyph into the slot
@@ -730,6 +875,17 @@ void common_hal_lvfontio_ondiskfont_release_glyph(lvfontio_ondiskfont_t *self, u
     if (self->reference_counts[slot] > 0) {
         self->reference_counts[slot]--;
     }
+}
+
+// CIRCUITPY-CHANGE: terminalio has to release a cell's slot before it knows whether the
+// replacement glyph can be cached at all, and there was no way to take that reference
+// back when it could not, which left a slot that is still on screen looking unused.
+void common_hal_lvfontio_ondiskfont_retain_glyph(lvfontio_ondiskfont_t *self, uint32_t slot) {
+    if (slot >= self->max_glyphs) {
+        return;
+    }
+
+    self->reference_counts[slot]++;
 }
 
 static int16_t find_codepoint_slot(lvfontio_ondiskfont_t *self, uint32_t codepoint) {
@@ -768,13 +924,46 @@ static bool slot_has_active_full_width_partner(lvfontio_ondiskfont_t *self, uint
     return false;
 }
 
-static uint16_t find_free_slot(lvfontio_ondiskfont_t *self, uint32_t codepoint) {
+// Claiming a slot that was one half of a full-width pair leaves the other half pointing
+// at a glyph that is no longer whole.
+static void invalidate_full_width_partner(lvfontio_ondiskfont_t *self, uint16_t slot) {
+    uint32_t codepoint = self->codepoints[slot];
+    if (codepoint == LVFONTIO_INVALID_CODEPOINT) {
+        return;
+    }
+
+    uint16_t prev_slot = (slot + self->max_glyphs - 1) % self->max_glyphs;
+    uint16_t next_slot = (slot + 1) % self->max_glyphs;
+
+    if (self->codepoints[prev_slot] == codepoint) {
+        self->codepoints[prev_slot] = LVFONTIO_INVALID_CODEPOINT;
+    }
+    if (self->codepoints[next_slot] == codepoint) {
+        self->codepoints[next_slot] = LVFONTIO_INVALID_CODEPOINT;
+    }
+}
+
+static uint16_t find_free_slot(lvfontio_ondiskfont_t *self, uint32_t codepoint, uint16_t slots_needed) {
     size_t offset = codepoint % self->max_glyphs;
 
     // First look for completely unused slots, starting at the offset
     for (uint16_t i = 0; i < self->max_glyphs; i++) {
-        int16_t slot = (i + offset) % self->max_glyphs;
-        if (self->codepoints[slot] == LVFONTIO_INVALID_CODEPOINT && self->reference_counts[slot] == 0) {
+        uint16_t slot = (i + offset) % self->max_glyphs;
+        // The slots of one glyph have to be consecutive: the bitmap column and the tile
+        // index of the second half are both the first plus one, so a run must not wrap
+        // around the end of the cache even though the search does.
+        if (slot + slots_needed > self->max_glyphs) {
+            continue;
+        }
+        bool usable = true;
+        for (uint16_t j = 0; j < slots_needed; j++) {
+            if (self->codepoints[slot + j] != LVFONTIO_INVALID_CODEPOINT ||
+                self->reference_counts[slot + j] != 0) {
+                usable = false;
+                break;
+            }
+        }
+        if (usable) {
             return slot;
         }
     }
@@ -782,8 +971,19 @@ static uint16_t find_free_slot(lvfontio_ondiskfont_t *self, uint32_t codepoint) 
     // If none found, look for slots with zero reference count, starting at the offset.
     // Avoid reusing one half of an active full-width glyph pair.
     for (uint16_t i = 0; i < self->max_glyphs; i++) {
-        int16_t slot = (i + offset) % self->max_glyphs;
-        if (self->reference_counts[slot] == 0 && !slot_has_active_full_width_partner(self, slot)) {
+        uint16_t slot = (i + offset) % self->max_glyphs;
+        if (slot + slots_needed > self->max_glyphs) {
+            continue;
+        }
+        bool usable = true;
+        for (uint16_t j = 0; j < slots_needed; j++) {
+            if (self->reference_counts[slot + j] != 0 ||
+                slot_has_active_full_width_partner(self, slot + j)) {
+                usable = false;
+                break;
+            }
+        }
+        if (usable) {
             return slot;
         }
     }
@@ -804,7 +1004,15 @@ static FRESULT read_glyph_dimensions(FIL *file, lvfontio_ondiskfont_t *self,
     if (res != FR_OK) {
         return res;
     }
-    *advance_width = temp_value;
+    // CIRCUITPY-CHANGE: glyph_advance_bits of 0 does not mean every glyph is zero
+    // width, it means the advance is not stored per glyph because they all share
+    // default_advance_width -- which is what lv_font_conv emits for a monospace
+    // font, the obvious choice for a terminal. read_bits answers 0 without reading
+    // anything, so the slot census discarded every glyph as zero-advance and
+    // reported one usable slot: the whole terminal shared a single glyph.
+    *advance_width = self->header.glyph_advance_bits == 0
+        ? self->header.default_advance_width
+        : temp_value;
 
     // Read bbox_x (signed)
     res = read_bits(file, self->header.glyph_bbox_xy_bits, byte_val, remaining_bits, &temp_value);
