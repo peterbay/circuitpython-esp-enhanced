@@ -145,7 +145,11 @@ bool shared_module_bitbangio_spi_write(bitbangio_spi_obj_t *self, const uint8_t 
         uint8_t data_out = data[i];
         for (int j = 0; j < 8; ++j, data_out <<= 1) {
             if (i == 0 && j == 0) {
-                if (!digitalinout_protocol_set_value(self->mosi, (data_out >> 7) & 1)) {
+                // CIRCUITPY-CHANGE: the protocol returns 0 on success, so testing !ret
+                // reported failure on every successful write. The min-delay branch a
+                // few lines up already tests != 0. The binding turns this into an
+                // OSError, so every bit-banged transfer with MOSI raised.
+                if (digitalinout_protocol_set_value(self->mosi, (data_out >> 7) & 1) != 0) {
                     return false;
                 }
             } else {
@@ -209,7 +213,8 @@ bool shared_module_bitbangio_spi_read(bitbangio_spi_obj_t *self, uint8_t *data, 
     }
     #endif
     if (self->has_mosi) {
-        if (!digitalinout_protocol_set_value(self->mosi, false)) {
+        // CIRCUITPY-CHANGE: inverted success test, see above.
+        if (digitalinout_protocol_set_value(self->mosi, false) != 0) {
             return false;
         }
     }
@@ -298,7 +303,8 @@ bool shared_module_bitbangio_spi_transfer(bitbangio_spi_obj_t *self, const uint8
         uint8_t data_in = 0;
         for (int j = 0; j < 8; ++j, data_out <<= 1) {
             if (i == 0 && j == 0) {
-                if (!digitalinout_protocol_set_value(self->mosi, (data_out >> 7) & 1)) {
+                // CIRCUITPY-CHANGE: inverted success test, see above.
+                if (digitalinout_protocol_set_value(self->mosi, (data_out >> 7) & 1) != 0) {
                     return false;
                 }
             } else {
