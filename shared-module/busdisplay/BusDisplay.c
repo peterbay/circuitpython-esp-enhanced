@@ -68,10 +68,21 @@ void common_hal_busdisplay_busdisplay_construct(busdisplay_busdisplay_obj_t *sel
 
     uint32_t i = 0;
     while (i < init_sequence_len) {
+        // CIRCUITPY-CHANGE: the parser read a command byte, a length byte, that many
+        // payload bytes and an optional delay byte without ever checking what was
+        // left of the buffer. A short or malformed sequence read past the end and
+        // sent whatever it found to the display bus. Every field is bounds checked
+        // before it is touched now.
+        if (init_sequence_len - i < 2) {
+            mp_raise_ValueError_varg(MP_ERROR_TEXT("Invalid %q"), MP_QSTR_init_sequence);
+        }
         uint8_t *cmd = init_sequence + i;
         uint8_t data_size = *(cmd + 1);
         bool delay = (data_size & DELAY) != 0;
         data_size &= ~DELAY;
+        if (init_sequence_len - i - 2 < (uint32_t)data_size + (delay ? 1 : 0)) {
+            mp_raise_ValueError_varg(MP_ERROR_TEXT("Invalid %q"), MP_QSTR_init_sequence);
+        }
         uint8_t *data = cmd + 2;
         while (!displayio_display_bus_begin_transaction(&self->bus)) {
             RUN_BACKGROUND_TASKS;
