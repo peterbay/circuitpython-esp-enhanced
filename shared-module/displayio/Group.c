@@ -120,6 +120,26 @@ bool displayio_group_get_previous_area(displayio_group_t *self, displayio_area_t
                 if (!displayio_group_get_previous_area(layer, &layer_area)) {
                     continue;
                 }
+            } else {
+                // CIRCUITPY-CHANGE: a member that is neither a TileGrid nor a Group
+                // used to fall through with layer_area never written, so an
+                // indeterminate stack struct was copied into *area and the function
+                // still reported success. _remove_layer already reads a vectorio
+                // shape's area the same way; do it here too, and refuse to fall
+                // through for anything else.
+                #if CIRCUITPY_VECTORIO
+                const vectorio_draw_protocol_t *draw_protocol =
+                    mp_proto_get(MP_QSTR_protocol_draw, self->members->items[i]);
+                if (draw_protocol == NULL) {
+                    continue;
+                }
+                layer = draw_protocol->draw_get_protocol_self(self->members->items[i]);
+                if (!draw_protocol->draw_protocol_impl->draw_get_dirty_area(layer, &layer_area)) {
+                    continue;
+                }
+                #else
+                continue;
+                #endif
             }
         }
         if (first) {
