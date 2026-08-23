@@ -75,7 +75,15 @@ void common_hal_mcu_disable_interrupts(void) {
 
 void common_hal_mcu_enable_interrupts(void) {
     assert(xPortGetCoreID() == CONFIG_ESP_MAIN_TASK_AFFINITY);
-    assert(nesting_count > 0);
+    // CIRCUITPY-CHANGE: this was only an assert, which compiles out in release builds. An unbalanced
+    // enable then wrapped nesting_count around, and because a non-zero count means "already held",
+    // every later common_hal_mcu_disable_interrupts() became a silent no-op and every critical
+    // section in the port stopped protecting anything. microcontroller.enable_interrupts() is
+    // callable from Python, so this is reachable without any C bug at all.
+    if (nesting_count == 0) {
+        // This is very very bad because it means there was mismatched disable/enables.
+        reset_into_safe_mode(SAFE_MODE_INTERRUPT_ERROR);
+    }
     nesting_count--;
     if (nesting_count > 0) {
         return;
