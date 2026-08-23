@@ -110,6 +110,13 @@ static mp_obj_t displayio_tilegrid_make_new(const mp_obj_type_t *type, size_t n_
     }
     mp_obj_t pixel_shader = args[ARG_pixel_shader].u_obj;
     displayio_tilegrid_validate_pixel_shader(pixel_shader);
+    // CIRCUITPY-CHANGE: these were narrowed to uint16_t before anything looked at
+    // them, and zero is the "use the whole bitmap" sentinel, so 65536 or -65536
+    // truncated to zero and silently became a different request than the one the
+    // caller made. Validate the argument as given: either the sentinel exactly, or
+    // a value that survives the narrowing.
+    mp_arg_validate_int_range(args[ARG_tile_width].u_int, 0, 0xffff, MP_QSTR_tile_width);
+    mp_arg_validate_int_range(args[ARG_tile_height].u_int, 0, 0xffff, MP_QSTR_tile_height);
     uint16_t tile_width = args[ARG_tile_width].u_int;
     if (tile_width == 0) {
         tile_width = bitmap_width;
@@ -118,6 +125,13 @@ static mp_obj_t displayio_tilegrid_make_new(const mp_obj_type_t *type, size_t n_
     if (tile_height == 0) {
         tile_height = bitmap_height;
     }
+    // CIRCUITPY-CHANGE: displayio.Bitmap explicitly allows a zero width or height,
+    // and an omitted tile size defaults to the bitmap's, so the two modulos below
+    // could be 0 % 0 -- an integer divide by zero, which on this chip is a panic
+    // and a reboot rather than an exception. Has to be checked here, before the
+    // modulo, not alongside the grid dimensions further down.
+    mp_arg_validate_int_min(tile_width, 1, MP_QSTR_tile_width);
+    mp_arg_validate_int_min(tile_height, 1, MP_QSTR_tile_height);
     if (bitmap_width % tile_width != 0) {
         mp_raise_ValueError(MP_ERROR_TEXT("Tile width must exactly divide bitmap width"));
     }
@@ -125,12 +139,39 @@ static mp_obj_t displayio_tilegrid_make_new(const mp_obj_type_t *type, size_t n_
         mp_raise_ValueError(MP_ERROR_TEXT("Tile height must exactly divide bitmap height"));
     }
 
+    // CIRCUITPY-CHANGE: width and height went straight into uint16_t fields with no
+    // validation, and subscripting divides by width. A zero grid therefore panicked
+    // the board on an integer divide by zero, before the index bounds check that
+    // would have raised. A range check rather than a minimum, because the argument
+    // is an mp_int_t and 65536 truncates to zero just as surely as 0 does.
+    mp_arg_validate_int_range(args[ARG_width].u_int, 1, 0xffff, MP_QSTR_width);
+    mp_arg_validate_int_range(args[ARG_height].u_int, 1, 0xffff, MP_QSTR_height);
+
+    // CIRCUITPY-CHANGE: displayio.Bitmap accepts a zero width, and the divisibility
+    // test above passes for it, so bitmap_width_in_tiles could be zero. The render
+    // loop then evaluates tile % bitmap_width_in_tiles -- an integer divide by zero,
+    // which on this chip panics and reboots the board rather than raising.
+    uint16_t bitmap_width_in_tiles = bitmap_width / tile_width;
+    uint16_t bitmap_height_in_tiles = bitmap_height / tile_height;
+    uint32_t tiles_in_bitmap = (uint32_t)bitmap_width_in_tiles * bitmap_height_in_tiles;
+    if (tiles_in_bitmap == 0) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Bitmap must contain at least one tile"));
+    }
+
+    // CIRCUITPY-CHANGE: tilegrid[i] = n validates the index against tiles_in_bitmap,
+    // but default_tile went straight into a uint16_t field unchecked. It therefore
+    // accepted out of range tiles, which render as palette entry 0 instead of
+    // raising, and truncated on the way in, turning 65536 into 0 and -1 into 65535 --
+    // the same narrowing class as the arguments validated above.
+    mp_arg_validate_int_range(args[ARG_default_tile].u_int, 0,
+        (mp_int_t)tiles_in_bitmap - 1, MP_QSTR_default_tile);
+
     int16_t x = args[ARG_x].u_int;
     int16_t y = args[ARG_y].u_int;
 
     displayio_tilegrid_t *self = mp_obj_malloc(displayio_tilegrid_t, &displayio_tilegrid_type);
     common_hal_displayio_tilegrid_construct(self, bitmap,
-        bitmap_width / tile_width, bitmap_height / tile_height,
+        bitmap_width_in_tiles, bitmap_height_in_tiles,
         pixel_shader, args[ARG_width].u_int, args[ARG_height].u_int,
         tile_width, tile_height, x, y, args[ARG_default_tile].u_int);
 
