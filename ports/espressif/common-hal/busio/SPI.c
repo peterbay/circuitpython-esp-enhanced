@@ -280,6 +280,12 @@ bool common_hal_busio_spi_transfer(busio_spi_obj_t *self,
     if (len == 0) {
         return true;
     }
+    #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+    // CIRCUITPY-CHANGE: another user of the bus must not find a queued transfer
+    // still outstanding. The short path below polls, and ESP-IDF forbids polling
+    // while anything sits in the queue.
+    common_hal_busio_spi_wait_async(self);
+    #endif
     if (self->MOSI == NULL && data_out != NULL) {
         mp_raise_ValueError_varg(MP_ERROR_TEXT("No %q pin"), MP_QSTR_mosi);
     }
@@ -387,6 +393,41 @@ bool common_hal_busio_spi_transfer(busio_spi_obj_t *self,
     }
     return true;
 }
+
+#if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+// CIRCUITPY-CHANGE: queue one transfer and return without waiting for it, so the
+// caller can fill another buffer while the DMA drains this one. Only whole
+// transfers that fit a single descriptor are accepted; anything longer would
+// need several, and the caller has a synchronous path for those anyway.
+bool common_hal_busio_spi_write_async(busio_spi_obj_t *self, const uint8_t *data, size_t len) {
+    if (len == 0 || len > SPI_MAX_DMA_LEN || self->MOSI == NULL || self->async_pending) {
+        return false;
+    }
+    memset(&self->async_transaction, 0, sizeof(self->async_transaction));
+    self->async_transaction.length = len * 8 / self->bits * self->bits;
+    self->async_transaction.tx_buffer = data;
+    // No wait: a full queue means the bus is busy, and the caller falls back to
+    // the synchronous path rather than blocking here.
+    if (spi_device_queue_trans(spi_handle[self->host_id], &self->async_transaction, 0) != ESP_OK) {
+        return false;
+    }
+    self->async_pending = true;
+    return true;
+}
+
+void common_hal_busio_spi_wait_async(busio_spi_obj_t *self) {
+    if (!self->async_pending) {
+        return;
+    }
+    self->async_pending = false;
+    spi_transaction_t *rtrans;
+    // No RUN_BACKGROUND_TASKS here. One queued transfer is at most SPI_MAX_DMA_LEN,
+    // which is under half a millisecond even at the slowest clock this bus runs,
+    // and the display refresh loop already runs background tasks once per
+    // subrectangle. Running them here as well doubled that cost per chunk.
+    spi_device_get_trans_result(spi_handle[self->host_id], &rtrans, portMAX_DELAY);
+}
+#endif
 
 uint32_t common_hal_busio_spi_get_frequency(busio_spi_obj_t *self) {
     return self->baudrate;

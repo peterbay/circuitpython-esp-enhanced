@@ -42,6 +42,15 @@ extern bool common_hal_busio_spi_read(busio_spi_obj_t *self, uint8_t *data, size
 extern bool common_hal_busio_spi_transfer(busio_spi_obj_t *self, const uint8_t *data_out, uint8_t *data_in, size_t len);
 
 // Return actual SPI bus frequency.
+#if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+// CIRCUITPY-CHANGE: hand the bus a transfer and come back before it finished.
+// Returns false when the transfer could not be queued, in which case nothing is
+// outstanding and the caller should send it synchronously instead. Every port
+// that turns CIRCUITPY_DISPLAY_DOUBLE_BUFFER on has to provide these two.
+extern bool common_hal_busio_spi_write_async(busio_spi_obj_t *self, const uint8_t *data, size_t len);
+extern void common_hal_busio_spi_wait_async(busio_spi_obj_t *self);
+#endif
+
 uint32_t common_hal_busio_spi_get_frequency(busio_spi_obj_t *self);
 
 // Return SPI bus phase.

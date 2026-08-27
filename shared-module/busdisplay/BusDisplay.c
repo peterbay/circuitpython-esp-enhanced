@@ -230,6 +230,7 @@ static const displayio_area_t *_get_refresh_areas(busdisplay_busdisplay_obj_t *s
 // continue_write picks write memory continue over write memory start, which
 // appends to the address counter left by the previous chunk instead of jumping
 // back to the origin of the window.
+#if !CIRCUITPY_DISPLAY_DOUBLE_BUFFER
 static void _send_pixels(busdisplay_busdisplay_obj_t *self, uint8_t *pixels, uint32_t length,
     bool continue_write) {
     if (!self->bus.data_as_commands) {
@@ -238,6 +239,25 @@ static void _send_pixels(busdisplay_busdisplay_obj_t *self, uint8_t *pixels, uin
     }
     self->bus.send(self->bus.bus, DISPLAY_DATA, CHIP_SELECT_UNTOUCHED, pixels, length);
 }
+#endif
+
+#if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+// CIRCUITPY-CHANGE: as above, but the pixel data may still be going out when this
+// returns. True then means the caller owes a flush before it touches the buffer
+// again or drops chip select; false means everything is already on the wire.
+static bool _send_pixels_async(busdisplay_busdisplay_obj_t *self, uint8_t *pixels, uint32_t length,
+    bool continue_write) {
+    if (!self->bus.data_as_commands) {
+        uint8_t command = continue_write ? MIPI_COMMAND_WRITE_MEMORY_CONTINUE : self->write_ram_command;
+        self->bus.send(self->bus.bus, DISPLAY_COMMAND, CHIP_SELECT_TOGGLE_EVERY_BYTE, &command, 1);
+    }
+    if (self->bus.send_async != NULL) {
+        return self->bus.send_async(self->bus.bus, pixels, length);
+    }
+    self->bus.send(self->bus.bus, DISPLAY_DATA, CHIP_SELECT_UNTOUCHED, pixels, length);
+    return false;
+}
+#endif
 
 static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_area_t *area) {
     uint16_t buffer_size = CIRCUITPY_DISPLAY_AREA_BUFFER_SIZE / sizeof(uint32_t); // In uint32_ts
@@ -285,7 +305,16 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
     // Allocated and shared as a uint32_t array so the compiler knows the
     // alignment everywhere.
     uint32_t mask_length = (pixels_per_buffer / 32) + 1;
+    #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+    // CIRCUITPY-CHANGE: two of them, so the next subrectangle can be composed
+    // while this one is still going out over the bus. The mask is not doubled:
+    // it is zeroed and consumed inside a single fill_area and never read again.
+    uint32_t buffers[2][buffer_size];
+    uint8_t cur_buffer = 0;
+    bool transfer_pending = false;
+    #else
     uint32_t buffer[buffer_size];
+    #endif
     uint32_t mask[mask_length];
 
     uint16_t remaining_rows = displayio_area_height(&clipped);
@@ -324,12 +353,29 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
             subrectangle_size_bytes = displayio_area_size(&subrectangle) / (8 / self->core.colorspace.depth);
         }
 
+        #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+        uint32_t *buffer = buffers[cur_buffer];
+        #endif
+
         memset(mask, 0, mask_length * sizeof(mask[0]));
         memset(buffer, 0, buffer_size * sizeof(buffer[0]));
 
         PROF_BEGIN(PROF_FILL_AREA);
         displayio_display_core_fill_area(&self->core, &subrectangle, mask, buffer);
         PROF_END(PROF_FILL_AREA);
+
+        PROF_BEGIN(PROF_CHUNK_BUS);
+        #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+        // The composition above ran alongside the previous subrectangle's
+        // transfer. Only now does the bus have to be free again, so this is the
+        // first point that waits -- and chip select is dropped here rather than
+        // right after the send, because the last bytes were still going out.
+        if (transfer_pending) {
+            displayio_display_bus_flush(&self->bus);
+            displayio_display_bus_end_transaction(&self->bus);
+            transfer_pending = false;
+        }
+        #endif
 
         if (!single_window) {
             PROF_BEGIN(PROF_SET_REGION);
@@ -339,12 +385,27 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
 
         // Can't acquire display bus; skip the rest of the data.
         if (!displayio_display_bus_begin_transaction(&self->bus)) {
+            PROF_END(PROF_CHUNK_BUS);
             return false;
         }
+        PROF_END(PROF_CHUNK_BUS);
         PROF_BEGIN(PROF_SEND_PIXELS);
+        #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+        // Times the queueing rather than the transfer itself once this is on.
+        transfer_pending = _send_pixels_async(self, (uint8_t *)buffer, subrectangle_size_bytes,
+            single_window && j > 0);
+        #else
         _send_pixels(self, (uint8_t *)buffer, subrectangle_size_bytes, single_window && j > 0);
+        #endif
         PROF_END(PROF_SEND_PIXELS);
+        #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+        if (!transfer_pending) {
+            displayio_display_bus_end_transaction(&self->bus);
+        }
+        cur_buffer ^= 1;
+        #else
         displayio_display_bus_end_transaction(&self->bus);
+        #endif
 
         // Run background tasks so they can run during an explicit refresh.
         // Auto-refresh won't run background tasks here because it is a background task itself.
@@ -358,6 +419,11 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
 
     // Drain any remaining asynchronous transfers.
     displayio_display_bus_flush(&self->bus);
+    #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+    if (transfer_pending) {
+        displayio_display_bus_end_transaction(&self->bus);
+    }
+    #endif
 
     PROF_END(PROF_REFRESH_AREA);
     return true;

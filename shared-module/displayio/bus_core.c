@@ -73,6 +73,10 @@ void displayio_display_bus_construct(displayio_display_bus_t *self,
         self->begin_transaction = common_hal_fourwire_fourwire_begin_transaction;
         self->send = common_hal_fourwire_fourwire_send;
         self->end_transaction = common_hal_fourwire_fourwire_end_transaction;
+        #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+        self->send_async = common_hal_fourwire_fourwire_send_async;
+        self->flush = common_hal_fourwire_fourwire_flush;
+        #endif
         self->collect_ptrs = common_hal_fourwire_fourwire_collect_ptrs;
     } else
     #endif

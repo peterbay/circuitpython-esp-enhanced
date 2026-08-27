@@ -626,6 +626,10 @@ CFLAGS += -DCIRCUITPY_PROF=1
 SRC_C += supervisor/prof.c
 endif
 
+ifeq ($(CIRCUITPY_DISPLAY_DOUBLE_BUFFER),1)
+CFLAGS += -DCIRCUITPY_DISPLAY_DOUBLE_BUFFER=1
+endif
+
 ifeq ($(CIRCUITPY_SSL),1)
 SRC_C += common-hal/ssl/crt_bundle.c
 endif

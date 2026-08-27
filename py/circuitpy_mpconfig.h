@@ -398,9 +398,18 @@ typedef long mp_off_t;
 #define CIRCUITPY_DISPLAY_AREA_BUFFER_SIZE (512)
 #endif
 
+// CIRCUITPY-CHANGE: compose the next subrectangle while the previous one is
+// still going out over the bus. Costs a second area buffer on the stack and
+// needs a bus that implements send_async and flush; buses that do not fall back
+// to the synchronous path on their own.
+#ifndef CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+#define CIRCUITPY_DISPLAY_DOUBLE_BUFFER (0)
+#endif
+
 #else
 #define CIRCUITPY_DISPLAY_LIMIT (0)
 #define CIRCUITPY_DISPLAY_AREA_BUFFER_SIZE (0)
+#define CIRCUITPY_DISPLAY_DOUBLE_BUFFER (0)
 #endif
 
 // This is not a top-level module; it's microcontroller.nvm.

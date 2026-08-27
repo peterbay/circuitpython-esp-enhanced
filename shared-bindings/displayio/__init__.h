@@ -49,5 +49,9 @@ typedef bool (*display_bus_begin_transaction)(mp_obj_t bus);
 typedef void (*display_bus_send)(mp_obj_t bus, display_byte_type_t byte_type,
     display_chip_select_behavior_t chip_select, const uint8_t *data, uint32_t data_length);
 typedef void (*display_bus_end_transaction)(mp_obj_t bus);
+// CIRCUITPY-CHANGE: send pixel data and return before it has all gone out.
+// Returns true when the transfer is still running and owes a flush, false when
+// it was sent synchronously after all and nothing is outstanding.
+typedef bool (*display_bus_send_async)(mp_obj_t bus, const uint8_t *data, uint32_t data_length);
 typedef void (*display_bus_flush)(mp_obj_t bus);
 typedef void (*display_bus_collect_ptrs)(mp_obj_t bus);

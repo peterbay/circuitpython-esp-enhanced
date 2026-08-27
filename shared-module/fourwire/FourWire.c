@@ -184,6 +184,36 @@ void common_hal_fourwire_fourwire_send(mp_obj_t obj, display_byte_type_t data_ty
     }
 }
 
+#if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+// CIRCUITPY-CHANGE: pixel data that needs neither the nine bit emulation nor a
+// chip select toggle between bytes is a single run on the wire, so it can be
+// handed to the bus and left to finish on its own. Everything else is sent the
+// ordinary way here and reported as already complete.
+bool common_hal_fourwire_fourwire_send_async(mp_obj_t obj, const uint8_t *data, uint32_t data_length) {
+    fourwire_fourwire_obj_t *self = MP_OBJ_TO_PTR(obj);
+    if (data_length == 0) {
+        return false;
+    }
+    if (self->command == mp_const_none) {
+        common_hal_fourwire_fourwire_send(obj, DISPLAY_DATA, CHIP_SELECT_UNTOUCHED, data, data_length);
+        return false;
+    }
+    digitalinout_protocol_set_value(self->command, true);
+    if (common_hal_busio_spi_write_async(self->bus, data, data_length)) {
+        return true;
+    }
+    common_hal_busio_spi_write(self->bus, data, data_length);
+    return false;
+}
+
+// Chip select is only released once this has returned, so the last bytes of a
+// queued transfer cannot be cut off by end_transaction.
+void common_hal_fourwire_fourwire_flush(mp_obj_t obj) {
+    fourwire_fourwire_obj_t *self = MP_OBJ_TO_PTR(obj);
+    common_hal_busio_spi_wait_async(self->bus);
+}
+#endif
+
 void common_hal_fourwire_fourwire_end_transaction(mp_obj_t obj) {
     fourwire_fourwire_obj_t *self = MP_OBJ_TO_PTR(obj);
     if (self->chip_select != mp_const_none) {
