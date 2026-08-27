@@ -245,6 +245,7 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
         return true;
     }
     PROF_BEGIN(PROF_REFRESH_AREA);
+    PROF_BEGIN(PROF_AREA_SETUP);
     uint16_t rows_per_buffer = displayio_area_height(&clipped);
     uint8_t pixels_per_word = (sizeof(uint32_t) * 8) / self->core.colorspace.depth;
     uint16_t pixels_per_buffer = displayio_area_size(&clipped);
@@ -294,6 +295,7 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
     // buses that carry commands as data keep the original behaviour.
     bool single_window = !self->bus.SH1107_addressing && !self->bus.data_as_commands &&
         self->write_ram_command == MIPI_COMMAND_WRITE_MEMORY_START;
+    PROF_END(PROF_AREA_SETUP);
     if (single_window) {
         PROF_BEGIN(PROF_SET_REGION);
         displayio_display_bus_set_region_to_update(&self->bus, &self->core, &clipped);
@@ -368,7 +370,9 @@ static void _refresh_display(busdisplay_busdisplay_obj_t *self) {
         return;
     }
 
+    PROF_BEGIN(PROF_GET_AREAS);
     const displayio_area_t *current_area = _get_refresh_areas(self);
+    PROF_END(PROF_GET_AREAS);
     while (current_area != NULL) {
         _refresh_area(self, current_area);
         current_area = current_area->next;

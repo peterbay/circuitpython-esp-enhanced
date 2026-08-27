@@ -16,6 +16,9 @@ const char *const prof_names[PROF_COUNT] = {
     "fill_area",
     "set_region",
     "send_pixels",
+    "get_areas",
+    "area_setup",
+    "chunk_bus",
     "gc_collect",
 };
 

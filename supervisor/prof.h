@@ -22,6 +22,10 @@ typedef enum {
     PROF_FILL_AREA,     // pixel conversion of one subrectangle
     PROF_SET_REGION,    // column and page window commands
     PROF_SEND_PIXELS,   // handing one subrectangle to the bus, includes waiting
+    PROF_GET_AREAS,     // walking the group for dirty areas, once per refresh
+    PROF_AREA_SETUP,    // clipping and chunk arithmetic before the subrectangles
+    PROF_CHUNK_BUS,     // per subrectangle: waiting out the previous transfer and
+                        // closing and reopening the bus transaction around it
     PROF_GC_COLLECT,    // one garbage collection
     PROF_COUNT,
 } prof_id_t;
