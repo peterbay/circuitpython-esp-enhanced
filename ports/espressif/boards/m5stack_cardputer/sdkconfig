@@ -12,3 +12,10 @@
 # end of Component config
 
 # end of Espressif IoT Development Framework Configuration
+
+# CIRCUITPY-CHANGE: with power management left at its default of MIN, the radio
+# sleeps between DTIM beacons and an arriving packet waits for the next one, which
+# costs about 100 ms. It stays awake for this long after any packet and every
+# further packet refreshes the window, so a client that talks more often than this
+# never pays that wait at all. 60 ms is the highest the driver accepts.
+CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME=60

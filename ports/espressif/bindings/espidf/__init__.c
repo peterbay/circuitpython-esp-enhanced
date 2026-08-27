@@ -29,6 +29,7 @@
 #if CIRCUITPY_WIFI
 #include "esp_eap_client.h"
 #include "esp_smartconfig.h"
+#include "esp_private/wifi.h"
 #endif
 #include "esp_netif.h"
 #include "freertos/queue.h"
@@ -1590,6 +1591,34 @@ static MP_DEFINE_CONST_FUN_OBJ_1(espidf_ble_prefer_phy_obj, espidf_ble_prefer_ph
 //|     ...
 //|
 //|
+//| def wifi_sleep_min_active_time(milliseconds: int) -> None:
+//|     """How long the radio stays awake after a packet before it is allowed to
+//|     sleep again, with `wifi.PowerManagement.MIN` or ``MAX`` in effect. Every
+//|     further packet restarts the window, so a peer that talks more often than
+//|     this keeps the radio up and never waits for the next DTIM beacon.
+//|
+//|     The build sets this once from CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME,
+//|     which menuconfig caps at 60 ms. Raising it at run time trades current for
+//|     latency without going all the way to `wifi.PowerManagement.NONE`: a server
+//|     answering a poll every 200 ms can hold the radio up across the gap while it
+//|     is busy and drop back to a few tens of milliseconds when it is not.
+//|
+//|     Applies to the whole radio, not one socket."""
+//|     ...
+//|
+//|
+#if CIRCUITPY_WIFI
+static mp_obj_t espidf_wifi_sleep_min_active_time(mp_obj_t ms_in) {
+    // The driver takes microseconds. An hour is far past any useful setting and
+    // keeps the multiplication below inside 32 bits.
+    mp_int_t ms = mp_arg_validate_int_range(mp_obj_get_int(ms_in), 1, 3600000,
+        MP_QSTR_milliseconds);
+    esp_wifi_set_sleep_min_active_time((uint32_t)ms * 1000);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(espidf_wifi_sleep_min_active_time_obj, espidf_wifi_sleep_min_active_time);
+#endif
+
 static mp_obj_t espidf_wifi_raw_tx(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     enum { ARG_frame, ARG_channel };
     static const mp_arg_t allowed_args[] = {
@@ -2542,6 +2571,9 @@ static const mp_rom_map_elem_t espidf_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_aes_gcm_encrypt), MP_ROM_PTR(&espidf_aes_gcm_encrypt_obj) },
     { MP_ROM_QSTR(MP_QSTR_aes_gcm_decrypt), MP_ROM_PTR(&espidf_aes_gcm_decrypt_obj) },
     { MP_ROM_QSTR(MP_QSTR_wifi_raw_tx), MP_ROM_PTR(&espidf_wifi_raw_tx_obj) },
+    #if CIRCUITPY_WIFI
+    { MP_ROM_QSTR(MP_QSTR_wifi_sleep_min_active_time), MP_ROM_PTR(&espidf_wifi_sleep_min_active_time_obj) },
+    #endif
     #if CIRCUITPY_BLEIO_NATIVE
     { MP_ROM_QSTR(MP_QSTR_ble_prefer_phy), MP_ROM_PTR(&espidf_ble_prefer_phy_obj) },
     #endif
