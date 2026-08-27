@@ -53,6 +53,8 @@ void displayio_display_bus_construct(displayio_display_bus_t *self,
     self->address_little_endian = address_little_endian;
 
     self->flush = NULL;
+    self->send_async = NULL;
+    self->last_region_valid = false;
 
     #if CIRCUITPY_PARALLELDISPLAYBUS
     if (mp_obj_is_type(bus, &paralleldisplaybus_parallelbus_type)) {
@@ -122,7 +124,29 @@ void displayio_display_bus_end_transaction(displayio_display_bus_t *self) {
     self->end_transaction(self->bus);
 }
 
+void displayio_display_bus_forget_region(displayio_display_bus_t *self) {
+    self->last_region_valid = false;
+}
+
 void displayio_display_bus_set_region_to_update(displayio_display_bus_t *self, displayio_display_core_t *display, displayio_area_t *area) {
+    // CIRCUITPY-CHANGE: the same window as last time is still programmed. Writing
+    // pixels does not disturb it: every write starts with WRITE_MEMORY_START,
+    // which puts the controller's address pointer back at the window's origin.
+    //
+    // Only with a single display: two displays sharing one bus keep separate
+    // copies of this state and would each believe its own window still stood
+    // while the other had replaced it.
+    #if CIRCUITPY_DISPLAY_LIMIT <= 1
+    if (self->last_region_valid &&
+        self->last_region.x1 == area->x1 && self->last_region.x2 == area->x2 &&
+        self->last_region.y1 == area->y1 && self->last_region.y2 == area->y2) {
+        return;
+    }
+    #endif
+    // Any early return below leaves the controller half programmed, so the cache
+    // is only armed once the whole sequence has gone out.
+    self->last_region_valid = false;
+
     uint16_t x1 = area->x1 + self->colstart;
     uint16_t x2 = area->x2 + self->colstart;
     uint16_t y1 = area->y1 + self->rowstart;
@@ -246,6 +270,12 @@ void displayio_display_bus_set_region_to_update(displayio_display_bus_t *self, d
         self->send(self->bus, DISPLAY_DATA, chip_select, data, data_length / 2);
         displayio_display_bus_end_transaction(self);
     }
+
+    self->last_region.x1 = area->x1;
+    self->last_region.x2 = area->x2;
+    self->last_region.y1 = area->y1;
+    self->last_region.y2 = area->y2;
+    self->last_region_valid = true;
 }
 
 void displayio_display_bus_flush(displayio_display_bus_t *self) {

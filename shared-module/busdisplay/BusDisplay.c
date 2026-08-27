@@ -113,6 +113,9 @@ void common_hal_busdisplay_busdisplay_construct(busdisplay_busdisplay_obj_t *sel
         common_hal_time_delay_ms(delay_length_ms);
         i += 2 + data_size;
     }
+    // An init sequence is free to set the column and row registers itself, so
+    // whatever window it left behind is not one we may assume.
+    displayio_display_bus_forget_region(&self->bus);
 
     // Always set the backlight type in case we're reusing memory.
     self->backlight_inout.base.type = &mp_type_NoneType;
