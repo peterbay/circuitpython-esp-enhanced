@@ -291,10 +291,34 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
                 rows_per_buffer -= rows_per_buffer % pixels_per_byte;
             }
         }
-        subrectangles = displayio_area_height(&clipped) / rows_per_buffer;
-        if (displayio_area_height(&clipped) % rows_per_buffer != 0) {
+        uint16_t area_height = displayio_area_height(&clipped);
+        subrectangles = area_height / rows_per_buffer;
+        if (area_height % rows_per_buffer != 0) {
             subrectangles++;
         }
+        #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
+        // CIRCUITPY-CHANGE: spread the rows evenly over the subrectangles instead
+        // of filling each buffer and leaving whatever is left as a short tail. A
+        // 38 row area with room for 34 became 34 and 4: the four row tail composes
+        // in almost no time, so it hides none of the transfer of the 34 row one
+        // and that wait is then paid in full. Two 19 row halves cost the same to
+        // compose and to send but overlap properly. Only ever lowers
+        // rows_per_buffer, so the buffer stays large enough.
+        uint16_t even_rows = (area_height + subrectangles - 1) / subrectangles;
+        if (self->core.colorspace.depth < 8 && !self->core.colorspace.pixels_in_byte_share_row) {
+            uint8_t pixels_per_byte = 8 / self->core.colorspace.depth;
+            if (even_rows % pixels_per_byte != 0) {
+                even_rows += pixels_per_byte - (even_rows % pixels_per_byte);
+            }
+        }
+        if (even_rows > 0 && even_rows < rows_per_buffer) {
+            rows_per_buffer = even_rows;
+            subrectangles = area_height / rows_per_buffer;
+            if (area_height % rows_per_buffer != 0) {
+                subrectangles++;
+            }
+        }
+        #endif
         pixels_per_buffer = rows_per_buffer * displayio_area_width(&clipped);
         buffer_size = pixels_per_buffer / pixels_per_word;
         if (pixels_per_buffer % pixels_per_word) {
