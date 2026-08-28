@@ -10,12 +10,20 @@
 #include "driver/gpio.h"
 #include "hal/gpio_hal.h"
 
+// CIRCUITPY-CHANGE: this used to call gpio_get_io_config(), which fills a whole
+// gpio_io_config_t -- pulls, output enable, open drain, drive strength, function
+// select, sleep mode -- and on a pin in the RTC range makes three further HAL
+// calls on top, all so that one bit of it could be read. get_value() asks on
+// every single read, and measured against the same property read without it, that
+// cost 1505 ns a time. The input enable bit is one field of one IO MUX register,
+// which is what gpio_ll_get_io_config() reads it from as well.
 static bool _pin_is_input(uint8_t pin_number) {
-    gpio_io_config_t config;
-    if (gpio_get_io_config((gpio_num_t)pin_number, &config) != ESP_OK) {
-        return false;
-    }
-    return config.ie;
+    return (REG_READ(GPIO_PIN_MUX_REG[pin_number]) & FUN_IE_M) != 0;
+}
+
+// Same reasoning for the open drain bit, which is one field of one GPIO register.
+static bool _pin_is_open_drain(uint8_t pin_number) {
+    return GPIO.pin[pin_number].pad_driver != 0;
 }
 
 void digitalio_digitalinout_preserve_for_deep_sleep(size_t n_dios, digitalio_digitalinout_obj_t *preserve_dios[]) {
@@ -116,12 +124,7 @@ digitalinout_result_t common_hal_digitalio_digitalinout_set_drive_mode(
 
 digitalio_drive_mode_t common_hal_digitalio_digitalinout_get_drive_mode(
     digitalio_digitalinout_obj_t *self) {
-    gpio_io_config_t config;
-    if (gpio_get_io_config((gpio_num_t)self->pin->number, &config) != ESP_OK) {
-        // Should it fail closed or open?
-        return DRIVE_MODE_OPEN_DRAIN;
-    }
-    return config.od ? DRIVE_MODE_OPEN_DRAIN : DRIVE_MODE_PUSH_PULL;
+    return _pin_is_open_drain(self->pin->number) ? DRIVE_MODE_OPEN_DRAIN : DRIVE_MODE_PUSH_PULL;
 }
 
 digitalinout_result_t common_hal_digitalio_digitalinout_set_pull(
