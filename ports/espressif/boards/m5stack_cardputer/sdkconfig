@@ -5,6 +5,16 @@
 # Component config
 #
 #
+# FreeRTOS
+#
+# Needed by espidf.task_stats(), which reports how the CPU is split between the
+# CircuitPython task, the idle tasks and the ESP-IDF service tasks.
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y
+# end of FreeRTOS
+
+#
 # LWIP
 #
 # end of LWIP
@@ -12,6 +22,28 @@
 # end of Component config
 
 # end of Espressif IoT Development Framework Configuration
+
+# CIRCUITPY-CHANGE: the S3 supports a 32 KB instruction cache and the IDF default of
+# 16 KB was never overridden for this chip -- the S2 defaults file sets its own, the
+# S3 one does not. Both settings were built and measured on this board, each after a
+# hard reset, best of several warm passes:
+#
+#              tight loop  multi-module  compile 22 KB  cold import  free heap at boot
+#   16 KB        1017 ns      15238 ns       87.5 ms      670.9 ms         144416 B
+#   32 KB         997 ns      14425 ns       78.6 ms      595.3 ms         128032 B
+#
+# So 32 KB is worth 2% on a tight loop and 5-11% on anything that spans real code,
+# and costs exactly 16384 B of the D/IRAM pool the Python heap is carved from
+# (link-time SRAM1 free 245056 -> 228672). The largest obtainable block is 30720 B
+# either way -- that limit is set elsewhere -- but total free heap is 11% lower, and
+# a sequence of three compile() calls followed by an import fits at 16 KB and raises
+# MemoryError at 32 KB. Kept at 16 KB for the headroom; the speed is the better buy
+# only on a board that is not close to its memory limit.
+#
+# When experimenting: the generated build-*/esp-idf/sdkconfig wins over this fragment
+# for a Kconfig choice, so removing or inverting a line here does not revert it --
+# that file has to be deleted and regenerated.
+CONFIG_ESP32S3_INSTRUCTION_CACHE_16KB=y
 
 # CIRCUITPY-CHANGE: with power management left at its default of MIN, the radio
 # sleeps between DTIM beacons and an arriving packet waits for the next one, which
