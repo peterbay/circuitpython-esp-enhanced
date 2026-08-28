@@ -349,6 +349,23 @@ static mp_obj_t stream_readall(mp_obj_t self_in) {
     }
 }
 
+// CIRCUITPY-CHANGE: a stream that can seek is read a block at a time and then
+// rewound past whatever followed the newline, so a line costs one host call per
+// block instead of one per character. On FAT that was one f_read per character.
+// Streams that cannot seek -- UART, stdio, sockets -- keep the byte-at-a-time
+// loop, which is why this lives here rather than in the file object: readline(),
+// readlines() and `for line in f` all funnel through this one function.
+#define READLINE_CHUNK (64)
+
+static bool stream_can_seek(mp_obj_t stream, const mp_stream_p_t *stream_p) {
+    if (stream_p->ioctl == NULL) {
+        return false;
+    }
+    struct mp_stream_seek_t seek = { .offset = 0, .whence = MP_SEEK_CUR };
+    int error;
+    return stream_p->ioctl(stream, MP_STREAM_SEEK, (uintptr_t)&seek, &error) != MP_STREAM_ERROR;
+}
+
 // Unbuffered, inefficient implementation of readline() for raw I/O files.
 static mp_obj_t stream_unbuffered_readline(size_t n_args, const mp_obj_t *args) {
     const mp_stream_p_t *stream_p = mp_get_stream(args[0]);
@@ -363,6 +380,56 @@ static mp_obj_t stream_unbuffered_readline(size_t n_args, const mp_obj_t *args) 
         vstr_init(&vstr, max_size);
     } else {
         vstr_init(&vstr, 16);
+    }
+
+    if (stream_can_seek(args[0], stream_p)) {
+        char buf[READLINE_CHUNK];
+        while (max_size != 0) {
+            mp_uint_t want = READLINE_CHUNK;
+            if (max_size > 0 && (mp_uint_t)max_size < want) {
+                want = (mp_uint_t)max_size;
+            }
+            int error;
+            mp_uint_t out_sz = stream_p->read(args[0], buf, want, &error);
+            if (out_sz == MP_STREAM_ERROR) {
+                if (mp_is_nonblocking_error(error)) {
+                    if (vstr.len == 0) {
+                        // As in the byte-at-a-time path below: nothing read at all,
+                        // so follow read()'s behaviour and return None.
+                        vstr_clear(&vstr);
+                        return mp_const_none;
+                    }
+                    break;
+                }
+                mp_raise_OSError(error);
+            }
+            if (out_sz == 0) {
+                break;
+            }
+            const char *nl = memchr(buf, '\n', out_sz);
+            mp_uint_t consumed = (nl == NULL) ? out_sz : (mp_uint_t)(nl - buf) + 1;
+            vstr_add_strn(&vstr, buf, consumed);
+            if (max_size > 0) {
+                max_size -= consumed;
+            }
+            if (consumed < out_sz) {
+                // Hand back the bytes that belong to the next line.
+                struct mp_stream_seek_t seek = {
+                    .offset = (mp_off_t)consumed - (mp_off_t)out_sz,
+                    .whence = MP_SEEK_CUR,
+                };
+                stream_p->ioctl(args[0], MP_STREAM_SEEK, (uintptr_t)&seek, &error);
+            }
+            if (nl != NULL) {
+                break;
+            }
+        }
+
+        if (stream_p->is_text) {
+            return mp_obj_new_str_from_vstr(&vstr);
+        } else {
+            return mp_obj_new_bytes_from_vstr(&vstr);
+        }
     }
 
     while (max_size == -1 || max_size-- != 0) {
