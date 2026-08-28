@@ -49,7 +49,8 @@ void common_hal_paralleldisplaybus_parallelbus_construct_nonsequential(paralleld
     self->config.wr_gpio_num = common_hal_mcu_pin_number(write);   // write strobe
     self->config.clk_src = LCD_CLK_SRC_DEFAULT;
     self->config.bus_width = n_pins;
-    self->config.max_transfer_bytes = 512;
+    // Increase DMA buffer size for better performance (64KB instead of 512 bytes)
+    self->config.max_transfer_bytes = (64 * 1024);
     for (uint8_t i = 0; i < n_pins; i++) {
         self->config.data_gpio_nums[i] = common_hal_mcu_pin_number(data_pins[i]);
     }
@@ -58,7 +59,8 @@ void common_hal_paralleldisplaybus_parallelbus_construct_nonsequential(paralleld
     esp_lcd_panel_io_i80_config_t panel_io_config = {
         .cs_gpio_num = -1, // We manage CS
         .pclk_hz = frequency,
-        .trans_queue_depth = 1, // We block anyway
+        // Increase queue depth for double/triple buffering (better DMA utilization)
+        .trans_queue_depth = 4,
         .on_color_trans_done = _transfer_done,
         .user_ctx = self,
         .lcd_cmd_bits = 8,
