@@ -722,6 +722,16 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH (0)
 #endif
 
+// Read from a bytes straight from the VM, as above for bytearray. The generic
+// route costs two type lookups, an indirect call through the subscript slot, a
+// stack check and an index range check, to arrive at the same byte. Follows the
+// bytearray setting because it is the same trade for the same shape of code:
+// protocol, CRC and glyph parsing index bytes constantly, and both file.read()
+// and socket.recv() hand back bytes rather than bytearray.
+#ifndef MICROPY_OPT_BYTES_SUBSCR_FAST_PATH
+#define MICROPY_OPT_BYTES_SUBSCR_FAST_PATH (MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH)
+#endif
+
 // Do not search the qstr pools when a new string is built at run time. The
 // search only pays off when the result happens to equal a name the firmware
 // already knows, and it costs a walk of the whole ROM pool. Setting this makes

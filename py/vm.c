@@ -672,6 +672,20 @@ dispatch_loop:
                                 }
                             }
                             #endif
+                            // CIRCUITPY-CHANGE: bytes had no fast path although bytearray
+                            // did. With unicode enabled bytes_subscr always returns the
+                            // byte as a small int, so this is the same result by a shorter
+                            // route. Out of range and slices still fall through, so the
+                            // IndexError keeps coming from mp_get_index.
+                            #if MICROPY_OPT_BYTES_SUBSCR_FAST_PATH
+                            else if (base_type == &mp_type_bytes) {
+                                mp_obj_str_t *bs = MP_OBJ_TO_PTR(base);
+                                if ((size_t)i < bs->len) {
+                                    SET_TOP(MP_OBJ_NEW_SMALL_INT(bs->data[i]));
+                                    DISPATCH();
+                                }
+                            }
+                            #endif
                         }
                     }
                     SET_TOP(mp_obj_subscr(base, index, MP_OBJ_SENTINEL));
