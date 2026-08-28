@@ -2262,7 +2262,10 @@ mp_obj_t mp_obj_new_str_copy(const mp_obj_type_t *type, const byte *data, size_t
     o->len = len;
     if (data) {
         o->hash = qstr_compute_hash(data, len);
-        byte *p = m_new(byte, len + 1);
+        // CIRCUITPY-CHANGE: the payload holds text, never pointers into the heap, so the
+        // collector has no reason to walk it. objarray and qstr already allocate their
+        // leaf buffers this way; see the note on m_malloc_without_collect in py/misc.h.
+        byte *p = m_malloc_without_collect(len + 1);
         o->data = p;
         memcpy(p, data, len * sizeof(byte));
         p[len] = '\0'; // for now we add null for compatibility with C ASCIIZ strings
