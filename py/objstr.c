@@ -1205,6 +1205,17 @@ static vstr_t mp_obj_str_format_helper(const char *str, const char *top, int *ar
                 assert(conversion == 'r');
                 print_kind = PRINT_REPR;
             }
+            // CIRCUITPY-CHANGE: with no format spec everything below reduces to
+            // printing this text unpadded and untruncated -- width stays -1, so
+            // mp_print_strn's pad comes out negative -- so print straight into the
+            // output instead of into a str object that is taken apart again a few
+            // hundred lines down. That drops two of the four allocations a bare {}
+            // field makes, plus a hash whose result nothing reads. It applies to
+            // every f-string field: the lexer rewrites f"..." into "...".format().
+            if (!format_spec) {
+                mp_obj_print_helper(&print, arg, print_kind);
+                continue;
+            }
             vstr_t arg_vstr;
             mp_print_t arg_print;
             vstr_init_print(&arg_vstr, 16, &arg_print);
