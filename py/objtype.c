@@ -665,6 +665,13 @@ static void mp_obj_instance_load_attr(mp_obj_t self_in, qstr attr, mp_obj_t *des
             if (proxy[0] == mp_const_none) {
                 // CIRCUITPY-CHANGE: more specific mp_raise
                 mp_raise_AttributeError(MP_ERROR_TEXT("unreadable attribute"));
+            // CIRCUITPY-CHANGE: the same shortcut mp_convert_member_lookup takes, which
+            // this path never reaches -- mp_obj_class_lookup hands native properties
+            // back raw, so a Python subclass of a native type arrives here instead and
+            // would otherwise pay a type lookup, a slot fetch, an indirect call and
+            // mp_arg_check_num to reach a getter whose shape is already known.
+            } else if (mp_obj_is_type(proxy[0], &mp_type_fun_builtin_1)) {
+                dest[0] = ((mp_obj_fun_builtin_fixed_t *)MP_OBJ_TO_PTR(proxy[0]))->fun._1(self_in);
             } else {
                 dest[0] = mp_call_function_n_kw(proxy[0], 1, 0, &self_in);
             }
@@ -764,9 +771,15 @@ static bool mp_obj_instance_store_attr(mp_obj_t self_in, qstr attr, mp_obj_t val
                 }
             } else {
                 // store attribute
+                // CIRCUITPY-CHANGE: as for the getter above. The n_proxy guard has to stay
+                // first: under MICROPY_PY_OPTIMIZE_PROPERTY_FLASH_SIZE a getter-only
+                // property is a shorter struct and proxy[1] is out of bounds.
                 if (n_proxy < 2 || proxy[1] == mp_const_none) {
                     // TODO better error message?
                     return false;
+                } else if (mp_obj_is_type(proxy[1], &mp_type_fun_builtin_2)) {
+                    ((mp_obj_fun_builtin_fixed_t *)MP_OBJ_TO_PTR(proxy[1]))->fun._2(self_in, value);
+                    return true;
                 } else {
                     mp_call_function_n_kw(proxy[1], 2, 0, dest);
                     return true;
