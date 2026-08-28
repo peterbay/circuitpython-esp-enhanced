@@ -23,6 +23,9 @@ CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y
 
 # end of Espressif IoT Development Framework Configuration
 
+# CIRCUITPY-CHANGE: channel state information, see espidf.CSI
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+
 # CIRCUITPY-CHANGE: the S3 supports a 32 KB instruction cache and the IDF default of
 # 16 KB was never overridden for this chip -- the S2 defaults file sets its own, the
 # S3 one does not. Both settings were built and measured on this board, each after a
