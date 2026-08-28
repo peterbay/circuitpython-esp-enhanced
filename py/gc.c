@@ -703,7 +703,10 @@ static void gc_deal_with_stack_overflow(void) {
 
         // scan entire memory looking for blocks which have been marked but not their children
         for (mp_state_mem_area_t *area = &MP_STATE_MEM(area); area != NULL; area = NEXT_AREA(area)) {
-            for (size_t block = 0; block < area->gc_alloc_table_byte_len * BLOCKS_PER_ATB; block++) {
+            // CIRCUITPY-CHANGE: bound the scan the way gc_sweep_free_blocks already does.
+            // Nothing past gc_last_used_block has ever been allocated, so it cannot carry
+            // a mark, and with SPLIT_HEAP_AUTO a freshly grown area is almost all tail.
+            for (size_t block = 0; block <= area->gc_last_used_block; block++) {
                 MICROPY_GC_HOOK_LOOP(block);
                 // trace (again) if mark bit set
                 if (ATB_GET_KIND(area, block) == AT_MARK) {
