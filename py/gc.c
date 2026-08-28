@@ -993,7 +993,15 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
             // space is freed.
             #if MICROPY_GC_SPLIT_HEAP
             if (n_blocks == 1) {
-                area->gc_last_free_atb_index = (i + 1) / BLOCKS_PER_ATB; // or (size_t)-1
+                // CIRCUITPY-CHANGE: i is an ATB byte index here. It only becomes a block
+                // index on the `found` path, which is why the same expression is right at
+                // the end of this function and wrong here: it left the cursor a quarter of
+                // the way in, so a full area was rescanned on every later allocation
+                // instead of being skipped, which is what the comment above intends and
+                // what gc_free's own comment already assumes. Marking it full is safe
+                // because gc_free, gc_realloc and gc_collect all lower the cursor again
+                // when space comes back.
+                area->gc_last_free_atb_index = area->gc_alloc_table_byte_len;
             }
             #endif
         }
