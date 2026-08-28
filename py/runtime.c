@@ -1185,6 +1185,37 @@ static mp_obj_t mp_obj_new_checked_fun(const mp_obj_type_t *type, mp_obj_t fun) 
 void mp_convert_member_lookup(mp_obj_t self, const mp_obj_type_t *type, mp_obj_t member, mp_obj_t *dest) {
     if (mp_obj_is_obj(member)) {
         const mp_obj_type_t *m_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(member))->type;
+        #if MICROPY_PY_BUILTINS_PROPERTY
+        // CIRCUITPY-CHANGE: properties are tested first. They used to come fourth,
+        // after the binds-self, staticmethod and classmethod branches, and the test
+        // was mp_obj_is_type(member, ...), which re-checks that member is an object
+        // and loads its type again although m_type already holds it. A property can
+        // be none of the three branches above, so the order carries no meaning.
+        //
+        // If self is MP_OBJ_NULL, we are looking at the class itself, not an instance.
+        if (m_type == &mp_type_property && mp_obj_is_native_type(type) && self != MP_OBJ_NULL) {
+            // object member is a property; delegate the load to the property
+            // Note: This is an optimisation for code size and execution time.
+            // The proper way to do it is have the functionality just below
+            // in a __get__ method of the property object, and then it would
+            // be called by the descriptor code down below.  But that way
+            // requires overhead for the nested mp_call's and overhead for
+            // the code.
+            size_t n_proxy;
+            const mp_obj_t *proxy = mp_obj_property_get(member, &n_proxy);
+            if (proxy[0] == mp_const_none) {
+                mp_raise_AttributeError(MP_ERROR_TEXT("unreadable attribute"));
+            // CIRCUITPY-CHANGE: a native property's getter is a fixed arity builtin,
+            // and reaching it through mp_call_function_n_kw costs a type lookup, a
+            // slot fetch, an indirect call and mp_arg_check_num -- all to arrive at
+            // a function whose shape is already known here.
+            } else if (mp_obj_is_type(proxy[0], &mp_type_fun_builtin_1)) {
+                dest[0] = ((mp_obj_fun_builtin_fixed_t *)MP_OBJ_TO_PTR(proxy[0]))->fun._1(self);
+            } else {
+                dest[0] = mp_call_function_n_kw(proxy[0], 1, 0, &self);
+            }
+        } else
+        #endif
         if (m_type->flags & MP_TYPE_FLAG_BINDS_SELF) {
             // `member` is a function that binds self as its first argument.
             if (m_type->flags & MP_TYPE_FLAG_BUILTIN_FUN) {
@@ -1227,26 +1258,6 @@ void mp_convert_member_lookup(mp_obj_t self, const mp_obj_type_t *type, mp_obj_t
             }
             dest[0] = ((mp_obj_static_class_method_t *)MP_OBJ_TO_PTR(member))->fun;
             dest[1] = MP_OBJ_FROM_PTR(type);
-            // CIRCUITPY-CHANGE
-            // https://github.com/adafruit/circuitpython/commit/8fae7d2e3024de6336affc4b2a8fa992c946e017
-            #if MICROPY_PY_BUILTINS_PROPERTY
-            // If self is MP_OBJ_NULL, we looking at the class itself, not an instance.
-        } else if (mp_obj_is_type(member, &mp_type_property) && mp_obj_is_native_type(type) && self != MP_OBJ_NULL) {
-            // object member is a property; delegate the load to the property
-            // Note: This is an optimisation for code size and execution time.
-            // The proper way to do it is have the functionality just below
-            // in a __get__ method of the property object, and then it would
-            // be called by the descriptor code down below.  But that way
-            // requires overhead for the nested mp_call's and overhead for
-            // the code.
-            size_t n_proxy;
-            const mp_obj_t *proxy = mp_obj_property_get(member, &n_proxy);
-            if (proxy[0] == mp_const_none) {
-                mp_raise_AttributeError(MP_ERROR_TEXT("unreadable attribute"));
-            } else {
-                dest[0] = mp_call_function_n_kw(proxy[0], 1, 0, &self);
-            }
-            #endif
         } else {
             // `member` is a value, so just return that value.
             dest[0] = member;
@@ -1411,7 +1422,12 @@ void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
                     return;
                 }
             } else if (n_proxy > 1 && proxy[1] != mp_const_none) {
-                mp_call_function_n_kw(proxy[1], 2, 0, dest);
+                // CIRCUITPY-CHANGE: as for the getter above.
+                if (mp_obj_is_type(proxy[1], &mp_type_fun_builtin_2)) {
+                    ((mp_obj_fun_builtin_fixed_t *)MP_OBJ_TO_PTR(proxy[1]))->fun._2(dest[0], dest[1]);
+                } else {
+                    mp_call_function_n_kw(proxy[1], 2, 0, dest);
+                }
                 return;
             }
         }
