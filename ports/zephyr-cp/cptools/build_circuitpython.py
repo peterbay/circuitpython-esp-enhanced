@@ -369,6 +369,8 @@ async def build_circuitpython():  # noqa: C901
     lto = cmake_args.get("LTO", "n") == "y"
     circuitpython_flags.append(f"-DCIRCUITPY_ENABLE_MPY_NATIVE={1 if enable_mpy_native else 0}")
     circuitpython_flags.append(f"-DCIRCUITPY_FULL_BUILD={1 if full_build else 0}")
+    circuitpython_flags.append("-DCIRCUITPY_OPT_LOAD_ATTR_FAST_PATH=1")
+    circuitpython_flags.append(f"-DCIRCUITPY_OPT_MAP_LOOKUP_CACHE={1 if full_build else 0}")
     circuitpython_flags.append(f"-DCIRCUITPY_SETTINGS_TOML={1 if full_build else 0}")
     circuitpython_flags.append(f"-DMICROPY_PY_ASYNC_AWAIT={1 if full_build else 0}")
     circuitpython_flags.append(f"-DMICROPY_PY_ASYNCIO={1 if full_build else 0}")
@@ -479,8 +481,16 @@ async def build_circuitpython():  # noqa: C901
     supervisor_source = [pathlib.Path(p) for p in supervisor_source]
     supervisor_source.extend(board_info["source_files"])
     supervisor_source.extend(top.glob("supervisor/shared/*.c"))
-    if "_bleio" in enabled_modules:
+    ble_workflow_enabled = "_bleio" in enabled_modules
+    if ble_workflow_enabled:
         supervisor_source.append(top / "supervisor/shared/bluetooth/bluetooth.c")
+        # BLE workflow = file transfer + serial services, matching other ports.
+        supervisor_source.append(top / "supervisor/shared/bluetooth/file_transfer.c")
+        supervisor_source.append(top / "supervisor/shared/bluetooth/serial.c")
+    circuitpython_flags.append(f"-DCIRCUITPY_BLE_FILE_SERVICE={1 if ble_workflow_enabled else 0}")
+    circuitpython_flags.append(
+        f"-DCIRCUITPY_BLE_SERIAL_SERVICE={1 if ble_workflow_enabled else 0}"
+    )
     supervisor_source.append(top / "supervisor/shared/translate/translate.c")
     if web_workflow_enabled:
         supervisor_source.extend(top.glob("supervisor/shared/web_workflow/*.c"))
@@ -634,7 +644,29 @@ async def build_circuitpython():  # noqa: C901
         enabled = mpflag in DEFAULT_MODULES
         circuitpython_flags.append(f"-DCIRCUITPY_{mpflag.upper()}={1 if enabled else 0}")
 
+    # ulab is on by default and boards that cannot spare the flash set
+    # CIRCUITPY_ULAB = false in their circuitpython.toml. Flags mirror py/py.mk.
+    ulab_enabled = mpconfigboard.get("CIRCUITPY_ULAB", True)
+    circuitpython_flags.append(f"-DCIRCUITPY_ULAB={1 if ulab_enabled else 0}")
+    if ulab_enabled:
+        circuitpython_flags.extend(
+            (
+                "-DMODULE_ULAB_ENABLED=1",
+                "-DULAB_HAS_USER_MODULE=0",
+                "-iquote",
+                str(top / "extmod" / "ulab" / "code"),
+            )
+        )
+    # radio.ping() builds on Zephyr's ICMP API. On by default; boards that cannot
+    # spare the flash set CIRCUITPY_WIFI_PING = false in their circuitpython.toml
+    # and radio.ping() then reports no reply, as it does for an unreachable host.
+    circuitpython_flags.append(
+        f"-DCIRCUITPY_WIFI_PING={1 if mpconfigboard.get('CIRCUITPY_WIFI_PING', True) else 0}"
+    )
+
     source_files = supervisor_source + hal_source + ["extmod/vfs.c"]
+    if ulab_enabled:
+        source_files.extend(sorted((top / "extmod" / "ulab" / "code").rglob("*.c")))
     assembly_files = []
     for file in top.glob("py/*.c"):
         source_files.append(file)

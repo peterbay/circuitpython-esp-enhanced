@@ -418,8 +418,9 @@ def detect_test_platform(pyb, args):
     output = run_feature_check(pyb, args, "target_info.py")
     if output.endswith(b"CRASH"):
         raise ValueError("cannot detect platform: {}".format(output))
+    # CIRCUITPY-CHANGE: sys.platform is the first field and can contain spaces ("Atmel SAMD21").
     platform, arch, arch_flags, build, thread, float_prec, unicode = (
-        str(output, "ascii").strip().split()
+        str(output, "ascii").strip().rsplit(None, 6)
     )
     if arch == "None":
         arch = None

@@ -396,7 +396,8 @@ static sdcard_usb_setting_state_t _sdcard_usb_setting_state = SDCARD_USB_SETTING
 // Read only once to save file access time.
 static bool sdcard_usb_enabled(void) {
     if (_sdcard_usb_setting_state == SDCARD_USB_SETTING_NOT_YET_READ) {
-        bool setting = true;
+        // Can be changed per board. Most boards would leave this as true (default in circuitpy_mpconfig.h).
+        bool setting = CIRCUITPY_SDCARD_USB_DEFAULT;
         (void)settings_get_bool("CIRCUITPY_SDCARD_USB", &setting);
         _sdcard_usb_setting_state = setting ? SDCARD_USB_SETTING_TRUE : SDCARD_USB_SETTING_FALSE;
     }

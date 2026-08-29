@@ -539,6 +539,11 @@ void background_callback_run_all(void);
 #ifndef CIRCUITPY_SDCARD_USB
 #if CIRCUITPY_USB_DEVICE
 #define CIRCUITPY_SDCARD_USB (CIRCUITPY_SDCARDIO && CIRCUITPY_USB_MSC)
+// Default value of CIRCUITPY_SDCARD_USB in settings.toml.
+#ifndef CIRCUITPY_SDCARD_USB_DEFAULT
+// True for most boards.
+#define CIRCUITPY_SDCARD_USB_DEFAULT (true)
+#endif
 #else
 #define CIRCUITPY_SDCARD_USB (0)
 #endif

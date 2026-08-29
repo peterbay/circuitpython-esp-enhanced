@@ -325,6 +325,15 @@ def circuitpython(request, board, sim_id, native_sim_binary, native_sim_env, tmp
                     f"-uart{uart_n}_pty",
                     f"-uart{uart_n}_pty_wait_for_readers",
                     "-uart_pty_wait",
+                    # Use the real AES implementation (libCryptov1.so) for the
+                    # link layer instead of BabbleSim's plain-text stand-in.
+                    # The nRF54L HW models route AES through several different
+                    # stand-ins (ECB/CCM copy the data, CRACEN scrambles it),
+                    # which are not consistent with each other, so LE
+                    # encryption only works with real AES. Zephyr's own bsim
+                    # encryption tests pass -RealEncryption=1 for the same
+                    # reason.
+                    "-RealEncryption=1",
                     f"--vm-runs={code_py_runs + 1}",
                 )
             )
@@ -341,6 +350,10 @@ def circuitpython(request, board, sim_id, native_sim_binary, native_sim_env, tmp
                     f"--vm-runs={code_py_runs + 1}",
                 )
             )
+
+        # Always preserve retained memory (e.g. the safe-mode saved word) in
+        # in case of reboot.
+        cmd.append(f"--retained-memory={tmp_path / f'retained-{i}.bin'}")
 
         if flash_erase_block_size is not None:
             cmd.append(f"--flash_erase_block_size={flash_erase_block_size}")
