@@ -730,7 +730,19 @@ dispatch_loop:
                     #if MICROPY_OPT_LOAD_ATTR_FAST_PATH
                     {
                         mp_obj_t dest_obj = sp[0];
-                        if (mp_obj_is_obj(dest_obj)) {
+                        // CIRCUITPY-CHANGE: "del obj.attr" is compiled as a store of
+                        // MP_OBJ_NULL, which mp_store_attr reads as a delete. This
+                        // shortcut wrote it into the members map as an ordinary value
+                        // instead, leaving the name present with a null value; the load
+                        // fast path above tests the slot rather than what is in it, so
+                        // the next read of that attribute handed MP_OBJ_NULL to the
+                        // interpreter. On the unix port that prints as "(nil)", on the
+                        // board it reboots. getattr() and hasattr() were unaffected
+                        // because they take the general path.
+                        //
+                        // Exactly the STORE_SUBSCR case a few lines below, which was
+                        // found and fixed for "del x[i]" but not for its sibling here.
+                        if (sp[-1] != MP_OBJ_NULL && mp_obj_is_obj(dest_obj)) {
                             const mp_obj_type_t *dest_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(dest_obj))->type;
                             if (mp_obj_is_instance_type(dest_type)
                                 && !(dest_type->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS)) {
