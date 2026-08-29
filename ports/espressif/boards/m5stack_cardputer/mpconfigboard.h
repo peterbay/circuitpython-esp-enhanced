@@ -17,3 +17,6 @@
 #define CIRCUITPY_BOARD_SPI         (2)
 #define CIRCUITPY_BOARD_SPI_PIN     {{.clock = &pin_GPIO36, .mosi = &pin_GPIO35}, \
                                      {.clock = &pin_GPIO40, .mosi = &pin_GPIO14, .miso = &pin_GPIO39}}
+
+#define CIRCUITPY_DISPLAY_AREA_BUFFER_SIZE (4096)
+

@@ -53,7 +53,7 @@ void board_init(void) {
         MP_OBJ_FROM_PTR(&pin_GPIO34),    // DC
         MP_OBJ_FROM_PTR(&pin_GPIO37),     // CS
         MP_OBJ_FROM_PTR(&pin_GPIO33),    // RST
-        40000000,       // baudrate
+        80000000,       // baudrate - 2× faster! (ST7789 supports up to 80 MHz)
         0,              // polarity
         0               // phase
         );
