@@ -201,6 +201,15 @@ static inline bool vm_call_builtin(mp_obj_t fun, size_t n_args, const mp_obj_t *
 }
 #endif
 
+// CIRCUITPY-CHANGE: the subscript fast paths used to require a non-negative index,
+// so x[-1] fell through to the generic path -- 342 cycles against 111 for x[0],
+// although a negative index is ordinary Python. Normalising here keeps it on the
+// fast path. An index below -len wraps to a large size_t and fails the caller's
+// bound test, so IndexError still comes from mp_get_index as before.
+static inline size_t vm_subscr_index(mp_int_t i, size_t len) {
+    return (size_t)(i < 0 ? i + (mp_int_t)len : i);
+}
+
 #if MICROPY_PY_SYS_EXC_INFO
 #define CLEAR_SYS_EXC_INFO() MP_STATE_VM(cur_exception) = NULL;
 #else
@@ -649,44 +658,46 @@ dispatch_loop:
                         // overrides still apply.
                         const mp_obj_type_t *base_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(base))->type;
                         mp_int_t i = MP_OBJ_SMALL_INT_VALUE(index);
-                        if (i >= 0) {
-                            if (base_type == &mp_type_list) {
-                                mp_obj_list_t *seq = MP_OBJ_TO_PTR(base);
-                                if ((size_t)i < seq->len) {
-                                    SET_TOP(seq->items[i]);
-                                    DISPATCH();
-                                }
-                            } else if (base_type == &mp_type_tuple) {
-                                mp_obj_tuple_t *seq = MP_OBJ_TO_PTR(base);
-                                if ((size_t)i < seq->len) {
-                                    SET_TOP(seq->items[i]);
-                                    DISPATCH();
-                                }
+                        if (base_type == &mp_type_list) {
+                            mp_obj_list_t *seq = MP_OBJ_TO_PTR(base);
+                            size_t idx = vm_subscr_index(i, seq->len);
+                            if (idx < seq->len) {
+                                SET_TOP(seq->items[idx]);
+                                DISPATCH();
                             }
-                            #if MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH && MICROPY_PY_BUILTINS_BYTEARRAY
-                            else if (base_type == &mp_type_bytearray) {
-                                mp_obj_array_t *ba = MP_OBJ_TO_PTR(base);
-                                if ((size_t)i < ba->len) {
-                                    SET_TOP(MP_OBJ_NEW_SMALL_INT(((uint8_t *)ba->items)[i]));
-                                    DISPATCH();
-                                }
+                        } else if (base_type == &mp_type_tuple) {
+                            mp_obj_tuple_t *seq = MP_OBJ_TO_PTR(base);
+                            size_t idx = vm_subscr_index(i, seq->len);
+                            if (idx < seq->len) {
+                                SET_TOP(seq->items[idx]);
+                                DISPATCH();
                             }
-                            #endif
-                            // CIRCUITPY-CHANGE: bytes had no fast path although bytearray
-                            // did. With unicode enabled bytes_subscr always returns the
-                            // byte as a small int, so this is the same result by a shorter
-                            // route. Out of range and slices still fall through, so the
-                            // IndexError keeps coming from mp_get_index.
-                            #if MICROPY_OPT_BYTES_SUBSCR_FAST_PATH
-                            else if (base_type == &mp_type_bytes) {
-                                mp_obj_str_t *bs = MP_OBJ_TO_PTR(base);
-                                if ((size_t)i < bs->len) {
-                                    SET_TOP(MP_OBJ_NEW_SMALL_INT(bs->data[i]));
-                                    DISPATCH();
-                                }
-                            }
-                            #endif
                         }
+                        #if MICROPY_OPT_BYTEARRAY_SUBSCR_FAST_PATH && MICROPY_PY_BUILTINS_BYTEARRAY
+                        else if (base_type == &mp_type_bytearray) {
+                            mp_obj_array_t *ba = MP_OBJ_TO_PTR(base);
+                            size_t idx = vm_subscr_index(i, ba->len);
+                            if (idx < ba->len) {
+                                SET_TOP(MP_OBJ_NEW_SMALL_INT(((uint8_t *)ba->items)[idx]));
+                                DISPATCH();
+                            }
+                        }
+                        #endif
+                        // CIRCUITPY-CHANGE: bytes had no fast path although bytearray
+                        // did. With unicode enabled bytes_subscr always returns the
+                        // byte as a small int, so this is the same result by a shorter
+                        // route. Out of range and slices still fall through, so the
+                        // IndexError keeps coming from mp_get_index.
+                        #if MICROPY_OPT_BYTES_SUBSCR_FAST_PATH
+                        else if (base_type == &mp_type_bytes) {
+                            mp_obj_str_t *bs = MP_OBJ_TO_PTR(base);
+                            size_t idx = vm_subscr_index(i, bs->len);
+                            if (idx < bs->len) {
+                                SET_TOP(MP_OBJ_NEW_SMALL_INT(bs->data[idx]));
+                                DISPATCH();
+                            }
+                        }
+                        #endif
                     }
                     SET_TOP(mp_obj_subscr(base, index, MP_OBJ_SENTINEL));
                     DISPATCH();
@@ -794,8 +805,9 @@ dispatch_loop:
                             mp_int_t i = MP_OBJ_SMALL_INT_VALUE(index);
                             if (base_type == &mp_type_list) {
                                 mp_obj_list_t *seq = MP_OBJ_TO_PTR(base);
-                                if (i >= 0 && (size_t)i < seq->len) {
-                                    seq->items[i] = value;
+                                size_t idx = vm_subscr_index(i, seq->len);
+                                if (idx < seq->len) {
+                                    seq->items[idx] = value;
                                     sp -= 3;
                                     DISPATCH();
                                 }
@@ -806,8 +818,9 @@ dispatch_loop:
                             else if (base_type == &mp_type_bytearray && (((mp_int_t)value) & 1) != 0) {
                                 mp_obj_array_t *ba = MP_OBJ_TO_PTR(base);
                                 mp_uint_t val = (mp_uint_t)MP_OBJ_SMALL_INT_VALUE(value);
-                                if (i >= 0 && (size_t)i < ba->len && val <= 255) {
-                                    ((uint8_t *)ba->items)[i] = (uint8_t)val;
+                                size_t idx = vm_subscr_index(i, ba->len);
+                                if (idx < ba->len && val <= 255) {
+                                    ((uint8_t *)ba->items)[idx] = (uint8_t)val;
                                     sp -= 3;
                                     DISPATCH();
                                 }
