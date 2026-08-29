@@ -27,6 +27,33 @@
 #include "bindings/cyw43/__init__.h"
 #endif
 
+// CIRCUITPY-CHANGE: every method here used to cast self_in straight to the native
+// struct. On a Python subclass of DigitalInOut, self_in is the instance object and
+// the native one sits in its subobj, so the cast produced a pointer into unrelated
+// memory: reading .value on such a subclass rebooted the board. displayio solves
+// this with native_group(); digitalio had no equivalent.
+//
+// The exact-type test is done here rather than left to
+// mp_obj_cast_to_native_base(), which lives in another translation unit and,
+// without LTO, would put an out-of-line call on every pin read and write.
+// The subclass route is kept out of line. Folded into the caller it costs the
+// direct path about 500 ns a call -- measured -- because the compiler will not
+// inline a body containing a noreturn raise and then has to spill around it.
+static MP_NOINLINE digitalio_digitalinout_obj_t *native_digitalinout_subclass(mp_obj_t obj) {
+    mp_obj_t native = mp_obj_cast_to_native_base(obj, MP_OBJ_FROM_PTR(&digitalio_digitalinout_type));
+    if (native == MP_OBJ_NULL) {
+        mp_raise_ValueError_varg(MP_ERROR_TEXT("Must be a %q subclass."), MP_QSTR_DigitalInOut);
+    }
+    return MP_OBJ_TO_PTR(native);
+}
+
+static inline digitalio_digitalinout_obj_t *native_digitalinout(mp_obj_t obj) {
+    if (mp_obj_is_type(obj, &digitalio_digitalinout_type)) {
+        return MP_OBJ_TO_PTR(obj);
+    }
+    return native_digitalinout_subclass(obj);
+}
+
 static void check_result(digitalinout_result_t result) {
     switch (result) {
         case DIGITALINOUT_OK:
@@ -84,7 +111,7 @@ static mp_obj_t digitalio_digitalinout_make_new(const mp_obj_type_t *type,
 //|         ...
 //|
 static mp_obj_t digitalio_digitalinout_obj_deinit(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     common_hal_digitalio_digitalinout_deinit(self);
     return mp_const_none;
 }
@@ -187,7 +214,7 @@ extern const digitalio_digitalio_direction_obj_t digitalio_digitalio_direction_i
 extern const digitalio_digitalio_direction_obj_t digitalio_digitalio_direction_out_obj;
 
 static mp_obj_t digitalio_digitalinout_obj_get_direction(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     check_for_deinit(self);
     digitalio_direction_t direction = common_hal_digitalio_digitalinout_get_direction(self);
     if (direction == DIRECTION_INPUT) {
@@ -198,7 +225,7 @@ static mp_obj_t digitalio_digitalinout_obj_get_direction(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(digitalio_digitalinout_get_direction_obj, digitalio_digitalinout_obj_get_direction);
 
 static mp_obj_t digitalio_digitalinout_obj_set_direction(mp_obj_t self_in, mp_obj_t value) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     check_for_deinit(self);
     if (value == MP_ROM_PTR(&digitalio_direction_input_obj)) {
         check_result(common_hal_digitalio_digitalinout_switch_to_input(self, PULL_NONE));
@@ -218,7 +245,7 @@ MP_PROPERTY_GETSET(digitalio_digitalio_direction_obj,
 //|     value: bool
 //|     """The digital logic level of the pin."""
 static mp_obj_t digitalio_digitalinout_obj_get_value(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     check_for_deinit(self);
     bool value = common_hal_digitalio_digitalinout_get_value(self);
     return mp_obj_new_bool(value);
@@ -226,7 +253,7 @@ static mp_obj_t digitalio_digitalinout_obj_get_value(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(digitalio_digitalinout_get_value_obj, digitalio_digitalinout_obj_get_value);
 
 static mp_obj_t digitalio_digitalinout_obj_set_value(mp_obj_t self_in, mp_obj_t value) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     check_for_deinit(self);
     if (common_hal_digitalio_digitalinout_get_direction(self) == DIRECTION_INPUT) {
         mp_raise_AttributeError(MP_ERROR_TEXT("Cannot set value when direction is input."));
@@ -247,7 +274,7 @@ MP_PROPERTY_GETSET(digitalio_digitalinout_value_obj,
 //|     - `digitalio.DriveMode.PUSH_PULL`
 //|     - `digitalio.DriveMode.OPEN_DRAIN`"""
 static mp_obj_t digitalio_digitalinout_obj_get_drive_mode(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     check_for_deinit(self);
     if (common_hal_digitalio_digitalinout_get_direction(self) == DIRECTION_INPUT) {
         mp_raise_AttributeError(MP_ERROR_TEXT("Drive mode not used when direction is input."));
@@ -262,7 +289,7 @@ static mp_obj_t digitalio_digitalinout_obj_get_drive_mode(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(digitalio_digitalinout_get_drive_mode_obj, digitalio_digitalinout_obj_get_drive_mode);
 
 static mp_obj_t digitalio_digitalinout_obj_set_drive_mode(mp_obj_t self_in, mp_obj_t drive_mode) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     check_for_deinit(self);
     if (common_hal_digitalio_digitalinout_get_direction(self) == DIRECTION_INPUT) {
         mp_raise_AttributeError(MP_ERROR_TEXT("Drive mode not used when direction is input."));
@@ -292,7 +319,7 @@ MP_PROPERTY_GETSET(digitalio_digitalio_drive_mode_obj,
 //|
 //|
 static mp_obj_t digitalio_digitalinout_obj_get_pull(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     check_for_deinit(self);
     if (common_hal_digitalio_digitalinout_get_direction(self) == DIRECTION_OUTPUT) {
         mp_raise_AttributeError(MP_ERROR_TEXT("Pull not used when direction is output."));
@@ -309,7 +336,7 @@ static mp_obj_t digitalio_digitalinout_obj_get_pull(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(digitalio_digitalinout_get_pull_obj, digitalio_digitalinout_obj_get_pull);
 
 static mp_obj_t digitalio_digitalinout_obj_set_pull(mp_obj_t self_in, mp_obj_t pull_obj) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     check_for_deinit(self);
     if (common_hal_digitalio_digitalinout_get_direction(self) == DIRECTION_OUTPUT) {
         mp_raise_AttributeError(MP_ERROR_TEXT("Pull not used when direction is output."));
@@ -344,59 +371,59 @@ static MP_DEFINE_CONST_DICT(digitalio_digitalinout_locals_dict, digitalio_digita
 
 // Protocol implementation - thin wrappers to match protocol signature
 void digitalinout_deinit(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     common_hal_digitalio_digitalinout_deinit(self);
 }
 
 bool digitalinout_deinited(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     return common_hal_digitalio_digitalinout_deinited(self);
 }
 
 digitalinout_result_t digitalinout_switch_to_input(mp_obj_t self_in, digitalio_pull_t pull) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     return common_hal_digitalio_digitalinout_switch_to_input(self, pull);
 }
 
 digitalinout_result_t digitalinout_switch_to_output(mp_obj_t self_in, bool value, digitalio_drive_mode_t drive_mode) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     return common_hal_digitalio_digitalinout_switch_to_output(self, value, drive_mode);
 }
 
 digitalio_direction_t digitalinout_get_direction(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     return common_hal_digitalio_digitalinout_get_direction(self);
 }
 
 mp_negative_errno_t digitalinout_set_value(mp_obj_t self_in, bool value) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     common_hal_digitalio_digitalinout_set_value(self, value);
     return 0;
 }
 
 mp_negative_errno_t digitalinout_get_value(mp_obj_t self_in, bool *value) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     *value = common_hal_digitalio_digitalinout_get_value(self);
     return 0;
 }
 
 digitalinout_result_t digitalinout_set_drive_mode(mp_obj_t self_in, digitalio_drive_mode_t drive_mode) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     return common_hal_digitalio_digitalinout_set_drive_mode(self, drive_mode);
 }
 
 digitalio_drive_mode_t digitalinout_get_drive_mode(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     return common_hal_digitalio_digitalinout_get_drive_mode(self);
 }
 
 digitalinout_result_t digitalinout_set_pull(mp_obj_t self_in, digitalio_pull_t pull) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     return common_hal_digitalio_digitalinout_set_pull(self, pull);
 }
 
 digitalio_pull_t digitalinout_get_pull(mp_obj_t self_in) {
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(self_in);
     return common_hal_digitalio_digitalinout_get_pull(self);
 }
 
