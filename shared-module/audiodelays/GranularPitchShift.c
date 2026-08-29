@@ -326,7 +326,15 @@ audioio_get_buffer_result_t audiodelays_granular_pitch_shift_get_buffer(audiodel
             } else {
                 // For unsigned samples set to the middle which is "quiet"
                 if (MP_LIKELY(self->base.bits_per_sample == 16)) {
-                    memset(word_buffer, 32768, length * (self->base.bits_per_sample / 8));
+                    // CIRCUITPY-CHANGE: memset repeats a single byte, so it cannot
+                    // write 0x8000 -- 32768 truncates to 0 and the buffer was filled
+                    // with the minimum sample value, full negative deflection, rather
+                    // than the midpoint. The 8-bit branch below is right because 128
+                    // does fit in a byte. 0x8000 is the same midpoint the mixing code
+                    // further down produces with "word_buffer[i] ^= 0x8000".
+                    for (uint32_t i = 0; i < length; i++) {
+                        word_buffer[i] = (int16_t)0x8000;
+                    }
                 } else {
                     memset(hword_buffer, 128, length * (self->base.bits_per_sample / 8));
                 }
