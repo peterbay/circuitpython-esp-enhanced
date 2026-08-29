@@ -297,6 +297,28 @@ static void gc_setup_area(mp_state_mem_area_t *area, void *start, void *end) {
         gc_pool_block_len * BYTES_PER_BLOCK, gc_pool_block_len);
 }
 
+#if MICROPY_GC_SPLIT_HEAP
+// CIRCUITPY-CHANGE: recompute the address range spanned by all areas. Marking asks
+// gc_get_ptr_area() about every word of every scanned block, and most of those
+// words are not heap pointers at all; two comparisons against this range settle
+// them without walking the list. It has to be recomputed rather than only widened
+// because auto split heap gives an empty area back in gc_sweep_free_blocks().
+static void gc_update_pool_bounds(void) {
+    byte *min = MP_STATE_MEM(area).gc_pool_start;
+    byte *max = MP_STATE_MEM(area).gc_pool_end;
+    for (mp_state_mem_area_t *area = NEXT_AREA(&MP_STATE_MEM(area)); area != NULL; area = NEXT_AREA(area)) {
+        if (area->gc_pool_start < min) {
+            min = area->gc_pool_start;
+        }
+        if (area->gc_pool_end > max) {
+            max = area->gc_pool_end;
+        }
+    }
+    MP_STATE_MEM(area_pool_min) = min;
+    MP_STATE_MEM(area_pool_max) = max;
+}
+#endif
+
 void gc_init(void *start, void *end) {
     // align end pointer on block boundary
     end = (void *)((uintptr_t)end & (~(BYTES_PER_BLOCK - 1)));
@@ -307,6 +329,7 @@ void gc_init(void *start, void *end) {
     // set last free ATB index to start of heap
     #if MICROPY_GC_SPLIT_HEAP
     MP_STATE_MEM(gc_last_free_area) = &MP_STATE_MEM(area);
+    gc_update_pool_bounds();
     #endif
 
     // unlock the GC
@@ -345,6 +368,8 @@ void gc_add(void *start, void *end) {
 
     // Add this area to the linked list
     prev_area->next = area;
+
+    gc_update_pool_bounds();
 }
 
 #if MICROPY_GC_SPLIT_HEAP_AUTO
@@ -501,6 +526,16 @@ bool gc_ptr_on_heap(const void *ptr) {
 // allocated on the GC-managed heap.
 static inline mp_state_mem_area_t *gc_get_ptr_area(const void *ptr) {
     if (((uintptr_t)(ptr) & (BYTES_PER_BLOCK - 1)) != 0) {   // must be aligned on a block
+        return NULL;
+    }
+    // CIRCUITPY-CHANGE: marking calls this for every word of every scanned block,
+    // and most of those words are not heap pointers. The alignment test above
+    // already turns away small ints and qstrs, whose tags make them unaligned, but
+    // a zero word or a pointer into ROM passes it and then walked the whole area
+    // list to find nothing. Two comparisons against the span of all areas settle
+    // those first.
+    if ((const byte *)ptr < MP_STATE_MEM(area_pool_min)
+        || (const byte *)ptr >= MP_STATE_MEM(area_pool_max)) {
         return NULL;
     }
     for (mp_state_mem_area_t *area = &MP_STATE_MEM(area); area != NULL; area = NEXT_AREA(area)) {
@@ -817,6 +852,10 @@ static void gc_sweep_free_blocks(void) {
             NEXT_AREA(prev_area) = NEXT_AREA(area);
             MP_PLAT_FREE_HEAP(area);
             area = prev_area;
+            // CIRCUITPY-CHANGE: the range gc_get_ptr_area() rejects against just
+            // lost one of its members, so it has to be narrowed again, not left
+            // covering memory that is no longer ours.
+            gc_update_pool_bounds();
         }
         prev_area = area;
         #endif

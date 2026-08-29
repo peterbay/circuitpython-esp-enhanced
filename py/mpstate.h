@@ -158,6 +158,12 @@ typedef struct _mp_state_mem_t {
 
     #if MICROPY_GC_SPLIT_HEAP
     mp_state_mem_area_t *gc_last_free_area;
+    // CIRCUITPY-CHANGE: lowest gc_pool_start and highest gc_pool_end across every
+    // area, so that gc_get_ptr_area() can reject a word that cannot be a heap
+    // pointer without walking the area list. Recomputed whenever an area is added
+    // or removed; see gc_update_pool_bounds().
+    byte *area_pool_min;
+    byte *area_pool_max;
     #endif
 
     #if MICROPY_PY_GC_COLLECT_RETVAL
