@@ -147,5 +147,15 @@ digitalio_pull_t common_hal_digitalio_digitalinout_get_pull(
         // Should it fail closed or open?
         return PULL_NONE;
     }
-    return config.pd ? PULL_DOWN : PULL_UP;
+    // CIRCUITPY-CHANGE: this read config.pu and then ignored it, returning PULL_UP
+    // for anything that was not pulled down -- so a pin with no pull at all, which
+    // is what construct() leaves and what switch_to_input(PULL_NONE) sets, reported
+    // PULL_UP. PULL_NONE was only ever returned when the HAL call itself failed.
+    if (config.pu) {
+        return PULL_UP;
+    }
+    if (config.pd) {
+        return PULL_DOWN;
+    }
+    return PULL_NONE;
 }
