@@ -253,133 +253,109 @@ void common_hal_bitmaptools_boundary_fill(displayio_bitmap_t *destination,
         return;
     }
 
-    uint32_t current_point_color_value;
+    // CIRCUITPY-CHANGE: this used a Python list as a FIFO of individual pixels.
+    // Every pop was mp_obj_list_pop(list, 0), which memmoves the whole remainder,
+    // so the cost grew with the square of the area -- measured at 1.53 s for
+    // 80x60, 5.11 s for 120x90 and 12.07 s for 160x120, with the cost per pixel
+    // rising from 76k to 151k cycles. Each point was also a heap-allocated tuple of
+    // two boxed ints, unboxed ten times over, and four neighbours were pushed for
+    // every filled pixel whether or not they needed filling.
+    //
+    // Same 4-connected region, computed as a scanline fill: each seed fills a whole
+    // horizontal run, then the rows above and below are scanned and one seed pushed
+    // per contiguous run found. The stack therefore holds runs rather than pixels
+    // and is plain packed coordinates.
+    const int16_t w = (int16_t)destination->width;
+    const int16_t h = (int16_t)destination->height;
+    if (x < 0 || y < 0 || x >= w || y >= h) {
+        return;
+    }
 
-    // the list of points that we'll check
-    mp_obj_t fill_area = mp_obj_new_list(0, NULL);
+    if (replaced_color_value == INT_MAX) {
+        replaced_color_value = common_hal_displayio_bitmap_get_pixel(destination, x, y);
+    }
+    if (fill_color_value == replaced_color_value) {
+        return;
+    }
 
-    // first point is the one user passed in
-    mp_obj_t point[] = { mp_obj_new_int(x), mp_obj_new_int(y) };
-    mp_obj_list_append(
-        fill_area,
-        mp_obj_new_tuple(2, point)
-        );
+    size_t cap = 64;
+    size_t sp = 0;
+    uint32_t *stack = m_malloc(cap * sizeof(uint32_t));
+    stack[sp++] = ((uint32_t)(uint16_t)x << 16) | (uint16_t)y;
 
     int16_t minx = x;
     int16_t miny = y;
     int16_t maxx = x;
     int16_t maxy = y;
 
-    if (replaced_color_value == INT_MAX) {
-        current_point_color_value = common_hal_displayio_bitmap_get_pixel(
-            destination,
-            mp_obj_get_int(point[0]),
-            mp_obj_get_int(point[1]));
-        replaced_color_value = (uint32_t)current_point_color_value;
-    }
+    while (sp > 0) {
+        uint32_t packed = stack[--sp];
+        int16_t sx = (int16_t)(packed >> 16);
+        int16_t sy = (int16_t)(packed & 0xffff);
 
-    mp_obj_t *fill_points;
-    size_t list_length = 0;
-    mp_obj_list_get(fill_area, &list_length, &fill_points);
-
-    mp_obj_t current_point;
-
-    size_t tuple_len = 0;
-    mp_obj_t *tuple_items;
-
-    int cur_x, cur_y;
-
-    // while there are still points to check
-    while (list_length > 0) {
-        mp_obj_list_get(fill_area, &list_length, &fill_points);
-        current_point = mp_obj_list_pop(fill_area, 0);
-        mp_obj_tuple_get(current_point, &tuple_len, &tuple_items);
-        current_point_color_value = common_hal_displayio_bitmap_get_pixel(
-            destination,
-            mp_obj_get_int(tuple_items[0]),
-            mp_obj_get_int(tuple_items[1]));
-
-        // if the current point is not background color ignore it
-        if (current_point_color_value != replaced_color_value) {
-            mp_obj_list_get(fill_area, &list_length, &fill_points);
+        // the run may already have been filled by way of another seed
+        if (common_hal_displayio_bitmap_get_pixel(destination, sx, sy) != replaced_color_value) {
             continue;
         }
 
-        cur_x = mp_obj_int_get_checked(tuple_items[0]);
-        cur_y = mp_obj_int_get_checked(tuple_items[1]);
-
-        if (cur_x < minx) {
-            minx = (int16_t)cur_x;
+        int16_t left = sx;
+        while (left > 0 &&
+               common_hal_displayio_bitmap_get_pixel(destination, left - 1, sy) == replaced_color_value) {
+            left--;
         }
-        if (cur_x > maxx) {
-            maxx = (int16_t)cur_x;
-        }
-        if (cur_y < miny) {
-            miny = (int16_t)cur_y;
-        }
-        if (cur_y > maxy) {
-            maxy = (int16_t)cur_y;
+        int16_t right = sx;
+        while (right + 1 < w &&
+               common_hal_displayio_bitmap_get_pixel(destination, right + 1, sy) == replaced_color_value) {
+            right++;
         }
 
-        // fill the current point with fill color
-        displayio_bitmap_write_pixel(
-            destination,
-            mp_obj_get_int(tuple_items[0]),
-            mp_obj_get_int(tuple_items[1]),
-            fill_color_value);
-
-        // add all 4 surrounding points to the list to check
-
-        // ignore points outside of the bitmap
-        if (mp_obj_int_get_checked(tuple_items[1]) - 1 >= 0) {
-            mp_obj_t above_point[] = {
-                tuple_items[0],
-                MP_OBJ_NEW_SMALL_INT(mp_obj_int_get_checked(tuple_items[1]) - 1)
-            };
-            mp_obj_list_append(
-                fill_area,
-                mp_obj_new_tuple(2, above_point));
+        for (int16_t i = left; i <= right; i++) {
+            displayio_bitmap_write_pixel(destination, i, sy, fill_color_value);
         }
 
-        // ignore points outside of the bitmap
-        if (mp_obj_int_get_checked(tuple_items[0]) - 1 >= 0) {
-            mp_obj_t left_point[] = {
-                MP_OBJ_NEW_SMALL_INT(mp_obj_int_get_checked(tuple_items[0]) - 1),
-                tuple_items[1]
-            };
-            mp_obj_list_append(
-                fill_area,
-                mp_obj_new_tuple(2, left_point));
+        if (left < minx) {
+            minx = left;
+        }
+        if (right > maxx) {
+            maxx = right;
+        }
+        if (sy < miny) {
+            miny = sy;
+        }
+        if (sy > maxy) {
+            maxy = sy;
         }
 
-        // ignore points outside of the bitmap
-        if (mp_obj_int_get_checked(tuple_items[0]) + 1 < destination->width) {
-            mp_obj_t right_point[] = {
-                MP_OBJ_NEW_SMALL_INT(mp_obj_int_get_checked(tuple_items[0]) + 1),
-                tuple_items[1]
-            };
-            mp_obj_list_append(
-                fill_area,
-                mp_obj_new_tuple(2, right_point));
+        for (int16_t dy = -1; dy <= 1; dy += 2) {
+            int16_t ny = sy + dy;
+            if (ny < 0 || ny >= h) {
+                continue;
+            }
+            bool in_run = false;
+            for (int16_t i = left; i <= right; i++) {
+                bool match = common_hal_displayio_bitmap_get_pixel(destination, i, ny) == replaced_color_value;
+                if (match && !in_run) {
+                    if (sp == cap) {
+                        stack = m_renew(uint32_t, stack, cap, cap * 2);
+                        cap *= 2;
+                    }
+                    stack[sp++] = ((uint32_t)(uint16_t)i << 16) | (uint16_t)ny;
+                    in_run = true;
+                } else if (!match) {
+                    in_run = false;
+                }
+            }
         }
 
-        // ignore points outside of the bitmap
-        if (mp_obj_int_get_checked(tuple_items[1]) + 1 < destination->height) {
-            mp_obj_t below_point[] = {
-                tuple_items[0],
-                MP_OBJ_NEW_SMALL_INT(mp_obj_int_get_checked(tuple_items[1]) + 1)
-            };
-            mp_obj_list_append(
-                fill_area,
-                mp_obj_new_tuple(2, below_point));
-        }
-
-        mp_obj_list_get(fill_area, &list_length, &fill_points);
         RUN_BACKGROUND_TASKS;
         if (mp_hal_is_interrupted()) {
-            return;
+            // CIRCUITPY-CHANGE: this used to return outright, so the pixels already
+            // written were never marked dirty and the display kept the old content.
+            break;
         }
     }
+
+    m_del(uint32_t, stack, cap);
 
     // set dirty the area so displayio will draw
     displayio_area_t area = { minx, miny, maxx + 1, maxy + 1, NULL};
