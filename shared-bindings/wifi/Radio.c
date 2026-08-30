@@ -119,7 +119,16 @@ static mp_obj_t wifi_radio_set_hostname(mp_obj_t self_in, mp_obj_t hostname_in) 
     }
 
     wifi_radio_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    common_hal_wifi_radio_set_hostname(self, hostname.buf);
+    // CIRCUITPY-CHANGE: the length was validated above and then thrown away -- only
+    // the pointer went on, and the IDF does strlen() and strdup() on it. A str is
+    // NUL terminated so it worked; a bytearray or a memoryview slice is not, so
+    // wifi.radio.hostname = memoryview(buf)[:7] set whatever followed those seven
+    // bytes, bypassing hostname_valid() entirely. Copy into a terminated local; the
+    // range check above bounds it to 253.
+    char name[254];
+    memcpy(name, hostname.buf, hostname.len);
+    name[hostname.len] = '\0';
+    common_hal_wifi_radio_set_hostname(self, name);
 
     return mp_const_none;
 }
