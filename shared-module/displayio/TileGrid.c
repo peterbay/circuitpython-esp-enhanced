@@ -22,7 +22,15 @@ void common_hal_displayio_tilegrid_construct(displayio_tilegrid_t *self, mp_obj_
     mp_obj_t pixel_shader, uint16_t width, uint16_t height,
     uint16_t tile_width, uint16_t tile_height, uint16_t x, uint16_t y, uint16_t default_tile) {
 
-    uint32_t total_tiles = width * height;
+    // CIRCUITPY-CHANGE: both operands are uint16_t, so this multiplied in int and
+    // overflowed for a large grid -- 46341 x 46341 is 2147488281, past INT_MAX. The
+    // byte count below then wrapped in size_t, the allocation succeeded small, and
+    // the fill loop wrote the full count. The binding allows either dimension up to
+    // 0xffff, so this was reachable from three lines of Python.
+    uint32_t total_tiles = (uint32_t)width * (uint32_t)height;
+    if (total_tiles > SIZE_MAX / sizeof(uint16_t)) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Tile grid is too large"));
+    }
     self->bitmap_width_in_tiles = bitmap_width_in_tiles;
     self->tiles_in_bitmap = bitmap_width_in_tiles * bitmap_height_in_tiles;
 
