@@ -102,7 +102,26 @@ static void traceback_exception_common(bool is_print_exception, mp_print_t *prin
         exc->traceback = (mp_obj_traceback_t *)&mp_const_empty_traceback_obj;
     }
 
-    shared_module_traceback_print_exception(MP_OBJ_TO_PTR(value), print, limit);
+    // CIRCUITPY-CHANGE: the caller's exception is deliberately mutated for the
+    // duration of the print and restored afterwards, but there was no nlr_push, so
+    // anything escaping the print left it stripped of its traceback and its
+    // __context__/__cause__ chain. Printing can raise two ways: with file= set,
+    // print_strn is the stream adaptor and a write error propagates -- a read-only
+    // CIRCUITPY under USB mass storage is the ordinary state -- or the exception's
+    // own __str__ is Python that raises. A function documented as read-only must not
+    // leave the caller's object damaged.
+    nlr_buf_t nlr;
+    if (nlr_push(&nlr) == 0) {
+        shared_module_traceback_print_exception(MP_OBJ_TO_PTR(value), print, limit);
+        nlr_pop();
+    } else {
+        exc->traceback = trace_backup;
+        #if MICROPY_CPYTHON_EXCEPTION_CHAIN
+        exc->context = context_backup;
+        exc->cause = cause_backup;
+        #endif
+        nlr_jump(nlr.ret_val);
+    }
     exc->traceback = trace_backup;
     #if MICROPY_CPYTHON_EXCEPTION_CHAIN
     exc->context = context_backup;
