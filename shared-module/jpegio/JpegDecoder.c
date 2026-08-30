@@ -147,14 +147,22 @@ static int bitmap_output(JDEC *jd, void *data, JRECT *rect) {
     int y1 = self->lim.y1 - rect->top;
     int y2 = self->lim.y2 - rect->top;
 
-    if (y2 < y1) {
+    // CIRCUITPY-CHANGE: these two tests were y2 < y1 and x2 < x1, and both sides of
+    // each subtract the same rect origin -- so they reduce to lim.y2 < lim.y1 and
+    // lim.x2 < lim.x1, which the area validator already excludes. Both were
+    // therefore constantly false and neither early exit ever fired: every JPEG was
+    // decoded in full even when only a corner of it was wanted. The comments say
+    // what was meant, and it is a comparison against this block rather than against
+    // the other end of the crop. tjpgd walks MCUs in raster order and treats a zero
+    // return as JDR_INTR, which decode_into already accepts as success.
+    if (y2 <= 0) {
         // The last row in the source image to copy FROM is above of this, so
         // no more pixels on any rows
         return DECODER_INTERRUPT;
     }
 
     y2 = MIN(y2, src_height);
-    if (x2 < x1) {
+    if (x2 <= 0) {
         // The last column in the source image to copy FROM is left of this, so
         // no more pixels on this row but could be on subsequent rows
         return DECODER_CONTINUE;
