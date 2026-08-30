@@ -324,6 +324,18 @@ static bool _refresh_area(busdisplay_busdisplay_obj_t *self, const displayio_are
         if (pixels_per_buffer % pixels_per_word) {
             buffer_size += 1;
         }
+    } else {
+        // CIRCUITPY-CHANGE: buffer_size was only ever recomputed on the branch
+        // above, where the area does not fit. When it does fit -- which is every
+        // ordinary partial redraw, the case this display path is tuned for -- it
+        // stayed at the configured maximum. With CIRCUITPY_DISPLAY_AREA_BUFFER_SIZE
+        // raised to 4096 here, a 20x10 dirty area still put 8192 B of buffers on a
+        // 24576 B stack and memset 4096 B of it per subrectangle. pixels_per_buffer
+        // already holds the real pixel count, so size the buffer from it.
+        buffer_size = pixels_per_buffer / pixels_per_word;
+        if (pixels_per_buffer % pixels_per_word) {
+            buffer_size += 1;
+        }
     }
 
     // Allocated and shared as a uint32_t array so the compiler knows the
