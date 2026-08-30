@@ -130,7 +130,12 @@ static mp_obj_t socketpool_socketpool_getaddrinfo(size_t n_args, const mp_obj_t 
         { MP_QSTR_port, MP_ARG_INT | MP_ARG_REQUIRED },
         { MP_QSTR_family, MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_type, MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_port, MP_ARG_INT, {.u_int = 0} },
+        // CIRCUITPY-CHANGE: this slot is ARG_proto and was named port, the same as
+        // the slot two rows up. mp_arg_parse_all looks each name up on its own, so
+        // proto= raised "unexpected keyword argument" and getaddrinfo(host=..., port=80)
+        // filled both slots -- proto silently became 80 and travelled out in the
+        // returned tuples, where the CPython idiom pool.socket(*ai[0][:3]) uses it.
+        { MP_QSTR_proto, MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_flags, MP_ARG_INT, {.u_int = 0} },
     };
     socketpool_socketpool_obj_t *self = MP_OBJ_TO_PTR(pos_args[0]);
