@@ -326,7 +326,21 @@ static void pack(mp_obj_t obj, msgpack_stream_t *s, mp_obj_t default_handler) {
 
 static mp_obj_t unpack(msgpack_stream_t *s, mp_obj_t ext_hook, bool use_list);
 
+// CIRCUITPY-CHANGE: a container header carries a 32-bit element count taken straight
+// from the stream, and the allocators multiply it by the element size with no overflow
+// check of their own -- m_new/m_new0 have none. For a map, 8 * 0x20000000 truncates to
+// 0, so gc_alloc(0) hands back NULL while the map keeps alloc = 0x20000000 and the
+// first store computes hash % alloc and writes through it. Seven bytes of input reach
+// that. Reject a count that cannot survive the multiplication; anything merely large
+// still fails as an ordinary MemoryError.
+static void check_container_size(size_t count, size_t elem_size) {
+    if (count > SIZE_MAX / elem_size) {
+        mp_raise_ValueError(MP_ERROR_TEXT("msgpack container too long"));
+    }
+}
+
 static mp_obj_t unpack_array_elements(msgpack_stream_t *s, size_t size, mp_obj_t ext_hook, bool use_list) {
+    check_container_size(size, sizeof(mp_obj_t));
     if (use_list) {
         mp_obj_list_t *t = MP_OBJ_TO_PTR(mp_obj_new_list(size, NULL));
         for (size_t i = 0; i < size; i++) {
@@ -462,6 +476,7 @@ static mp_obj_t unpack(msgpack_stream_t *s, mp_obj_t ext_hook, bool use_list) {
         case 0xdf: {
             // map 16 & 32
             size_t len = read_size(s, code - 0xde + 1);
+            check_container_size(len, sizeof(mp_map_elem_t));
             mp_obj_dict_t *d = MP_OBJ_TO_PTR(mp_obj_new_dict(len));
             for (size_t i = 0; i < len; i++) {
                 mp_obj_t key = unpack(s, ext_hook, use_list);
