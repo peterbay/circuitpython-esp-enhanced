@@ -70,8 +70,25 @@ static mp_obj_t registers_extract(size_t n_args, const mp_obj_t *args) {
         uint64_t sign_bit = (field_mask >> 1) + 1;
         if (result & sign_bit) {
             // Two's complement: the value is negative.
-            return mp_obj_new_int_from_ll((long long)(result - (field_mask + 1)));
+            long long signed_value = (long long)(result - (field_mask + 1));
+            // CIRCUITPY-CHANGE: mp_obj_new_int_from_ll and _from_ull always allocate
+            // -- objint_mpz gives them an mp_obj_malloc plus an m_new for the digits,
+            // two GC blocks and about 32 bytes, measured. Small ints reach 2^30 under
+            // this object representation, so every register field up to 30 bits, which
+            // is all of them in practice, can come back without touching the heap. A
+            // six-field sensor polled at 100 Hz was producing about 19 kB/s of garbage
+            // on a 130 kB heap for values like 5.
+            // mp_obj_new_int carries the small-int test itself and falls back to a
+            // big int, so the fast path costs nothing here and needs no macros that
+            // this translation unit cannot see.
+            if (signed_value == (long long)(mp_int_t)signed_value) {
+                return mp_obj_new_int((mp_int_t)signed_value);
+            }
+            return mp_obj_new_int_from_ll(signed_value);
         }
+    }
+    if (result == (uint64_t)(mp_uint_t)result) {
+        return mp_obj_new_int_from_uint((mp_uint_t)result);
     }
     return mp_obj_new_int_from_ull(result);
 }
