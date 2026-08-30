@@ -15,7 +15,10 @@ mp_obj_t shared_module_getpass_getpass(const char *prompt, mp_print_t *print) {
     if (print == NULL) {
         mp_hal_stdout_tx_str(prompt);
     } else {
-        mp_printf(print, prompt);
+        // CIRCUITPY-CHANGE: the caller's prompt was used as a printf format string,
+        // so a prompt containing a per-cent sign read arguments that were never
+        // passed. The branch above already treats it as plain text.
+        mp_print_str(print, prompt);
     }
 
     for (;;) {
