@@ -215,6 +215,11 @@ void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self,
         self->stride = (bit_stride / 8);
     }
 
+    // CIRCUITPY-CHANGE: one row's worth of buffer for get_pixel to read into, so
+    // that a run along a row costs one seek and one read rather than one of each
+    // per pixel. Allocated once here because stride is only known now.
+    self->row_cache = m_malloc_without_collect(self->stride);
+    self->cached_row = UINT32_MAX;
 }
 
 
@@ -225,20 +230,44 @@ uint32_t common_hal_displayio_ondiskbitmap_get_pixel(displayio_ondiskbitmap_t *s
         return 0;
     }
 
-    uint32_t location;
     uint8_t bytes_per_pixel = (self->bits_per_pixel / 8)  ? (self->bits_per_pixel / 8) : 1;
     uint8_t pixels_per_byte = 8 / self->bits_per_pixel;
-    if (pixels_per_byte == 0) {
-        location = self->data_offset + (self->height - y - 1) * self->stride + x * bytes_per_pixel;
-    } else {
-        location = self->data_offset + (self->height - y - 1) * self->stride + x / pixels_per_byte;
+
+    // CIRCUITPY-CHANGE: this used to seek and read for every single pixel, with a
+    // comment saying no cache was needed because the filesystem caches sectors.
+    // The sector cache does spare the flash read, but not the f_lseek -- which
+    // validates its argument and walks the cluster chain, and BMP rows are stored
+    // bottom-up so the offsets run backwards and the forward-seek shortcut never
+    // applies -- nor the f_read call itself. The general TileGrid loop calls this
+    // once per pixel, so a full-screen bitmap was tens of thousands of FatFS
+    // entries per frame. Measured on a 48x64 bitmap: 1010 cycles per pixel against
+    // 145 for the same grid backed by memory.
+    //
+    // A row is read once and served from there. Zero it first so that a file
+    // shorter than its own header claims still reads as zeros, which is what the
+    // per-pixel short read used to produce.
+    uint32_t row = self->height - y - 1;
+    if (row != self->cached_row) {
+        memset(self->row_cache, 0, self->stride);
+        f_lseek(&self->file->fp, self->data_offset + row * self->stride);
+        UINT bytes_read;
+        if (f_read(&self->file->fp, self->row_cache, self->stride, &bytes_read) != FR_OK) {
+            self->cached_row = UINT32_MAX;
+            return 0;
+        }
+        self->cached_row = row;
     }
-    // We don't cache here because the underlying FS caches sectors.
-    f_lseek(&self->file->fp, location);
-    UINT bytes_read;
+
+    uint32_t byte_offset = (pixels_per_byte == 0)
+        ? (uint32_t)x * bytes_per_pixel
+        : (uint32_t)x / pixels_per_byte;
+    if (byte_offset + bytes_per_pixel > self->stride) {
+        return 0;
+    }
     uint32_t pixel_data = 0;
-    uint32_t result = f_read(&self->file->fp, &pixel_data, bytes_per_pixel, &bytes_read);
-    if (result == FR_OK) {
+    memcpy(&pixel_data, self->row_cache + byte_offset, bytes_per_pixel);
+
+    {
         uint32_t tmp = 0;
         uint8_t red;
         uint8_t green;

@@ -27,6 +27,11 @@ typedef struct {
     uint32_t r_bitmask;
     uint32_t g_bitmask;
     uint32_t b_bitmask;
+    // CIRCUITPY-CHANGE: one row of the file, so that get_pixel does not seek and
+    // read per pixel. cached_row holds the file row currently in it, counted the
+    // way get_pixel counts, or UINT32_MAX when nothing is cached.
+    uint8_t *row_cache;
+    uint32_t cached_row;
     pyb_file_obj_t *file;
     union {
         mp_obj_base_t *pixel_shader_base;
