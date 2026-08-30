@@ -24,9 +24,13 @@ void common_hal_adafruit_bus_device_i2cdevice_lock(adafruit_bus_device_i2cdevice
 
     while (!mp_obj_is_true(success)) {
         RUN_BACKGROUND_TASKS;
-        if (mp_hal_is_interrupted()) {
-            break;
-        }
+        // CIRCUITPY-CHANGE: this used to break on a pending exception, and the
+        // function then returned as though it held the lock. The first transfer
+        // inside the with-block raised "Function requires lock", masking the real
+        // KeyboardInterrupt or auto-reload, and __exit__ went on to unlock a bus this
+        // block never took -- releasing an outer i2c.try_lock() if there was one.
+        // The SPI sibling already raises here instead.
+        mp_handle_pending(true);
 
         success = mp_call_method_n_kw(0, 0, dest);
     }
