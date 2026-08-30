@@ -389,7 +389,10 @@ void shared_module_bitmapfilter_blend_precompute(mp_obj_t fun, uint8_t lookup[40
         for (int j = 0; j < 64; j++) {
             mp_obj_t fj = mp_obj_new_float(j * (1 / MICROPY_FLOAT_CONST(63.)));
             mp_float_t res = mp_obj_get_float(mp_call_function_2(fun, fi, fj));
-            *ptr++ = res < 0 ? 0 : res > 1 ? 1 : (uint8_t)MICROPY_FLOAT_C_FUN(round)(63 * res);
+            // CIRCUITPY-CHANGE: the upper clamp wrote 1 where the table's domain is
+        // 0..63, so an ordinary additive blend -- blend_precompute(lambda a, b: a + b)
+        // -- mapped everything above unity to 1/63 and rendered bright areas black.
+        *ptr++ = res < 0 ? 0 : res > 1 ? 63 : (uint8_t)MICROPY_FLOAT_C_FUN(round)(63 * res);
         }
     }
 }
