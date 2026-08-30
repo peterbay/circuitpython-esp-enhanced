@@ -137,7 +137,11 @@ static mp_obj_t bitmapfilter_morph(size_t n_args, const mp_obj_t *pos_args, mp_m
     mp_float_t m = get_m(args[ARG_mul].u_obj, weight_sum);
 
     shared_module_bitmapfilter_morph(bitmap, mask, sq_n_weights / 2, iweights, m, b,
-        args[ARG_threshold].u_bool, args[ARG_offset].u_bool, args[ARG_invert].u_bool);
+        // CIRCUITPY-CHANGE: offset is declared MP_ARG_INT above but was read through
+        // .u_bool, the inactive union member, so only its low byte reached the
+        // filter: 1, 2, 255 and -5 all arrived as 1 and 256 as 0. The documented
+        // negative offsets were unreachable.
+        args[ARG_threshold].u_bool, args[ARG_offset].u_int, args[ARG_invert].u_bool);
     return args[ARG_bitmap].u_obj;
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(bitmapfilter_morph_obj, 0, bitmapfilter_morph);
