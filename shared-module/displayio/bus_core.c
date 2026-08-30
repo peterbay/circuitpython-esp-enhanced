@@ -132,6 +132,24 @@ void displayio_display_bus_forget_region(displayio_display_bus_t *self) {
     self->last_region_valid = false;
 }
 
+#if CIRCUITPY_DISPLAY_LIMIT <= 1
+// CIRCUITPY-CHANGE: anything that writes to the bus outside the refresh path can
+// reprogram the window, and the cache below has no way to see it. Python can do
+// exactly that through the raw bus objects' send(), and a panel reset clears the
+// controller's window registers too. Rather than teach every writer which display
+// owns the bus, they raise this flag and the next region test drops the cache.
+// Correct because the cache only exists when there is at most one display, so
+// there is only ever one cache to drop.
+static bool region_cache_stale = false;
+
+void displayio_display_bus_forget_all_regions(void) {
+    region_cache_stale = true;
+}
+#else
+void displayio_display_bus_forget_all_regions(void) {
+}
+#endif
+
 void displayio_display_bus_set_region_to_update(displayio_display_bus_t *self, displayio_display_core_t *display, displayio_area_t *area) {
     // CIRCUITPY-CHANGE: the same window as last time is still programmed. Writing
     // pixels does not disturb it: every write starts with WRITE_MEMORY_START,
@@ -141,6 +159,10 @@ void displayio_display_bus_set_region_to_update(displayio_display_bus_t *self, d
     // copies of this state and would each believe its own window still stood
     // while the other had replaced it.
     #if CIRCUITPY_DISPLAY_LIMIT <= 1
+    if (region_cache_stale) {
+        region_cache_stale = false;
+        self->last_region_valid = false;
+    }
     if (self->last_region_valid &&
         self->last_region.x1 == area->x1 && self->last_region.x2 == area->x2 &&
         self->last_region.y1 == area->y1 && self->last_region.y2 == area->y2) {

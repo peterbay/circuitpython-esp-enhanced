@@ -111,6 +111,8 @@ static mp_obj_t paralleldisplaybus_parallelbus_obj_reset(mp_obj_t self_in) {
     if (!common_hal_paralleldisplaybus_parallelbus_reset(self)) {
         mp_raise_RuntimeError_varg(MP_ERROR_TEXT("No %q pin"), MP_QSTR_reset);
     }
+    // CIRCUITPY-CHANGE: a panel reset clears the controller's window registers.
+    displayio_display_bus_forget_all_regions();
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(paralleldisplaybus_parallelbus_reset_obj, paralleldisplaybus_parallelbus_obj_reset);
@@ -135,6 +137,10 @@ static mp_obj_t paralleldisplaybus_parallelbus_obj_send(mp_obj_t self, mp_obj_t 
     common_hal_paralleldisplaybus_parallelbus_send(self, DISPLAY_COMMAND, CHIP_SELECT_UNTOUCHED, &command, 1);
     common_hal_paralleldisplaybus_parallelbus_send(self, DISPLAY_DATA, CHIP_SELECT_UNTOUCHED, ((uint8_t *)bufinfo.buf), bufinfo.len);
     common_hal_paralleldisplaybus_parallelbus_end_transaction(self);
+
+    // CIRCUITPY-CHANGE: this command may have moved the window the display's cached
+    // copy still claims is programmed.
+    displayio_display_bus_forget_all_regions();
 
     return mp_const_none;
 }

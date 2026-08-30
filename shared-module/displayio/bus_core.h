@@ -52,6 +52,9 @@ typedef struct {
 // Forget the programmed window, so the next set_region sends it again. Needed
 // after anything else has driven the controller's address registers.
 void displayio_display_bus_forget_region(displayio_display_bus_t *self);
+// Drop the cached window on every display bus. For writers that reach the
+// controller without going through a display, such as the raw bus objects' send().
+void displayio_display_bus_forget_all_regions(void);
 
 void displayio_display_bus_construct(displayio_display_bus_t *self,
     mp_obj_t bus, uint16_t ram_width, uint16_t ram_height, int16_t colstart, int16_t rowstart,

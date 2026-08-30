@@ -97,6 +97,8 @@ static mp_obj_t fourwire_fourwire_obj_reset(mp_obj_t self_in) {
     if (!common_hal_fourwire_fourwire_reset(self)) {
         mp_raise_RuntimeError_varg(MP_ERROR_TEXT("No %q pin"), MP_QSTR_reset);
     }
+    // CIRCUITPY-CHANGE: a panel reset clears the controller's window registers.
+    displayio_display_bus_forget_all_regions();
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(fourwire_fourwire_reset_obj, fourwire_fourwire_obj_reset);
@@ -137,6 +139,10 @@ static mp_obj_t fourwire_fourwire_obj_send(size_t n_args, const mp_obj_t *pos_ar
     common_hal_fourwire_fourwire_send(self, DISPLAY_COMMAND, chip_select, &command, 1);
     common_hal_fourwire_fourwire_send(self, DISPLAY_DATA, chip_select, ((uint8_t *)bufinfo.buf), bufinfo.len);
     common_hal_fourwire_fourwire_end_transaction(self);
+
+    // CIRCUITPY-CHANGE: this command may have been CASET or RASET, which moves the
+    // window the display's cached copy still claims is programmed.
+    displayio_display_bus_forget_all_regions();
 
     return mp_const_none;
 }

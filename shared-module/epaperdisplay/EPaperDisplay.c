@@ -214,6 +214,10 @@ static void epaperdisplay_epaperdisplay_start_refresh(epaperdisplay_epaperdispla
 
     // run start sequence
     self->bus.bus_reset(self->bus.bus);
+    // CIRCUITPY-CHANGE: the reset clears the controller's window registers, so the
+    // cached window no longer describes what is programmed. BusDisplay forgets it
+    // after its own init sequence; this path had no equivalent.
+    displayio_display_bus_forget_region(&self->bus);
 
     common_hal_time_delay_ms(self->start_up_time_ms);
 
