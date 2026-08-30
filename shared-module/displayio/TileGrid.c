@@ -1228,7 +1228,14 @@ displayio_area_t *displayio_tilegrid_get_refresh_areas(displayio_tilegrid_t *sel
         if (refresh_area != tail) {
             // Special case a TileGrid that shows a full bitmap and use its
             // dirty area. Copy it to ours so we can transform it.
-            if (self->tiles_in_bitmap == 1) {
+            // CIRCUITPY-CHANGE: "the bitmap is one tile" was treated as "the grid is
+            // one cell". A tiled background -- one 16x16 bitmap shown across a 15x9
+            // grid -- has tiles_in_bitmap == 1, so a change to the bitmap redrew only
+            // the first cell and left the other 134 stale. The branch also copied over
+            // dirty_area rather than merging, so a tile change accumulated in the same
+            // frame was discarded. Take the shortcut only when the grid really is a
+            // single cell.
+            if (self->tiles_in_bitmap == 1 && self->width_in_tiles == 1 && self->height_in_tiles == 1) {
                 displayio_area_copy(refresh_area, &self->dirty_area);
                 self->partial_change = true;
             } else {
