@@ -285,8 +285,15 @@ static bool synth_note_into_buffer(synthio_synth_t *synth, int chan, int32_t *ou
                 accum = accum - lim + offset;
             }
             int16_t idx = accum >> SYNTHIO_FREQUENCY_SHIFT;
-            int16_t wi = (ring_waveform[idx] * out_buffer32[i]) / 32768; // consider for synthio_sat16 but had a weird artificat
-            out_buffer32[i] = wi;
+            // CIRCUITPY-CHANGE: this narrowed to int16_t, and -32768 * -32768 / 32768
+            // is +32768, which stores as -32768 -- a full-scale sign flip whenever two
+            // waveform troughs coincide, and synthio's default waveform is exactly
+            // +/-32768. The existing note is right that synthio_sat16 is the wrong
+            // tool (it rounds toward zero on the negative side and that is the
+            // artefact); a plain clamp of the one value that can exceed the range is
+            // not. The product cannot go below -32767 here, so only the top needs it.
+            int32_t wi = (ring_waveform[idx] * out_buffer32[i]) / 32768;
+            out_buffer32[i] = wi > 32767 ? 32767 : wi;
         }
         synth->ring_accum[chan] = accum;
     }
