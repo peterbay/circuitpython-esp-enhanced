@@ -106,20 +106,32 @@ static inline uint32_t mult16signed(uint32_t val, int32_t lomul, int32_t himul) 
     __asm__ volatile ("pkhbt %0, %1, %2, lsl #16" : "=r" (val) : "r" (lo), "r" (hi)); // pack
     return val;
     #else
-    uint32_t result = 0;
-    for (int8_t i = 0; i < 2; i++) {
-        float mod_mul = (float)(i ? himul : lomul) / (float)((1 << 15) - 1);
-        int16_t ai = (val >> (sizeof(uint16_t) * 8 * i));
-        int32_t intermediate = (int32_t)(ai * mod_mul);
-        if (intermediate > SHRT_MAX) {
-            intermediate = SHRT_MAX;
-        } else if (intermediate < SHRT_MIN) {
-            intermediate = SHRT_MIN;
-        }
-        intermediate &= 0x0000FFFF;
-        result |= (((uint32_t)intermediate)) << (sizeof(int16_t) * 8 * i);
+    // CIRCUITPY-CHANGE: this used to divide in floating point twice per 32-bit
+    // output word -- one word is one stereo frame, so 44100 of them per second per
+    // voice, inside a callback with a hard deadline. nm -u on the built Mixer.o
+    // showed U __divsf3, resolving in the firmware to 0x40002274, which is the ROM
+    // soft-float routine: a real out-of-line unpack, divide and round, not an
+    // instruction. The two calls also forced the level and panning variables onto
+    // the stack for the whole loop.
+    //
+    // The ARM branch above is already integer -- smulwb plus ssat with asr #15 --
+    // and this is the same arithmetic written portably. It is also more accurate:
+    // dividing by 32767 made a nominal unity level a gain of 32768/32767, so full
+    // scale samples clipped, while >> 15 is exactly unity. The two ports produced
+    // different samples for the same input until now.
+    int32_t lo = ((int32_t)(int16_t)val * lomul) >> 15;
+    int32_t hi = ((int32_t)(int16_t)(val >> 16) * himul) >> 15;
+    if (lo > SHRT_MAX) {
+        lo = SHRT_MAX;
+    } else if (lo < SHRT_MIN) {
+        lo = SHRT_MIN;
     }
-    return result;
+    if (hi > SHRT_MAX) {
+        hi = SHRT_MAX;
+    } else if (hi < SHRT_MIN) {
+        hi = SHRT_MIN;
+    }
+    return ((uint32_t)hi << 16) | ((uint32_t)lo & 0xFFFF);
     #endif
 }
 
