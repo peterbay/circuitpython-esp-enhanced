@@ -145,10 +145,15 @@ const char *common_hal_os_path_abspath(const char *path) {
 }
 
 void common_hal_os_chdir(const char *path) {
-    MP_STATE_VM(cwd_path) = common_hal_os_path_abspath(path);
+    // CIRCUITPY-CHANGE: the global cwd was written before the lookup and the proxy
+    // call that can fail, with no restore on the raise path, so a chdir to a missing
+    // directory left getcwd() reporting a path that does not exist while the
+    // filesystem's own cwd was untouched. Every relative path in the session then
+    // resolved under a directory that was not there. Nothing is committed until the
+    // work that can fail has succeeded.
+    const char *new_cwd = common_hal_os_path_abspath(path);
     mp_obj_t path_out;
-    mp_vfs_mount_t *vfs = lookup_dir_path(MP_STATE_VM(cwd_path), &path_out);
-    MP_STATE_VM(vfs_cur) = vfs;
+    mp_vfs_mount_t *vfs = lookup_dir_path(new_cwd, &path_out);
     if (vfs == MP_VFS_ROOT) {
         // If we change to the root dir and a VFS is mounted at the root then
         // we must change that VFS's current dir to the root dir so that any
@@ -163,6 +168,8 @@ void common_hal_os_chdir(const char *path) {
     } else {
         mp_vfs_proxy_call(vfs, MP_QSTR_chdir, 1, &path_out);
     }
+    MP_STATE_VM(cwd_path) = new_cwd;
+    MP_STATE_VM(vfs_cur) = vfs;
 }
 
 mp_obj_t common_hal_os_getcwd(void) {
