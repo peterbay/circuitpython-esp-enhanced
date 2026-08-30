@@ -60,10 +60,17 @@ static mp_obj_t registers_extract(size_t n_args, const mp_obj_t *args) {
 
     if (is_signed && mask != 0) {
         uint64_t field_mask = mask >> shift;
-        uint64_t sign_bit = (field_mask + 1) >> 1;
+        // CIRCUITPY-CHANGE: this was (field_mask + 1) >> 1, which wraps to 0 for a
+        // field spanning all 64 bits, so sign_bit came out 0 and such a field never
+        // sign-extended: extract(b"\xff" * 8, (1 << 64) - 1, 0, True) returned
+        // 18446744073709551615 where the 32- and 63-bit cases correctly return -1.
+        // Halving the mask itself has no such edge. The subtraction below is done in
+        // uint64_t for the same reason -- field_mask + 1 is 0 at full width, and
+        // wrapping there is exactly what produces the right two's complement value.
+        uint64_t sign_bit = (field_mask >> 1) + 1;
         if (result & sign_bit) {
             // Two's complement: the value is negative.
-            return mp_obj_new_int_from_ll((long long)result - (long long)(field_mask + 1));
+            return mp_obj_new_int_from_ll((long long)(result - (field_mask + 1)));
         }
     }
     return mp_obj_new_int_from_ull(result);
