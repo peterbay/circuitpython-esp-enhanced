@@ -182,8 +182,14 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     if (usb_hid_get_device_with_report_id(report_id, &hid_device, &id_idx)) {
         // Make sure buffer exists before trying to copy into it.
         if (hid_device->in_report_buffers[id_idx]) {
-            memcpy(buffer, hid_device->in_report_buffers[id_idx], reqlen);
-            return reqlen;
+            // CIRCUITPY-CHANGE: reqlen is the host's number. TinyUSB clamps the
+            // destination to CFG_TUD_HID_EP_BUFSIZE but nothing clamped the source,
+            // so an ordinary GET_REPORT with an oversized buffer read past the end of
+            // a report-sized block and sent the remainder -- Python heap contents --
+            // back to the host. Clamp to what the report actually holds.
+            uint16_t copy_len = MIN(reqlen, hid_device->in_report_lengths[id_idx]);
+            memcpy(buffer, hid_device->in_report_buffers[id_idx], copy_len);
+            return copy_len;
         }
     }
     return 0;
