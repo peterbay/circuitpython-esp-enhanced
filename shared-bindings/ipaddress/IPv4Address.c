@@ -48,13 +48,19 @@ static mp_obj_t ipaddress_ipv4address_make_new(const mp_obj_type_t *type, size_t
         }
         buf = (uint8_t *)&value;
     } else {
+        // CIRCUITPY-CHANGE: this branch had no else, so anything that is not an int,
+        // a str or a buffer left buf as NULL and was handed to construct() anyway.
+        // mp_obj_new_str_copy() skips the copy for a NULL pointer instead of failing,
+        // so the object came out with len 4 and no data, and the first print, compare
+        // or hash of it dereferenced address 0. ip_address() next door does raise.
         mp_buffer_info_t buf_info;
-        if (mp_get_buffer(address, &buf_info, MP_BUFFER_READ)) {
-            if (buf_info.len != 4) {
-                mp_raise_ValueError_varg(MP_ERROR_TEXT("Address must be %d bytes long"), 4);
-            }
-            buf = buf_info.buf;
+        if (!mp_get_buffer(address, &buf_info, MP_BUFFER_READ)) {
+            mp_arg_error_invalid(MP_QSTR_address);
         }
+        if (buf_info.len != 4) {
+            mp_raise_ValueError_varg(MP_ERROR_TEXT("Address must be %d bytes long"), 4);
+        }
+        buf = buf_info.buf;
     }
 
 
