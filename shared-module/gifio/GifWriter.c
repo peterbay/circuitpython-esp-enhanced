@@ -171,6 +171,24 @@ static const uint8_t g_bayer[4][4] = {
 };
 
 void shared_module_gifio_gifwriter_add_frame(gifio_gifwriter_t *self, const mp_buffer_info_t *bufinfo, int16_t delay) {
+    int pixel_count = self->width * self->height;
+    int blocks = (pixel_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    // CIRCUITPY-CHANGE: up to nineteen bytes of frame header used to go out before
+    // the source buffer's length was checked, and that check -- the mp_get_index in
+    // each branch below -- raises. A bitmap of the wrong size, which is an ordinary
+    // caller mistake, therefore left a header in the file with no frame behind it:
+    // the next frame's header follows the stray prefix and most decoders stop
+    // there. For some sizes the later writes also ran past the block, because the
+    // requirement had grown by the header that was already written. Check the length
+    // once, before anything is emitted; the per-branch checks below are left in
+    // place as they are what document each format's requirement.
+    size_t needed_bytes = (self->colorspace == DISPLAYIO_COLORSPACE_L8)
+        ? (size_t)pixel_count
+        : 2u * (size_t)pixel_count;
+    mp_get_index(&mp_type_memoryview, bufinfo->len,
+        MP_OBJ_NEW_SMALL_INT(needed_bytes - 1), false);
+
     if (delay) {
         write_data(self, (uint8_t []) {'!', 0xF9, 0x04, 0x04}, 4);
         write_word(self, delay);
@@ -182,9 +200,6 @@ void shared_module_gifio_gifwriter_add_frame(gifio_gifwriter_t *self, const mp_b
     write_word(self, self->width);
     write_word(self, self->height);
     write_data(self, (uint8_t []) {0x00, 0x07}, 2); // 7-bits
-
-    int pixel_count = self->width * self->height;
-    int blocks = (pixel_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     uint8_t *data = self->data + self->cur;
 
