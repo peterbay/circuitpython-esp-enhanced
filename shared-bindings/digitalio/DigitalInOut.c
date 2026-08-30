@@ -153,7 +153,7 @@ static mp_obj_t digitalio_digitalinout_switch_to_output(size_t n_args, const mp_
         { MP_QSTR_value,      MP_ARG_BOOL, {.u_bool = false} },
         { MP_QSTR_drive_mode, MP_ARG_OBJ, {.u_rom_obj = MP_ROM_PTR(&digitalio_drive_mode_push_pull_obj)} },
     };
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(pos_args[0]);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(pos_args[0]);
     check_for_deinit(self);
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
@@ -190,7 +190,7 @@ static mp_obj_t digitalio_digitalinout_switch_to_input(size_t n_args, const mp_o
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_pull, MP_ARG_OBJ, {.u_rom_obj = mp_const_none} },
     };
-    digitalio_digitalinout_obj_t *self = MP_OBJ_TO_PTR(pos_args[0]);
+    digitalio_digitalinout_obj_t *self = native_digitalinout(pos_args[0]);
     check_for_deinit(self);
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
