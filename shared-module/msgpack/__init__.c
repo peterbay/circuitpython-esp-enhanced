@@ -9,6 +9,7 @@
 
 #include "py/obj.h"
 #include "py/binary.h"
+#include "py/cstack.h"
 #include "py/objarray.h"
 #include "py/objlist.h"
 #include "py/objstringio.h"
@@ -254,6 +255,10 @@ static void pack_dict(msgpack_stream_t *s, size_t len) {
 }
 
 static void pack(mp_obj_t obj, msgpack_stream_t *s, mp_obj_t default_handler) {
+    // CIRCUITPY-CHANGE: this recurses once per container and had no guard, so a
+    // self-referential list smashed the 24 kB C stack instead of raising. The
+    // interpreter's own containers all call this helper for the same reason.
+    mp_cstack_check();
     if (mp_obj_is_small_int(obj)) {
         // int
         int32_t x = MP_OBJ_SMALL_INT_VALUE(obj);
@@ -386,6 +391,9 @@ static mp_obj_t unpack_ext(msgpack_stream_t *s, size_t size, mp_obj_t ext_hook) 
 }
 
 static mp_obj_t unpack(msgpack_stream_t *s, mp_obj_t ext_hook, bool use_list) {
+    // CIRCUITPY-CHANGE: recurses once per nesting level, and the nesting comes from
+    // the input. A file of repeated fixarray-of-one headers is enough.
+    mp_cstack_check();
     uint8_t code = read1(s);
     if (((code & 0b10000000) == 0) || ((code & 0b11100000) == 0b11100000)) {
         // int
