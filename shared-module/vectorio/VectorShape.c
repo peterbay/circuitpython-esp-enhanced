@@ -423,35 +423,43 @@ bool vectorio_vector_shape_fill_area(vectorio_vector_shape_t *self, const _displ
                 }
 
                 // We double-check this to fast-path the case when a pixel is not covered by the shape & not call the color converter unnecessarily.
+                // CIRCUITPY-CHANGE: this used to fall through to the mask bit and the
+                // write below, so a shader that reported the pixel transparent still
+                // had it drawn -- as colour 0, because displayio_palette_get_color
+                // returns without touching .pixel when the entry is transparent. A
+                // Circle with a make_transparent() palette came out as a black disc
+                // that also hid every layer beneath it, since the mask bit claims the
+                // pixel is covered. TileGrid puts the equivalent write in an else;
+                // this now does the same.
                 if (!output_pixel.opaque) {
                     VECTORIO_SHAPE_PIXEL_DEBUG(" (encountered transparent pixel from colorconverter; input area is not fully covered)");
                     full_coverage = false;
-                }
-
-                *mask_doubleword |= 1u << mask_bit;
-                if (colorspace->depth == 16) {
-                    VECTORIO_SHAPE_PIXEL_DEBUG(" buffer = %04x 16", output_pixel.pixel);
-                    *(((uint16_t *)buffer) + pixel_index) = output_pixel.pixel;
-                } else if (colorspace->depth == 32) {
-                    VECTORIO_SHAPE_PIXEL_DEBUG(" buffer = %04x 32", output_pixel.pixel);
-                    *(((uint32_t *)buffer) + pixel_index) = output_pixel.pixel;
-                } else if (colorspace->depth == 8) {
-                    VECTORIO_SHAPE_PIXEL_DEBUG(" buffer = %02x 8", output_pixel.pixel);
-                    *(((uint8_t *)buffer) + pixel_index) = output_pixel.pixel;
-                } else if (colorspace->depth < 8) {
-                    // Reorder the offsets to pack multiple rows into a byte (meaning they share a column).
-                    if (!colorspace->pixels_in_byte_share_row) {
-                        uint16_t row = pixel_index / linestride_px;
-                        uint16_t col = pixel_index % linestride_px;
-                        pixel_index = col * pixels_per_byte + (row / pixels_per_byte) * pixels_per_byte * linestride_px + row % pixels_per_byte;
+                } else {
+                    *mask_doubleword |= 1u << mask_bit;
+                    if (colorspace->depth == 16) {
+                        VECTORIO_SHAPE_PIXEL_DEBUG(" buffer = %04x 16", output_pixel.pixel);
+                        *(((uint16_t *)buffer) + pixel_index) = output_pixel.pixel;
+                    } else if (colorspace->depth == 32) {
+                        VECTORIO_SHAPE_PIXEL_DEBUG(" buffer = %04x 32", output_pixel.pixel);
+                        *(((uint32_t *)buffer) + pixel_index) = output_pixel.pixel;
+                    } else if (colorspace->depth == 8) {
+                        VECTORIO_SHAPE_PIXEL_DEBUG(" buffer = %02x 8", output_pixel.pixel);
+                        *(((uint8_t *)buffer) + pixel_index) = output_pixel.pixel;
+                    } else if (colorspace->depth < 8) {
+                        // Reorder the offsets to pack multiple rows into a byte (meaning they share a column).
+                        if (!colorspace->pixels_in_byte_share_row) {
+                            uint16_t row = pixel_index / linestride_px;
+                            uint16_t col = pixel_index % linestride_px;
+                            pixel_index = col * pixels_per_byte + (row / pixels_per_byte) * pixels_per_byte * linestride_px + row % pixels_per_byte;
+                        }
+                        uint8_t shift = (pixel_index % pixels_per_byte) * colorspace->depth;
+                        if (colorspace->reverse_pixels_in_byte) {
+                            // Reverse the shift by subtracting it from the leftmost shift.
+                            shift = (pixels_per_byte - 1) * colorspace->depth - shift;
+                        }
+                        VECTORIO_SHAPE_PIXEL_DEBUG(" buffer = %2d %d", output_pixel.pixel, colorspace->depth);
+                        ((uint8_t *)buffer)[pixel_index / pixels_per_byte] |= output_pixel.pixel << shift;
                     }
-                    uint8_t shift = (pixel_index % pixels_per_byte) * colorspace->depth;
-                    if (colorspace->reverse_pixels_in_byte) {
-                        // Reverse the shift by subtracting it from the leftmost shift.
-                        shift = (pixels_per_byte - 1) * colorspace->depth - shift;
-                    }
-                    VECTORIO_SHAPE_PIXEL_DEBUG(" buffer = %2d %d", output_pixel.pixel, colorspace->depth);
-                    ((uint8_t *)buffer)[pixel_index / pixels_per_byte] |= output_pixel.pixel << shift;
                 }
             }
         }
