@@ -251,7 +251,11 @@ uint8_t shared_module_bitbangio_i2c_write(bitbangio_i2c_obj_t *self, uint16_t ad
 
     if (status == 0) {
         for (uint32_t i = 0; i < len; i++) {
-            if (!write_byte(self, data[i])) {
+            // CIRCUITPY-CHANGE: write_byte returns -1 on a bus error, 0 on a NAK and
+            // 1 on an ACK, and this tested !write_byte(...) -- so -1 read as success
+            // and a failed transfer was reported as complete. The address byte a few
+            // lines up already handles the three cases separately.
+            if (write_byte(self, data[i]) <= 0) {
                 status = MP_EIO;
                 break;
             }
@@ -271,7 +275,12 @@ uint8_t shared_module_bitbangio_i2c_read(bitbangio_i2c_obj_t *self, uint16_t add
         return MP_EIO;
     }
     uint8_t status = 0;
-    if (!write_byte(self, (addr << 1) | 1)) {
+    // CIRCUITPY-CHANGE: as in the write path, -1 means a bus error rather than a
+    // missing device, and !write_byte(...) folded it into success.
+    int addr_result = write_byte(self, (addr << 1) | 1);
+    if (addr_result < 0) {
+        status = MP_EIO;
+    } else if (!addr_result) {
         status = MP_ENODEV;
     }
 
