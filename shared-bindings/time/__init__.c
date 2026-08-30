@@ -127,12 +127,21 @@ const mp_obj_namedtuple_type_t struct_time_type_obj = {
 };
 
 mp_obj_t struct_time_from_tm(timeutils_struct_time_t *tm) {
-    timeutils_struct_time_t tmp;
-    mp_uint_t secs = timeutils_seconds_since_epoch(tm->tm_year, tm->tm_mon, tm->tm_mday,
-        tm->tm_hour, tm->tm_min, tm->tm_sec);
-    timeutils_seconds_since_epoch_to_struct_time(secs, &tmp);
-    tm->tm_wday = tmp.tm_wday;
-    tm->tm_yday = tmp.tm_yday;
+    // CIRCUITPY-CHANGE: this composed the fields back into seconds and decomposed
+    // them again purely to recover tm_wday and tm_yday. timeutils exports both
+    // directly -- and timeutils_year_day is literally what produced the tmp.tm_yday
+    // the rest of that round trip was thrown away for. Each decomposition costs
+    // divisions by 86400, 3600, 60, 7, 1461 and 365 plus a twelve-iteration month
+    // loop, and time.localtime has already done one and had correct values before
+    // discarding them. This is also on every rtc.RTC().datetime read.
+    // The two helpers do not share a convention: the decomposition numbers the
+    // week from Monday, which is what CPython's struct_time reports and what this
+    // function has always returned, while timeutils_calc_weekday numbers it from
+    // Sunday. Measured, not read off the formula -- every anchor came out exactly
+    // one too high before this correction. timeutils_year_day needs none, because
+    // it is literally the function the decomposition itself calls for tm_yday.
+    tm->tm_wday = (timeutils_calc_weekday(tm->tm_year, tm->tm_mon, tm->tm_mday) + 6) % 7;
+    tm->tm_yday = timeutils_year_day(tm->tm_year, tm->tm_mon, tm->tm_mday);
 
     mp_obj_t elems[9] = {
         mp_obj_new_int(tm->tm_year),
