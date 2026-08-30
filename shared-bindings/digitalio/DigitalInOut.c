@@ -158,9 +158,14 @@ static mp_obj_t digitalio_digitalinout_switch_to_output(size_t n_args, const mp_
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
+    // CIRCUITPY-CHANGE: anything that was not OPEN_DRAIN silently became PUSH_PULL,
+    // so switch_to_output(drive_mode="nonsense") configured a pin instead of raising.
+    // The sibling validate_pull() does raise for the same class of argument.
     digitalio_drive_mode_t drive_mode = DRIVE_MODE_PUSH_PULL;
     if (args[ARG_drive_mode].u_rom_obj == MP_ROM_PTR(&digitalio_drive_mode_open_drain_obj)) {
         drive_mode = DRIVE_MODE_OPEN_DRAIN;
+    } else if (args[ARG_drive_mode].u_rom_obj != MP_ROM_PTR(&digitalio_drive_mode_push_pull_obj)) {
+        mp_arg_error_invalid(MP_QSTR_drive_mode);
     }
     // do the transfer
     check_result(common_hal_digitalio_digitalinout_switch_to_output(self, args[ARG_value].u_bool, drive_mode));
@@ -295,9 +300,13 @@ static mp_obj_t digitalio_digitalinout_obj_set_drive_mode(mp_obj_t self_in, mp_o
         mp_raise_AttributeError(MP_ERROR_TEXT("Drive mode not used when direction is input."));
         return mp_const_none;
     }
+    // CIRCUITPY-CHANGE: as in switch_to_output, an unrecognised value fell through
+    // to push-pull rather than raising.
     digitalio_drive_mode_t c_drive_mode = DRIVE_MODE_PUSH_PULL;
     if (drive_mode == MP_ROM_PTR(&digitalio_drive_mode_open_drain_obj)) {
         c_drive_mode = DRIVE_MODE_OPEN_DRAIN;
+    } else if (drive_mode != MP_ROM_PTR(&digitalio_drive_mode_push_pull_obj)) {
+        mp_arg_error_invalid(MP_QSTR_drive_mode);
     }
     check_result(common_hal_digitalio_digitalinout_set_drive_mode(self, c_drive_mode));
     return mp_const_none;
