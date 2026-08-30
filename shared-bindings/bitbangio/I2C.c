@@ -58,9 +58,12 @@ static mp_obj_t bitbangio_i2c_make_new(const mp_obj_type_t *type, size_t n_args,
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     // CIRCUITPY-CHANGE: the frequency went through unchecked and the module divides
-    // 500000 by it. The upper bound keeps the resulting half-period from rounding to
-    // zero, which would be a bit-banged clock with no low time at all.
-    mp_int_t frequency = mp_arg_validate_int_range(args[ARG_frequency].u_int, 1, 500000, MP_QSTR_frequency);
+    // 500000 by it, so zero has to be rejected. Only zero: the first version of this
+    // check also capped the frequency at 500000 on the theory that a higher one would
+    // round the half-period down to nothing, but shared_module_bitbangio_i2c_construct
+    // already clamps us_delay up to 1, so the cap protected nothing and rejected
+    // ordinary values -- 1 MHz among them -- that had worked before.
+    mp_int_t frequency = mp_arg_validate_int_min(args[ARG_frequency].u_int, 1, MP_QSTR_frequency);
 
     bitbangio_i2c_obj_t *self = mp_obj_malloc_with_finaliser(bitbangio_i2c_obj_t, &bitbangio_i2c_type);
     shared_module_bitbangio_i2c_construct(self, args[ARG_scl].u_obj, args[ARG_sda].u_obj, frequency, args[ARG_timeout].u_int);

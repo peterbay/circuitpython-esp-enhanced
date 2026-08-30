@@ -135,7 +135,7 @@ static mp_obj_t bitbangio_spi_configure(size_t n_args, const mp_obj_t *pos_args,
 
     // CIRCUITPY-CHANGE: the baudrate went through unchecked into both a division and
     // a modulo by it in shared_module_bitbangio_spi_configure.
-    uint32_t baudrate = (uint32_t)mp_arg_validate_int_range(args[ARG_baudrate].u_int, 1, 500000, MP_QSTR_baudrate);
+    uint32_t baudrate = (uint32_t)mp_arg_validate_int_min(args[ARG_baudrate].u_int, 1, MP_QSTR_baudrate);
     uint8_t polarity = (uint8_t)mp_arg_validate_int_range(args[ARG_polarity].u_int, 0, 1, MP_QSTR_polarity);
     uint8_t phase = (uint8_t)mp_arg_validate_int_range(args[ARG_phase].u_int, 0, 1, MP_QSTR_phase);
     uint8_t bits = (uint8_t)mp_arg_validate_int_range(args[ARG_bits].u_int, 8, 9, MP_QSTR_bits);
