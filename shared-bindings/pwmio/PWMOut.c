@@ -139,7 +139,12 @@ static mp_obj_t pwmio_pwmout_make_new(const mp_obj_type_t *type, size_t n_args, 
 
     const mcu_pin_obj_t *pin = validate_obj_is_free_pin(parsed_args[ARG_pin].u_obj, MP_QSTR_pin);
 
-    uint16_t duty_cycle = parsed_args[ARG_duty_cycle].u_int;
+    // CIRCUITPY-CHANGE: the constructor narrowed to uint16_t before validating, so
+    // duty_cycle=65536 silently became 0 and -1 became 65535 -- while the property
+    // setter, one screen down, rejects both. Code computing int(65535 * fraction)
+    // with a fraction slightly over 1.0 therefore constructed at full off.
+    uint16_t duty_cycle = (uint16_t)mp_arg_validate_int_range(
+        parsed_args[ARG_duty_cycle].u_int, 0, 0xffff, MP_QSTR_duty_cycle);
     uint32_t frequency = parsed_args[ARG_frequency].u_int;
     bool variable_frequency = parsed_args[ARG_variable_frequency].u_bool;
 
