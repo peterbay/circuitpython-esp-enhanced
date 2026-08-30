@@ -18,7 +18,12 @@ static mp_obj_t parse_note(synthio_miditrack_obj_t *self) {
     uint8_t *buffer = self->track.buf;
     size_t len = self->track.len;
     if (self->pos + 1 >= len) {
+        // CIRCUITPY-CHANGE: this recorded the error and then fell through into the
+        // two reads below with pos already at len, so both were past the end of the
+        // caller's buffer. record_midi_stream_error sets pos = len, which makes the
+        // reads worse rather than safer. synthio.MidiTrack(b"\x00\x90", ...) is enough.
         record_midi_stream_error(self);
+        return MP_OBJ_NEW_SMALL_INT(0);
     }
     uint8_t note = buffer[(self->pos)++];
     if (note > 127 || buffer[(self->pos)++] > 127) {
@@ -51,6 +56,11 @@ static void decode_until_pause(synthio_miditrack_obj_t *self) {
     uint8_t *buffer = self->track.buf;
     size_t len = self->track.len;
     do {
+        // CIRCUITPY-CHANGE: start_parse can leave pos at len, and this read had no
+        // guard of its own. synthio.MidiTrack(b"\x00", ...) reaches it.
+        if (self->pos >= len) {
+            break;
+        }
         switch (buffer[self->pos++] >> 4) {
             case 8: { // Note Off
                 mp_obj_t note = parse_note(self);
