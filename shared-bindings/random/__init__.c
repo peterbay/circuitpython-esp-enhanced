@@ -116,6 +116,15 @@ static mp_obj_t random_randint(mp_obj_t a_in, mp_obj_t b_in) {
     if (a > b) {
         mp_raise_ValueError(NULL);
     }
+    // CIRCUITPY-CHANGE: b + 1 overflows when b is the largest representable integer,
+    // and randrange then computes a zero-width span. yasmarang_randbelow(0) leaves
+    // its mask at 1 and loops on "r >= n" with r unsigned, which is always true --
+    // forever, with no interrupt check, so only a hard reset recovers. The comment on
+    // that helper does say "n must not be zero"; this was the one caller that could
+    // reach it.
+    if (b == (mp_int_t)(~(mp_uint_t)0 >> 1)) {
+        mp_raise_ValueError(NULL);
+    }
     return mp_obj_new_int(shared_modules_random_randrange(a, b + 1, 1));
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(random_randint_obj, random_randint);
