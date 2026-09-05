@@ -137,8 +137,19 @@ extern portMUX_TYPE background_task_mutex;
 
 // CIRCUITPY-CHANGE: how much of each CSI record is kept. The radio can report
 // more than this for wide channels; the tail is dropped.
+//
+// 128 covers HT20 and HT40 on the pre-Wi-Fi-6 parts, measured on an ESP32-S3.
+// An HE20 record carries 242 tones rather than 64, so Wi-Fi 6 parts need room
+// for roughly four times as much. The figure below is sized from the tone count
+// and has not been checked against hardware.
 #ifndef ESPIDF_CSI_MAX_BYTES
+// defined() rather than a bare test: the build runs with -Wundef -Werror, and
+// the macro is simply absent on parts without Wi-Fi 6.
+#if defined(CONFIG_SOC_WIFI_HE_SUPPORT)
+#define ESPIDF_CSI_MAX_BYTES (512)
+#else
 #define ESPIDF_CSI_MAX_BYTES (128)
+#endif
 #endif
 
 #ifndef CIRCUITPY_ESP32P4_SWAP_LSFS

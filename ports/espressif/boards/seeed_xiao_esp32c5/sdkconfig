@@ -1,0 +1,79 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Wi-Fi
+#
+# CIRCUITPY-CHANGE: channel state information, see espidf.CSI
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+
+# CIRCUITPY-CHANGE: the 802.15.4 radio, see the ieee802154 module. Without this
+# the component's Kconfig is not even loaded and the option is silently dropped.
+CONFIG_IEEE802154_ENABLED=y
+
+# CIRCUITPY-CHANGE: Zigbee, see the zigbee module. ZCZR rather than ZED because
+# its symbols are a superset of the end-device library's, so this one build
+# covers coordinator, router and end device, chosen at run time. The radio is
+# the chip's own rather than a co-processor over spinel.
+CONFIG_ZB_ENABLED=y
+CONFIG_ZB_ZCZR=y
+CONFIG_ZB_RADIO_NATIVE=y
+
+# CIRCUITPY-CHANGE: Zigbee secures every frame with AES-CCM*, and without this
+# it cannot secure any of them. The PSA dispatcher hands an AEAD request to the
+# ESP hardware driver, which accepts GCM and answers PSA_ERROR_NOT_SUPPORTED
+# for everything else; this switch is what lets the dispatcher fall through to
+# the software implementation instead of returning that error. The name is
+# misleading -- AES-CCM is neither GCM nor a non-AES cipher, but it takes the
+# same path. CircuitPython turns the option off in its shared defaults.
+#
+# Measured, with it off: secur_secure_msg() returns -1 for every frame from the
+# moment the network is formed, so a Trust Center builds the Transport Key for
+# a joining device, fails to encrypt it, sends nothing, and reports the join as
+# "ignore" -- with no log line anywhere to say why.
+CONFIG_MBEDTLS_GCM_SUPPORT_NON_AES_CIPHER=y
+
+# CIRCUITPY-CHANGE: give the Zigbee stack room in internal RAM by putting the
+# Wi-Fi and lwIP buffers in PSRAM. The stack allocates its tables, buffer pool
+# and per-device security state from internal RAM and reports nothing when it
+# cannot: measured, a coordinator with too little forms a network, opens it,
+# and then answers every join with "ignore" -- or fails to form at all if its
+# endpoint needs a little more. The library's own examples have the chip to
+# themselves and start with 293K free; with Wi-Fi, BLE and CircuitPython up
+# first there was 100K.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# Static receive buffers stay in internal RAM whatever the option above says,
+# so their count has to be stated rather than left to a default that changes
+# with it -- and the block-ack window may not exceed twice that count.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_RX_BA_WIN=6
+
+# end of Wi-Fi
+
+#
+# ESP System Settings
+#
+# TEMPORARY, bring-up only. With memory protection on, OpenOCD announces
+# "Memory protection is enabled. Reset target to disable it..." and resets the
+# chip the moment it attaches -- which destroys the very state being
+# investigated. Every JTAG reading taken with this enabled was of a freshly
+# reset board sitting in ROM, not of the fault.
+CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=y
+# end of ESP System Settings
+
+#
+# Console
+#
+# Off, so that CircuitPython's REPL owns the USB Serial/JTAG controller. For
+# bring-up, put CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y here and build with
+# CIRCUITPY_ESP_USB_SERIAL_JTAG=0: that hands the peripheral to the ESP-IDF
+# console instead, which prints the boot log and any panic backtrace over the
+# same cable. There is no USB OTG on this part for either to clash with.
+# end of Console
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration

@@ -17,9 +17,23 @@
 // every single read, and measured against the same property read without it, that
 // cost 1505 ns a time. The input enable bit is one field of one IO MUX register,
 // which is what gpio_ll_get_io_config() reads it from as well.
+// The C5's soc component does not export GPIO_PIN_MUX_REG at all -- its
+// gpio_periph.c defines only GPIO_HOLD_MASK -- so the cheap path above has
+// nothing to index. It pays the full gpio_get_io_config() cost until someone
+// works out the IO MUX register address from the pin number on that part.
+#if defined(CONFIG_IDF_TARGET_ESP32C5)
+static bool _pin_is_input(uint8_t pin_number) {
+    gpio_io_config_t config;
+    if (gpio_get_io_config(pin_number, &config) != ESP_OK) {
+        return false;
+    }
+    return config.ie;
+}
+#else
 static bool _pin_is_input(uint8_t pin_number) {
     return (REG_READ(GPIO_PIN_MUX_REG[pin_number]) & FUN_IE_M) != 0;
 }
+#endif
 
 // Same reasoning for the open drain bit, which is one field of one GPIO register.
 static bool _pin_is_open_drain(uint8_t pin_number) {

@@ -56,6 +56,14 @@ internal_memory = {
         ("Internal SRAM 0", (0x4037_C000,), 16 * 1024),
         ("Internal SRAM 1", (0x3FC8_0000, 0x4038_0000), 384 * 1024),
     ],
+    "esp32c5": [
+        # Name, Start, Length
+        # From SOC_RTC_IRAM_LOW/HIGH and SOC_IRAM_LOW/HIGH in
+        # components/soc/esp32c5/include/soc/soc.h. PSRAM is left out until the
+        # board turns it on.
+        ("LP SRAM", (0x5000_0000,), 16 * 1024),
+        ("HP SRAM", (0x4080_0000,), 384 * 1024),
+    ],
     "esp32c6": [
         # Name, Start, Length
         ("LP SRAM", (0x5000_0000,), 16 * 1024),

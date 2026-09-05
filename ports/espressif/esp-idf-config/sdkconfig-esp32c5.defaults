@@ -1,0 +1,55 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Bluetooth
+#
+# Left out for now: NimBLE fails to link against this part's controller blob,
+# which does not export r_swap_buf or r_swap_in_place. See the esp32c5 block in
+# mpconfigport.mk.
+# end of Bluetooth
+
+#
+# Wi-Fi/Bluetooth coexistence
+#
+# Left at the default, which is on: this board shares one antenna between the two
+# radios, so coexistence is not optional once Bluetooth is working. The symbols
+# it needs come from esp32c5.rom.coexist.ld, linked in from the esp32c5 block in
+# the Makefile.
+# end of Wi-Fi/Bluetooth coexistence
+
+#
+# Driver Configurations
+#
+#
+# PCNT Configuration
+#
+CONFIG_PCNT_CTRL_FUNC_IN_IRAM=y
+# end of PCNT Configuration
+
+# end of Driver Configurations
+
+#
+# PHY
+#
+CONFIG_ESP_PHY_ENABLE_USB=y
+# end of PHY
+
+#
+# Wi-Fi
+#
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+# end of Wi-Fi
+
+#
+# mbedTLS
+#
+# CONFIG_MBEDTLS_HARDWARE_SHA is not set
+# end of mbedTLS
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration

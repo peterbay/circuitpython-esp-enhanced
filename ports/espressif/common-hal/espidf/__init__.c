@@ -22,6 +22,11 @@
 #else
 #define esp_himem_reserved_area_size() (0)
 #endif
+// Only some targets define the convenience macro for the size of the window
+// PSRAM is mapped into; the ESP32-C5 gives just its bounds.
+#if !defined(SOC_EXTRAM_DATA_SIZE) && defined(SOC_EXTRAM_DATA_LOW) && defined(SOC_EXTRAM_DATA_HIGH)
+#define SOC_EXTRAM_DATA_SIZE (SOC_EXTRAM_DATA_HIGH - SOC_EXTRAM_DATA_LOW)
+#endif
 #endif
 
 static size_t psram_size_usable(void) {

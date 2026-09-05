@@ -80,6 +80,10 @@
 
 #include "soc/spi_pins.h"
 
+#ifdef CONFIG_IDF_TARGET_ESP32C5
+#include "soc/pcr_reg.h"
+#endif
+
 #include "bootloader_flash_config.h"
 
 #include "esp_debug_helpers.h"
@@ -226,6 +230,24 @@ static void _never_reset_spi_ram_flash(void) {
 }
 
 safe_mode_t port_init(void) {
+    #ifdef CONFIG_IDF_TARGET_ESP32C5
+    // Undo ESP-IDF's gating of UART0's clocks, which it does at startup whenever
+    // the console is not on UART0 (esp_perip_clk_init() in
+    // esp_system/port/soc/esp32c5/clk.c, via periph_ll_clk_gate_set_default()).
+    // PCR_UART0_SCLK_EN resets to 1 and the ROM bootloader relies on that: its
+    // Uart_Init waits for PCR_UART0_READY with no timeout, and that bit cannot
+    // assert while the function clock is off.
+    //
+    // It only matters for resets that restart the CPU without also resetting the
+    // peripherals -- the one the USB Serial/JTAG raises when a host asserts
+    // DTR/RTS on opening the port, and a JTAG CPU reset. Both then leave the
+    // chip spinning in ROM: still enumerated on USB, but answering nothing until
+    // power is cycled. Windows triggers it within a few open/close cycles; the
+    // Linux cdc_acm driver does not, which is why it looks intermittent.
+    REG_SET_BIT(PCR_UART0_CONF_REG, PCR_UART0_CLK_EN);
+    REG_SET_BIT(PCR_UART0_SCLK_CONF_REG, PCR_UART0_SCLK_EN);
+    #endif
+
     esp_timer_create_args_t args;
     args.callback = &tick_timer_cb;
     args.arg = NULL;
