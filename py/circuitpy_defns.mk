@@ -237,6 +237,10 @@ endif
 ifeq ($(CIRCUITPY_IEEE802154),1)
 SRC_PATTERNS += ieee802154/%
 endif
+
+ifeq ($(CIRCUITPY_ZIGBEE),1)
+SRC_PATTERNS += zigbee/%
+endif
 ifeq ($(CIRCUITPY_FLOPPYIO),1)
 SRC_PATTERNS += floppyio/%
 endif
