@@ -640,15 +640,6 @@ static void MP_NO_INSTRUMENT PLACE_IN_ITCM(gc_mark_subtree)(size_t block)
         mp_state_mem_area_t *area = &MP_STATE_MEM(area);
         #endif
 
-        // work out number of consecutive blocks in the chain starting with this one
-        size_t n_blocks = 0;
-        do {
-            n_blocks += 1;
-        } while (ATB_GET_KIND(area, block + n_blocks) == AT_TAIL);
-
-        // check that the consecutive blocks didn't overflow past the end of the area
-        assert(area->gc_pool_start + (block + n_blocks) * BYTES_PER_BLOCK <= area->gc_pool_end);
-
         // CIRCUITPY-CHANGE
         // check if this block should be collected
         #if MICROPY_ENABLE_SELECTIVE_COLLECT
@@ -658,7 +649,21 @@ static void MP_NO_INSTRUMENT PLACE_IN_ITCM(gc_mark_subtree)(size_t block)
         #endif
 
         // Only scan the block's children if it's not a leaf
+        // CIRCUITPY-CHANGE: and decide that before walking the tail chain. How
+        // long the block is only matters in order to scan it, and a leaf is not
+        // scanned -- so for a leaf that walk visits every one of its blocks to
+        // produce a number that is then thrown away. On a 64 kB payload that is
+        // four thousand steps for nothing.
         if (should_scan) {
+            // work out number of consecutive blocks in the chain starting with this one
+            size_t n_blocks = 0;
+            do {
+                n_blocks += 1;
+            } while (ATB_GET_KIND(area, block + n_blocks) == AT_TAIL);
+
+            // check that the consecutive blocks didn't overflow past the end of the area
+            assert(area->gc_pool_start + (block + n_blocks) * BYTES_PER_BLOCK <= area->gc_pool_end);
+
             // check this block's children
             void **ptrs = (void **)PTR_FROM_BLOCK(area, block);
             for (size_t i = n_blocks * BYTES_PER_BLOCK / sizeof(void *); i > 0; i--, ptrs++) {
@@ -686,6 +691,16 @@ static void MP_NO_INSTRUMENT PLACE_IN_ITCM(gc_mark_subtree)(size_t block)
                 // An unmarked head. Mark it, and push it on gc stack.
                 TRACE_MARK(ptr_block, ptr);
                 ATB_HEAD_TO_MARK(ptr_area, ptr_block);
+                // CIRCUITPY-CHANGE: a leaf is marked and then done with. It has
+                // nothing inside to follow, so giving it a slot costs a push, a
+                // pop and a trip round the loop to discover that -- and worse,
+                // it can be what fills the stack and forces the overflow pass,
+                // which rescans the whole heap.
+                #if MICROPY_ENABLE_SELECTIVE_COLLECT
+                if (!CTB_GET(ptr_area, ptr_block)) {
+                    continue;
+                }
+                #endif
                 if (sp < MICROPY_ALLOC_GC_STACK_SIZE) {
                     MP_STATE_MEM(gc_block_stack)[sp] = ptr_block;
                     #if MICROPY_GC_SPLIT_HEAP
