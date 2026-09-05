@@ -141,7 +141,10 @@ INC += \
 	-isystem esp-idf/components/esp_hal_wdt/include \
 	-isystem esp-idf/components/esp_hal_wdt/$(IDF_TARGET)/include \
 	-isystem esp-idf/components/esp_hal_security/include \
+	-isystem esp-idf/components/esp_coex/include \
 	-isystem esp-idf/components/heap/include \
+	-isystem esp-idf/components/ieee802154/include \
+	-isystem esp-zigbee-lib/include \
 	-isystem esp-idf/components/log/include \
 	-isystem esp-idf/components/lwip/include \
 	-isystem esp-idf/components/lwip/lwip/src/include \
@@ -403,6 +406,29 @@ CHIP_COMPONENTS = \
 	esp_hal_twai \
 	esp_hal_usb
 
+else ifeq ($(IDF_TARGET),esp32c5)
+LDFLAGS += \
+	-Tesp32c5.rom.phy.ld \
+	-Tesp32c5.rom.pp.ld \
+	-Tesp32c5.rom.net80211.ld \
+	-Tesp32c5.rom.libc.ld \
+	-Tesp32c5.rom.coexist.ld \
+	-Tesp32c5.rom.heap.ld \
+	-Tesp32c5.rom.systimer.ld \
+	-Tesp32c5.rom.version.ld \
+	-Trom.wdt.ld
+
+CHIP_COMPONENTS = \
+	esp_driver_tsens \
+	esp_driver_usb_serial_jtag \
+	esp_hal_dma \
+	esp_hal_i2s \
+	esp_hal_pcnt \
+	esp_hal_pmu \
+	esp_hal_rmt \
+	esp_hal_twai \
+	esp_hal_usb
+
 else ifeq ($(IDF_TARGET),esp32c6)
 LDFLAGS += \
 	-Tesp32c6.rom.phy.ld \
@@ -566,6 +592,8 @@ else ifeq ($(IDF_TARGET),esp32c2)
 CFLAGS += -DCFG_TUSB_MCU=OPT_MCU_ESP32C2
 else ifeq ($(IDF_TARGET),esp32c3)
 CFLAGS += -DCFG_TUSB_MCU=OPT_MCU_ESP32C3
+else ifeq ($(IDF_TARGET),esp32c5)
+CFLAGS += -DCFG_TUSB_MCU=OPT_MCU_ESP32C5
 else ifeq ($(IDF_TARGET),esp32c6)
 CFLAGS += -DCFG_TUSB_MCU=OPT_MCU_ESP32C6
 else ifeq ($(IDF_TARGET),esp32c61)
@@ -755,6 +783,11 @@ SRC_ULP := \
 SRC_C += $(SRC_ULP)
 endif
 
+ifneq ($(CIRCUITPY_IEEE802154),0)
+SRC_C += $(wildcard bindings/ieee802154/*.c)
+SRC_C += $(wildcard bindings/zigbee/*.c)
+endif
+
 ifneq ($(CIRCUITPY_NEOPIXEL_WRITE),0)
 CHIP_COMPONENTS += esp_driver_rmt
 endif
@@ -927,6 +960,7 @@ ifneq ($(CIRCUITPY_BLEIO_NATIVE),0)
 	BLE_IMPL_esp32s3 := esp32c3
 	BLE_IMPL_esp32c2 := libble
 	BLE_IMPL_esp32c3 := esp32c3
+	BLE_IMPL_esp32c5 := libble
 	BLE_IMPL_esp32c6 := libble
 	BLE_IMPL_esp32c61 := libble
 	BLE_IMPL_esp32h2 := libble
@@ -962,6 +996,24 @@ ifneq ($(CIRCUITPY_ESPULP),0)
 endif
 ifneq ($(CIRCUITPY_ESP_PSRAM_SIZE),0)
 	ESP_IDF_COMPONENTS_LINK += esp_psram
+endif
+ifneq ($(CIRCUITPY_IEEE802154),0)
+#	esp_hal_ieee802154 carries ieee802154_periph, the peripheral descriptor the
+#	driver dereferences on enable; without it every entry point fails to link.
+	ESP_IDF_COMPONENTS_LINK += ieee802154 esp_hal_ieee802154
+	BINARY_BLOBS += esp-idf/components/esp_phy/lib/$(IDF_TARGET)/libbtbb.a
+endif
+ifneq ($(CIRCUITPY_ZIGBEE),0)
+#	The stack is three prebuilt archives. The role is fixed at link time, and
+#	zczr is the one to take: its symbols are a strict superset of zed's, and
+#	ezb_nwk_set_device_type() then picks coordinator, router or end device at
+#	run time. Linking zed as well is not an option -- they collide on every
+#	symbol they share, which is all of zed's.
+	ESP_IDF_COMPONENTS_LINK += esp-zigbee-lib nvs_flash
+	ZIGBEE_LIB_DIR = esp-zigbee-lib/lib/$(IDF_TARGET)
+	BINARY_BLOBS += $(ZIGBEE_LIB_DIR)/libesp-zigbee.release.a \
+		$(ZIGBEE_LIB_DIR)/libesp-zigbee-core.zczr.release.a \
+		$(ZIGBEE_LIB_DIR)/libesp-zigbee-idf.native.release.a
 endif
 ifneq ($(CIRCUITPY_DOTCLOCKFRAMEBUFFER),0)
 	ESP_IDF_COMPONENTS_LINK += esp_lcd
@@ -1021,6 +1073,10 @@ else ifeq ($(IDF_TARGET),esp32c2)
 BOOTLOADER_OFFSET = 0x0
 else ifeq ($(IDF_TARGET),esp32c3)
 BOOTLOADER_OFFSET = 0x0
+else ifeq ($(IDF_TARGET),esp32c5)
+# The first two sectors are reserved for the key manager, as on the P4. See
+# BOOTLOADER_OFFSET_IN_FLASH in esp-idf/components/bootloader/Kconfig.projbuild.
+BOOTLOADER_OFFSET = 0x2000
 else ifeq ($(IDF_TARGET),esp32c6)
 BOOTLOADER_OFFSET = 0x0
 else ifeq ($(IDF_TARGET),esp32c61)

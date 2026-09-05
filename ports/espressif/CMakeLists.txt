@@ -5,8 +5,8 @@ cmake_minimum_required(VERSION 3.16)
 set(ENV{IDF_PATH} ${CMAKE_SOURCE_DIR}/esp-idf)
 
 # The component list here determines what options we get in menuconfig and what the ninja file can build.
-set(COMPONENTS bt driver esp_driver_dac esp_driver_gpio esp_driver_gptimer esp_driver_i2c esp_driver_i2s esp_driver_ledc esp_driver_pcnt esp_driver_rmt esp_driver_sdmmc esp_driver_spi esp_driver_touch_sens esp_driver_tsens esp_driver_uart esp-tls esp_adc esp_event esp_netif esp_psram esp_security esp_wifi esptool_py freertos log lwip main mbedtls mdns pthread soc ulp wpa_supplicant esp_lcd vfs esp_stdio sdmmc esp-camera)
-set(EXTRA_COMPONENT_DIRS "esp-protocols/components/mdns" "esp-camera")
+set(COMPONENTS bt driver esp_driver_dac esp_driver_gpio esp_driver_gptimer esp_driver_i2c esp_driver_i2s esp_driver_ledc esp_driver_pcnt esp_driver_rmt esp_driver_sdmmc esp_driver_spi esp_driver_touch_sens esp_driver_tsens esp_driver_uart esp-tls esp_adc esp_event esp_netif esp_psram esp_security esp_wifi esp_hal_ieee802154 esptool_py freertos ieee802154 log lwip main mbedtls mdns pthread soc ulp wpa_supplicant esp_lcd vfs esp_stdio sdmmc esp-camera esp-zigbee-lib)
+set(EXTRA_COMPONENT_DIRS "esp-protocols/components/mdns" "esp-camera" "esp-zigbee-lib")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(circuitpython)

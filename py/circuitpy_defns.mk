@@ -234,6 +234,9 @@ endif
 ifeq ($(CIRCUITPY_ESPULP),1)
 SRC_PATTERNS += espulp/%
 endif
+ifeq ($(CIRCUITPY_IEEE802154),1)
+SRC_PATTERNS += ieee802154/%
+endif
 ifeq ($(CIRCUITPY_FLOPPYIO),1)
 SRC_PATTERNS += floppyio/%
 endif

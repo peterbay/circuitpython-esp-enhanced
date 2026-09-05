@@ -14,6 +14,9 @@ CROSS_COMPILE = riscv32-esp-elf-
 else ifeq ($(IDF_TARGET),esp32p4)
 IDF_TARGET_ARCH = riscv
 CROSS_COMPILE = riscv32-esp-elf-
+else ifeq ($(IDF_TARGET),esp32c5)
+IDF_TARGET_ARCH = riscv
+CROSS_COMPILE = riscv32-esp-elf-
 else ifeq ($(IDF_TARGET),esp32c6)
 IDF_TARGET_ARCH = riscv
 CROSS_COMPILE = riscv32-esp-elf-
@@ -72,8 +75,27 @@ CIRCUITPY_AUDIOBUSIO_PDMIN ?= 1
 CIRCUITPY_AUDIOI2SIN ?= 1
 CIRCUITPY_AUDIOIO ?= 1
 CIRCUITPY_BLEIO_HCI = 0
+# BLE needs BLE_IMPL_esp32c5 in the Makefile, without which the controller blob
+# never reaches the link, and a firmware partition larger than the stock 2048K:
+# see FLASH_SIZE_SDKCONFIG in the board's mpconfigboard.mk.
 CIRCUITPY_BLEIO_NATIVE ?= 1
-CIRCUITPY_CANIO ?= 1
+
+# Raw 802.15.4. Needs CONFIG_IEEE802154_ENABLED in the board sdkconfig too;
+# the component is in the port's CMakeLists COMPONENTS list, without which its
+# Kconfig never loads and that option is dropped without a word.
+CIRCUITPY_IEEE802154 ?= 1
+# Zigbee over the same radio. The stack is a prebuilt library vendored in
+# esp-zigbee-lib/, and it needs CONFIG_ZB_ENABLED, CONFIG_ZB_ZCZR and
+# CONFIG_ZB_RADIO_NATIVE in the board sdkconfig. It costs about 230K, which is
+# why the board's app partition is 2816K.
+CIRCUITPY_ZIGBEE ?= 1
+# This part has TWAI-FD, not the classic TWAI block -- hal/twaifd_ll.h and
+# twaifd_reg.h, with no TWAI register block, no twai_ll_set_acc_filter and no
+# reset-mode calls. CAN.c builds against the public driver and is fine; only
+# Listener.c reaches into the low-level API, and its 10 call sites need real
+# work rather than renaming, because the filter models differ: one acceptance
+# code/mask pair against separate mask and range filters per frame type.
+CIRCUITPY_CANIO = 0
 CIRCUITPY_COUNTIO ?= 1
 CIRCUITPY_ESPCAMERA ?= 1
 CIRCUITPY_ESPIDF ?= 1
@@ -187,6 +209,43 @@ CIRCUITPY_SDIOIO = 0
 # Features
 CIRCUITPY_USB_DEVICE = 0
 CIRCUITPY_ESP_USB_SERIAL_JTAG ?= 1
+
+#### esp32c5 ##########################################################
+else ifeq ($(IDF_TARGET),esp32c5)
+# Modules
+# No LCD_CAM peripheral, so nothing for the camera driver to use.
+CIRCUITPY_ESPCAMERA = 0
+# The LP core is a separate RISC-V processor and needs its own support.
+CIRCUITPY_ESPULP = 0
+CIRCUITPY_MEMORYMAP = 0
+CIRCUITPY_RGBMATRIX = 0
+
+# No capacitive touch peripheral
+CIRCUITPY_ALARM_TOUCH = 0
+CIRCUITPY_TOUCHIO_USE_NATIVE = 0
+
+# No DAC
+CIRCUITPY_AUDIOIO = 0
+
+# No I80 support from the IDF
+CIRCUITPY_PARALLELDISPLAYBUS = 0
+
+# No SDMMC host
+CIRCUITPY_SDIOIO = 0
+
+# Features
+# No USB OTG on this part, only the USB Serial/JTAG controller, so the REPL goes
+# over that and there is no CIRCUITPY drive over USB.
+CIRCUITPY_USB_DEVICE = 0
+CIRCUITPY_ESP_USB_SERIAL_JTAG ?= 1
+
+CIRCUITPY_BLEIO_NATIVE ?= 1
+
+CIRCUITPY_CANIO ?= 1
+
+# RMT, PCNT and I2S with PDM RX are all present, so neopixel_write, pulseio,
+# countio and audiobusio are left enabled. If the image turns out not to fit,
+# those are the first things to drop.
 
 #### esp32c6 ##########################################################
 else ifeq ($(IDF_TARGET),esp32c6)

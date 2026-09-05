@@ -87,6 +87,10 @@
 #include "soc/pcr_reg.h"
 #endif
 
+#if CIRCUITPY_IEEE802154
+#include "bindings/ieee802154/Radio.h"
+#endif
+
 #include "bootloader_flash_config.h"
 
 #include "esp_debug_helpers.h"
@@ -393,6 +397,11 @@ void reset_port(void) {
     espidf_smartconfig_reset();
     #endif
     espidf_csi_reset();
+
+    #if CIRCUITPY_IEEE802154
+    ieee802154_reset();
+    #endif
+
 
     #if CIRCUITPY_PROF
     // The sampler task and its timer outlive a soft reset, so without this a run
