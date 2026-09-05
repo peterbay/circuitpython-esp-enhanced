@@ -324,7 +324,14 @@ static mp_raw_code_t *load_raw_code(mp_reader_t *reader, mp_module_context_t *co
 
         if (fun_data == NULL) {
             // Allocate memory for the bytecode.
-            fun_data = m_new(uint8_t, fun_data_len);
+            // CIRCUITPY-CHANGE: without_collect, to match what the compiler
+            // already does for the same data in emitbc.c. Bytecode holds
+            // opcodes and indices into the qstr, constant and children tables,
+            // never a pointer into the heap, and those tables are separate
+            // allocations that stay scanned. Left as it was, every collection
+            // for the rest of the run walks the instructions word by word
+            // looking for pointers that cannot be there.
+            fun_data = m_malloc_without_collect(fun_data_len);
             // Load bytecode.
             read_bytes(reader, fun_data, fun_data_len);
         }
