@@ -47,16 +47,35 @@ static mp_obj_t map_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_
     return MP_OBJ_FROM_PTR(o);
 }
 
+// CIRCUITPY-CHANGE: the argument array for one call fits on the C stack for the
+// arities anyone writes. Above that it still comes from the heap.
+#define MAP_ARGS_ON_STACK (4)
+
 static mp_obj_t map_iternext(mp_obj_t self_in) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_map));
     mp_obj_map_t *self = MP_OBJ_TO_PTR(self_in);
-    // CIRCUITPY-CHANGE: Use m_malloc_items because it is an array of objects
-    mp_obj_t *nextses = m_malloc_items(self->n_iters);
+
+    // CIRCUITPY-CHANGE: this array lives only for the length of the call below,
+    // so for the usual one or two iterables it goes on the C stack. It used to
+    // be allocated per element and then abandoned on the success path -- 8 or 16
+    // bytes asked for, a 16-byte GC block spent, and never explicitly freed, so
+    // map() left one block of garbage behind for every element it produced. The
+    // C stack is scanned by the collector, so the values are still roots while
+    // the callback runs.
+    mp_obj_t stack_args[MAP_ARGS_ON_STACK];
+    mp_obj_t *nextses = stack_args;
+    bool on_heap = self->n_iters > MAP_ARGS_ON_STACK;
+    if (on_heap) {
+        // Use m_malloc_items because it is an array of objects.
+        nextses = m_malloc_items(self->n_iters);
+    }
 
     for (size_t i = 0; i < self->n_iters; i++) {
         mp_obj_t next = mp_iternext(self->iters[i]);
         if (next == MP_OBJ_STOP_ITERATION) {
-            m_del(mp_obj_t, nextses, self->n_iters);
+            if (on_heap) {
+                m_del(mp_obj_t, nextses, self->n_iters);
+            }
             return MP_OBJ_STOP_ITERATION;
         }
         nextses[i] = next;
