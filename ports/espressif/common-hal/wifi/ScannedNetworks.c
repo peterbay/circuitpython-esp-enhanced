@@ -111,31 +111,43 @@ mp_obj_t common_hal_wifi_scannednetworks_next(wifi_scannednetworks_obj_t *self) 
 }
 
 // We don't do a linear scan so that we look at a variety of spectrum up front.
-static uint8_t scan_pattern[] = {6, 1, 11, 3, 9, 13, 2, 4, 8, 12, 5, 7, 10, 14, 0};
+static uint8_t scan_pattern[] = {
+    6, 1, 11, 3, 9, 13, 2, 4, 8, 12, 5, 7, 10, 14,
+    #ifdef CONFIG_SOC_WIFI_SUPPORT_5G
+    // 5 GHz, spread the same way, and with the non-DFS channels first: those are
+    // where most access points sit, and a scan the caller cuts short then still
+    // covers them. Reaching these at all needs stop_channel raised past 14.
+    36, 149, 40, 153, 44, 157, 48, 161, 165,
+    52, 100, 116, 132, 56, 104, 120, 136,
+    60, 108, 124, 140, 64, 112, 128, 144,
+    #endif
+    0
+};
 
 void wifi_scannednetworks_scan_next_channel(wifi_scannednetworks_obj_t *self) {
     // There is no channel 0, so use that as a flag to indicate we've run out of channels to scan.
-    uint8_t next_channel = 0;
     while (self->current_channel_index < sizeof(scan_pattern)) {
-        next_channel = scan_pattern[self->current_channel_index];
+        uint8_t next_channel = scan_pattern[self->current_channel_index];
         self->current_channel_index++;
-        // Scan only channels that are in the specified range.
-        if (self->start_channel <= next_channel && next_channel <= self->end_channel) {
+        if (next_channel == 0) {
             break;
         }
-    }
-    wifi_scan_config_t config = { 0 };
-    config.channel = next_channel;
-    if (next_channel == 0) {
-        wifi_scannednetworks_done(self);
-    } else {
-        esp_err_t result = esp_wifi_scan_start(&config, false);
-        if (result != ESP_OK) {
-            wifi_scannednetworks_done(self);
-        } else {
-            self->channel_scan_in_progress = true;
+        // Scan only channels that are in the specified range.
+        if (next_channel < self->start_channel || next_channel > self->end_channel) {
+            continue;
         }
+        wifi_scan_config_t config = { 0 };
+        config.channel = next_channel;
+        if (esp_wifi_scan_start(&config, false) == ESP_OK) {
+            self->channel_scan_in_progress = true;
+            return;
+        }
+        // Starting the scan fails for a channel the current country setting does
+        // not allow, which several 5 GHz channels are in most regions. Move on to
+        // the next one instead of ending the scan, or a single blocked channel
+        // would hide every network above it.
     }
+    wifi_scannednetworks_done(self);
 }
 
 void wifi_scannednetworks_deinit(wifi_scannednetworks_obj_t *self) {

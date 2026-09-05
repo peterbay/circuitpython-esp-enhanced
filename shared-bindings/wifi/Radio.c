@@ -270,6 +270,12 @@ MP_PROPERTY_GETTER(wifi_radio_mac_address_ap_obj,
 //|         .. note::
 //|
 //|             In the raspberrypi port (RP2040 CYW43), ``start_channel`` and ``stop_channel`` are ignored.
+//|
+//|         .. note::
+//|
+//|             The defaults cover 2.4 GHz only. On a dual-band part such as the
+//|             ESP32-C5, pass ``stop_channel=165`` to include the 5 GHz channels.
+//|             Channels the current country setting disallows are skipped.
 //|         """
 //|         ...
 //|
@@ -284,10 +290,13 @@ static mp_obj_t wifi_radio_start_scanning_networks(size_t n_args, const mp_obj_t
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
+    // 165 rather than 14, so that dual-band parts can be asked for the 5 GHz
+    // channels. Which of those a port actually visits is up to the port; one
+    // that only has a 2.4 GHz radio simply finds nothing above 14.
     uint8_t start_channel =
-        (uint8_t)mp_arg_validate_int_range(args[ARG_start_channel].u_int, 1, 14, MP_QSTR_start_channel);
+        (uint8_t)mp_arg_validate_int_range(args[ARG_start_channel].u_int, 1, 165, MP_QSTR_start_channel);
     uint8_t stop_channel =
-        (uint8_t)mp_arg_validate_int_range(args[ARG_stop_channel].u_int, 1, 14, MP_QSTR_stop_channel);
+        (uint8_t)mp_arg_validate_int_range(args[ARG_stop_channel].u_int, 1, 165, MP_QSTR_stop_channel);
     // Swap if in reverse order, without complaining.
     if (start_channel > stop_channel) {
         uint8_t temp = stop_channel;
