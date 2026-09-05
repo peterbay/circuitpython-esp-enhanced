@@ -41,10 +41,18 @@ static mp_obj_t closure_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const
 
     // need to concatenate closed-over-vars and args
 
+    // CIRCUITPY-CHANGE: eight rather than five. The array lives only for the
+    // length of the call below, so the only cost of a larger one is C stack --
+    // twelve more bytes per frame on a 32-bit target -- while every slot below
+    // the bound saves an allocate/free pair around a call that is already cheap.
+    // A closure over four variables taking two arguments is ordinary code and
+    // used to land on the heap.
+    #define CLOSURE_ARGS_ON_STACK (8)
+
     size_t n_total = self->n_closed + n_args + 2 * n_kw;
-    if (n_total <= 5) {
+    if (n_total <= CLOSURE_ARGS_ON_STACK) {
         // use stack to allocate temporary args array
-        mp_obj_t args2[5];
+        mp_obj_t args2[CLOSURE_ARGS_ON_STACK];
         memcpy(args2, self->closed, self->n_closed * sizeof(mp_obj_t));
         memcpy(args2 + self->n_closed, args, (n_args + 2 * n_kw) * sizeof(mp_obj_t));
         return mp_call_function_n_kw(self->fun, self->n_closed + n_args, n_kw, args2);
