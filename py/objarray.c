@@ -465,6 +465,39 @@ static mp_obj_t array_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs
 }
 
 #if MICROPY_PY_BUILTINS_BYTEARRAY || MICROPY_PY_ARRAY
+// CIRCUITPY-CHANGE: one growth policy for append and extend.
+//
+// append used to add room for eight more items and extend used to ask for
+// exactly what it needed, so a run of appends reallocated once every eight and
+// a run of extends once per call. A reallocation that cannot grow the block
+// where it is copies everything written so far, which makes building a buffer
+// piece by piece quadratic in its length.
+//
+// Half again, with a floor of eight, makes the number of reallocations
+// logarithmic while leaving a small buffer small.
+static void array_reserve(mp_obj_array_t *self, size_t item_sz, size_t needed) {
+    if (self->free >= needed) {
+        return;
+    }
+    size_t grow = self->len >> 1;
+    if (grow < needed) {
+        grow = needed;
+    }
+    if (grow < 8) {
+        grow = 8;
+    }
+    // Never ask for a size that would wrap: the allocator would hand back a
+    // block far smaller than intended and the copy after it would run off the
+    // end. Falling back to exactly what was asked for is always representable,
+    // because the caller is about to write that much.
+    if (grow > (SIZE_MAX / item_sz) - self->len) {
+        grow = needed;
+    }
+    self->items = m_renew(byte, self->items,
+        (self->len + self->free) * item_sz, (self->len + grow) * item_sz);
+    self->free = grow;
+}
+
 static mp_obj_t array_append(mp_obj_t self_in, mp_obj_t arg) {
     // self is not a memoryview, so we don't need to use (& TYPECODE_MASK)
     assert((MICROPY_PY_BUILTINS_BYTEARRAY && mp_obj_is_type(self_in, &mp_type_bytearray))
@@ -473,10 +506,8 @@ static mp_obj_t array_append(mp_obj_t self_in, mp_obj_t arg) {
 
     if (self->free == 0) {
         size_t item_sz = mp_binary_get_size('@', self->typecode, NULL);
-        // TODO: alloc policy
-        size_t add_cnt = 8;
-        self->items = m_renew(byte, self->items, item_sz * self->len, item_sz * (self->len + add_cnt));
-        self->free = add_cnt;
+        // CIRCUITPY-CHANGE: shared growth policy, see array_reserve above.
+        array_reserve(self, item_sz, 1);
         mp_seq_clear(self->items, self->len + 1, self->len + self->free, item_sz);
     }
     mp_binary_set_val_array(self->typecode, self->items, self->len, arg);
@@ -506,10 +537,11 @@ static mp_obj_t array_extend(mp_obj_t self_in, mp_obj_t arg_in) {
     size_t len = arg_bufinfo.len / sz;
 
     // make sure we have enough room to extend
-    // TODO: alloc policy; at the moment we go conservative
+    // CIRCUITPY-CHANGE: shared growth policy, see array_reserve above. It leaves
+    // room to spare where the old code asked for exactly what was needed, so
+    // free is decremented on both paths rather than zeroed on one.
     if (self->free < len) {
-        self->items = m_renew(byte, self->items, (self->len + self->free) * sz, (self->len + len) * sz);
-        self->free = 0;
+        array_reserve(self, sz, len);
 
         if (self_in == arg_in) {
             // Get arg_bufinfo again in case self->items has moved
@@ -517,9 +549,8 @@ static mp_obj_t array_extend(mp_obj_t self_in, mp_obj_t arg_in) {
             // (Note not possible to handle case that arg_in is a memoryview into self)
             mp_get_buffer_raise(arg_in, &arg_bufinfo, MP_BUFFER_READ);
         }
-    } else {
-        self->free -= len;
     }
+    self->free -= len;
 
     // extend
     mp_seq_copy((byte *)self->items + self->len * sz, arg_bufinfo.buf, len * sz, byte);
