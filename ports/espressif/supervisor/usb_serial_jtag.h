@@ -7,6 +7,7 @@
 #pragma once
 
 void usb_serial_jtag_init(void);
+void usb_serial_jtag_rx_tick(void);
 bool usb_serial_jtag_connected(void);
 char usb_serial_jtag_read_char(void);
 uint32_t usb_serial_jtag_bytes_available(void);

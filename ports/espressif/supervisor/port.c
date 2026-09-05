@@ -14,6 +14,9 @@
 #include "supervisor/filesystem.h"
 #include "supervisor/shared/reload.h"
 #include "supervisor/shared/serial.h"
+#if CIRCUITPY_ESP_USB_SERIAL_JTAG
+#include "supervisor/usb_serial_jtag.h"
+#endif
 #include "py/mpprint.h"
 #include "py/runtime.h"
 
@@ -553,6 +556,20 @@ void port_interrupt_after_ticks(uint32_t ticks) {
 // On the ESP we use FreeRTOS notifications instead of interrupts so this is a
 // bit of a misnomer.
 void port_idle_until_interrupt(void) {
+    #if CIRCUITPY_ESP_USB_SERIAL_JTAG
+    // CIRCUITPY-CHANGE: a byte can be waiting in the endpoint FIFO with no
+    // interrupt left pending to announce it, so sleeping here would wait for a
+    // wake-up that only the *next* keystroke can produce. That is what made the
+    // console answer one keystroke behind: every reply belonged to the previous
+    // input. See usb_serial_jtag_rx_tick() for how the byte gets stranded.
+    //
+    // The background task cannot cover this: it runs in the VM loop, and at the
+    // REPL there is no VM loop to run in.
+    usb_serial_jtag_rx_tick();
+    if (usb_serial_jtag_bytes_available() > 0) {
+        return;
+    }
+    #endif
     if (!background_callback_pending() && !autoreload_pending()) {
         xTaskNotifyWait(0x01, 0x01, NULL, portMAX_DELAY);
     }
