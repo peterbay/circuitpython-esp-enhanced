@@ -38,6 +38,9 @@
 // TODO: should be in mpconfig.h
 #define DEFAULT_BUFFER_SIZE 256
 
+// CIRCUITPY-CHANGE: largest step stream_readall() will grow its buffer by.
+#define READALL_MAX_STEP (64 * 1024)
+
 static mp_obj_t stream_readall(mp_obj_t self_in);
 
 // Returns error condition in *errcode, if non-zero, return value is number of bytes written
@@ -336,8 +339,27 @@ static mp_obj_t stream_readall(mp_obj_t self_in) {
             current_read -= out_sz;
             p += out_sz;
         } else {
-            p = vstr_extend(&vstr, DEFAULT_BUFFER_SIZE);
-            current_read = DEFAULT_BUFFER_SIZE;
+            // CIRCUITPY-CHANGE: ask for half of what is already held rather than
+            // another fixed 256 bytes. The old step meant a reallocation every
+            // 256 bytes read, and one that cannot grow the block where it stands
+            // copies everything read so far, so reading a large stream to the
+            // end was quadratic in its length. The buffer is trimmed to the
+            // exact length when it is handed to the str or bytes object, so the
+            // extra reserved here is not kept.
+            // Capped, because unlike the other buffers that grow this way the
+            // payload here can be a whole file: without a cap, reading N bytes
+            // would need up to 1.5 N at the moment it ends, and a file that used
+            // to load would stop fitting. With it the reserve is bounded, and on
+            // a board too small for the cap to be reached the growth is purely
+            // geometric anyway.
+            size_t grow = vstr.alloc >> 1;
+            if (grow < DEFAULT_BUFFER_SIZE) {
+                grow = DEFAULT_BUFFER_SIZE;
+            } else if (grow > READALL_MAX_STEP) {
+                grow = READALL_MAX_STEP;
+            }
+            p = vstr_extend(&vstr, grow);
+            current_read = grow;
         }
     }
 
