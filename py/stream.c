@@ -315,9 +315,18 @@ static mp_obj_t stream_readall(mp_obj_t self_in) {
     vstr_t vstr;
     vstr_init(&vstr, DEFAULT_BUFFER_SIZE);
     char *p = vstr.buf;
-    mp_uint_t current_read = DEFAULT_BUFFER_SIZE;
+    mp_uint_t free_space = DEFAULT_BUFFER_SIZE;
     while (true) {
         int error;
+        // CIRCUITPY-CHANGE: how much room there is and how much to ask for in
+        // one call are two different things. busio.UART on stm and nordic waits
+        // until receiver_buffer_size can satisfy the whole request or the
+        // timeout expires, so asking for more than that buffer holds can never
+        // be answered early and loses whatever arrives during the wait. The
+        // request stays at DEFAULT_BUFFER_SIZE, which is what it has always
+        // been; only the buffer below grows.
+        mp_uint_t current_read = free_space < DEFAULT_BUFFER_SIZE
+            ? free_space : (mp_uint_t)DEFAULT_BUFFER_SIZE;
         mp_uint_t out_sz = stream_p->read(self_in, p, current_read, &error);
         if (out_sz == MP_STREAM_ERROR) {
             if (mp_is_nonblocking_error(error)) {
@@ -335,17 +344,16 @@ static mp_obj_t stream_readall(mp_obj_t self_in) {
             break;
         }
         total_size += out_sz;
-        if (out_sz < current_read) {
-            current_read -= out_sz;
-            p += out_sz;
-        } else {
-            // CIRCUITPY-CHANGE: ask for half of what is already held rather than
-            // another fixed 256 bytes. The old step meant a reallocation every
-            // 256 bytes read, and one that cannot grow the block where it stands
-            // copies everything read so far, so reading a large stream to the
-            // end was quadratic in its length. The buffer is trimmed to the
-            // exact length when it is handed to the str or bytes object, so the
-            // extra reserved here is not kept.
+        p += out_sz;
+        free_space -= out_sz;
+        if (free_space == 0) {
+            // CIRCUITPY-CHANGE: make room for half of what is already held
+            // rather than another fixed 256 bytes. The old step meant a
+            // reallocation every 256 bytes read, and one that cannot grow the
+            // block where it stands copies everything read so far, so reading a
+            // large stream to the end was quadratic in its length. The buffer is
+            // trimmed to the exact length when it is handed to the str or bytes
+            // object, so the extra reserved here is not kept.
             // Capped, because unlike the other buffers that grow this way the
             // payload here can be a whole file: without a cap, reading N bytes
             // would need up to 1.5 N at the moment it ends, and a file that used
@@ -359,7 +367,7 @@ static mp_obj_t stream_readall(mp_obj_t self_in) {
                 grow = READALL_MAX_STEP;
             }
             p = vstr_extend(&vstr, grow);
-            current_read = grow;
+            free_space = grow;
         }
     }
 
