@@ -253,6 +253,32 @@ mp_obj_t mp_obj_list_append(mp_obj_t self_in, mp_obj_t arg) {
     return mp_const_none; // return None, as per CPython
 }
 
+// CIRCUITPY-CHANGE: the same doubling append uses, so that repeated small
+// extends cost a logarithmic number of reallocations rather than one each. It
+// used to ask for exactly len + arg->len + 4, which is barely more than is
+// needed, so extending a list one item at a time reallocated every time and
+// each move copied the whole list.
+static void list_reserve(mp_obj_list_t *self, size_t needed) {
+    if (needed <= self->alloc) {
+        return;
+    }
+    size_t alloc = self->alloc == 0 ? 4 : self->alloc;
+    while (alloc < needed) {
+        if (alloc > SIZE_MAX / 2) {
+            // Doubling would wrap. Exactly what is needed is representable,
+            // because the caller is about to store that many items.
+            alloc = needed;
+            break;
+        }
+        alloc *= 2;
+    }
+    self->items = m_renew(mp_obj_t, self->items, self->alloc, alloc);
+    self->alloc = alloc;
+    // The slots past the new length are handed to the collector as roots, so
+    // they must not hold whatever was in that memory before.
+    mp_seq_clear(self->items, needed, self->alloc, sizeof(*self->items));
+}
+
 static mp_obj_t list_extend(mp_obj_t self_in, mp_obj_t arg_in) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_list));
     if (mp_obj_is_type(arg_in, &mp_type_list)) {
@@ -260,15 +286,23 @@ static mp_obj_t list_extend(mp_obj_t self_in, mp_obj_t arg_in) {
         mp_obj_list_t *self = native_list(self_in);
         mp_obj_list_t *arg = native_list(arg_in);
 
-        if (self->len + arg->len > self->alloc) {
-            // TODO: use alloc policy for "4"
-            self->items = m_renew(mp_obj_t, self->items, self->alloc, self->len + arg->len + 4);
-            self->alloc = self->len + arg->len + 4;
-            mp_seq_clear(self->items, self->len + arg->len, self->alloc, sizeof(*self->items));
-        }
+        size_t arg_len = arg->len;
+        list_reserve(self, self->len + arg_len);
+        // arg->items is read after reserving, not before: for a.extend(a) the
+        // two are the same object and the reallocation moves the array.
+        memcpy(self->items + self->len, arg->items, sizeof(mp_obj_t) * arg_len);
+        self->len += arg_len;
+    } else if (mp_obj_is_type(arg_in, &mp_type_tuple)) {
+        // CIRCUITPY-CHANGE: an exact tuple is already a contiguous array of the
+        // same element type, so it can be copied in one go instead of being
+        // pulled through the iterator protocol an item at a time.
+        mp_obj_list_t *self = native_list(self_in);
+        mp_obj_tuple_t *arg = MP_OBJ_TO_PTR(arg_in);
 
-        memcpy(self->items + self->len, arg->items, sizeof(mp_obj_t) * arg->len);
-        self->len += arg->len;
+        size_t arg_len = arg->len;
+        list_reserve(self, self->len + arg_len);
+        memcpy(self->items + self->len, arg->items, sizeof(mp_obj_t) * arg_len);
+        self->len += arg_len;
     } else {
         list_extend_from_iter(self_in, arg_in);
     }
