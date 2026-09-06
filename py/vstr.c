@@ -116,6 +116,17 @@ static void vstr_ensure_extra(vstr_t *vstr, size_t size) {
             mp_raise_msg(&mp_type_RuntimeError, NULL);
         }
         size_t new_alloc = ROUND_ALLOC((vstr->len + size) + 16);
+        // CIRCUITPY-CHANGE: sixteen spare bytes is a fixed amount, so a buffer
+        // built a piece at a time reallocates every sixteen bytes however long
+        // it gets, and a reallocation that cannot grow the block where it
+        // stands copies all of it -- quadratic in the final length. Take half
+        // again as much once that is the larger of the two, which makes the
+        // number of reallocations logarithmic. Below about sixty bytes the
+        // original figure still wins, so short strings allocate as they did.
+        size_t grown = vstr->alloc + (vstr->alloc >> 1);
+        if (grown > new_alloc && grown > vstr->alloc) {
+            new_alloc = grown;
+        }
         char *new_buf = m_renew(char, vstr->buf, vstr->alloc, new_alloc);
         vstr->alloc = new_alloc;
         vstr->buf = new_buf;
