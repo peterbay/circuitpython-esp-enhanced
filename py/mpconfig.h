@@ -764,6 +764,13 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_OPT_MULTI_OPCODE_ENTRIES (0)
 #endif
 
+// CIRCUITPY-CHANGE: whether LOAD_ATTR, LOAD_GLOBAL and a dict subscript probe
+// the map lookup cache in the VM before calling into mp_map_lookup. Needs
+// MICROPY_OPT_MAP_LOOKUP_CACHE.
+#ifndef MICROPY_OPT_VM_MAP_CACHE_PROBE
+#define MICROPY_OPT_VM_MAP_CACHE_PROBE (0)
+#endif
+
 #ifndef MICROPY_OPT_ITERNEXT_FAST_PATH
 #define MICROPY_OPT_ITERNEXT_FAST_PATH (0)
 #endif

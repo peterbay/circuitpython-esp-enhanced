@@ -66,18 +66,12 @@
 #define DEBUG_OP_printf(...) (void)0
 #endif
 
-// CIRCUITPY-CHANGE: see the comment in mp_load_global.
+// CIRCUITPY-CHANGE: see the comment in mp_load_global. The type is in runtime.h
+// because the VM tests the cache in place.
 #if MICROPY_OPT_LOAD_GLOBAL_CACHE
-typedef struct {
-    qstr name;
-    const mp_map_t *globals;
-    uint32_t mutation;
-    mp_obj_t value;
-} mp_load_global_cache_t;
-
 // No explicit clearing needed anywhere: tearing a module down goes through
 // mp_map_clear or mp_map_deinit, both of which bump the mutation count.
-static mp_load_global_cache_t mp_load_global_cache[MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
+mp_load_global_cache_t mp_load_global_cache[MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
 #endif
 
 const mp_obj_module_t mp_module___main__ = {
@@ -272,17 +266,15 @@ mp_obj_t MICROPY_WRAP_MP_LOAD_GLOBAL(mp_load_global)(qstr qst) {
     // in ROM, so the cache never holds a reference the collector would need to
     // know about. When builtins have been overridden at runtime the cache steps
     // aside completely.
+    mp_obj_t cached = mp_load_global_builtin_hit(qst, globals_map);
+    if (cached != MP_OBJ_NULL) {
+        return cached;
+    }
     mp_load_global_cache_t *cache_entry = &mp_load_global_cache[qst % MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
     bool cacheable = true;
     #if MICROPY_CAN_OVERRIDE_BUILTINS
     cacheable = MP_STATE_VM(mp_module_builtins_override_dict) == NULL;
     #endif
-    if (cacheable
-        && cache_entry->name == qst
-        && cache_entry->globals == globals_map
-        && cache_entry->mutation == mp_map_mutation_count) {
-        return cache_entry->value;
-    }
     #endif
 
     mp_map_elem_t *elem = mp_map_lookup(globals_map, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);

@@ -188,6 +188,65 @@ static inline mp_obj_dict_t *mp_locals_get(void) {
 static inline void mp_locals_set(mp_obj_dict_t *d) {
     MP_STATE_THREAD(dict_locals) = d;
 }
+#if MICROPY_OPT_MAP_LOOKUP_CACHE
+// CIRCUITPY-CHANGE: the map lookup cache, in one place for map.c and the VM.
+// MP_STATE_VM(map_lookup_cache) remembers, per key, the position the key was
+// last found at in any map. A probe is one index computation, one load and one
+// compare, and a hit is proof: the key at that position is compared by
+// identity, and a qstr is interned, so a matching qstr key is the key. A miss
+// proves nothing and has to go through mp_map_lookup(). Keys that are not qstrs
+// are indexed by their address, as before.
+static inline size_t mp_map_cache_offset(mp_obj_t index) {
+    uintptr_t value = mp_obj_is_qstr(index) ? MP_OBJ_QSTR_VALUE(index) : ((uintptr_t)index >> 2);
+    return value % MICROPY_OPT_MAP_LOOKUP_CACHE_SIZE;
+}
+
+static inline mp_map_elem_t *mp_map_cache_hit(mp_map_t *map, mp_obj_t index) {
+    // The cache is shared by every map, so the remembered position may come
+    // from a bigger one. It used to be folded into range with a modulo by
+    // map->alloc, which is a variable and so a real division on every probe,
+    // hit or miss. A position past the end is a miss in all but accidental
+    // cases, and treating it as one is never wrong: the full lookup follows.
+    size_t pos = MP_STATE_VM(map_lookup_cache)[mp_map_cache_offset(index)];
+    if (pos >= map->alloc) {
+        return NULL;
+    }
+    mp_map_elem_t *slot = &map->table[pos];
+    return slot->key == index ? slot : NULL;
+}
+#endif
+
+#if MICROPY_OPT_LOAD_GLOBAL_CACHE
+// CIRCUITPY-CHANGE: the cache of names that resolved to a builtin, see the
+// comment in mp_load_global(). Declared here so that the VM can test it in
+// place; the array itself lives in runtime.c.
+typedef struct {
+    qstr name;
+    const mp_map_t *globals;
+    uint32_t mutation;
+    mp_obj_t value;
+} mp_load_global_cache_t;
+
+extern mp_load_global_cache_t mp_load_global_cache[MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
+
+// The value a name resolved to as a builtin, if that answer is still good:
+// same name, same module, and no map anywhere has gained or lost a key since,
+// which is what could have started shadowing it. MP_OBJ_NULL otherwise. This is
+// the test mp_load_global() makes first, and it is kept in one place.
+static inline mp_obj_t mp_load_global_builtin_hit(qstr qst, const mp_map_t *globals_map) {
+    #if MICROPY_CAN_OVERRIDE_BUILTINS
+    if (MP_STATE_VM(mp_module_builtins_override_dict) != NULL) {
+        return MP_OBJ_NULL;
+    }
+    #endif
+    const mp_load_global_cache_t *entry = &mp_load_global_cache[qst % MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
+    if (entry->name == qst && entry->globals == globals_map && entry->mutation == mp_map_mutation_count) {
+        return entry->value;
+    }
+    return MP_OBJ_NULL;
+}
+#endif
+
 static inline mp_obj_dict_t *mp_globals_get(void) {
     return MP_STATE_THREAD(dict_globals);
 }

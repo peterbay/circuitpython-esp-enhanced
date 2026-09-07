@@ -48,13 +48,12 @@
 // the hash (and potentially some linear probing) in the case of a regular
 // map. Note the same cache is shared across all maps.
 
-// Gets the index into the cache for this index. Shift down by two to remove
-// mp_obj_t tag bits.
-#define MAP_CACHE_OFFSET(index) ((((uintptr_t)(index)) >> 2) % MICROPY_OPT_MAP_LOOKUP_CACHE_SIZE)
+// CIRCUITPY-CHANGE: qstr tag widths depend on the object representation.
+// Index by the qstr value so names can use the whole cache, while preserving
+// the existing index calculation for all other keys. The computation lives in
+// runtime.h as mp_map_cache_offset(), because the VM probes the cache too.
 // Gets the map cache entry for the corresponding index.
-#define MAP_CACHE_ENTRY(index) (MP_STATE_VM(map_lookup_cache)[MAP_CACHE_OFFSET(index)])
-// Retrieve the mp_obj_t at the location suggested by the cache.
-#define MAP_CACHE_GET(map, index) (&(map)->table[MAP_CACHE_ENTRY(index) % (map)->alloc])
+#define MAP_CACHE_ENTRY(index) (MP_STATE_VM(map_lookup_cache)[mp_map_cache_offset(index)])
 // Update the cache for this index.
 #define MAP_CACHE_SET(index, pos) MAP_CACHE_ENTRY(index) = (pos) & 0xff;
 #else
@@ -172,11 +171,11 @@ mp_map_elem_t *MICROPY_WRAP_MP_MAP_LOOKUP(mp_map_lookup)(mp_map_t * map, mp_obj_
 
     #if MICROPY_OPT_MAP_LOOKUP_CACHE
     // Try the cache for lookup or add-if-not-found.
-    if (lookup_kind != MP_MAP_LOOKUP_REMOVE_IF_FOUND && map->alloc) {
-        mp_map_elem_t *slot = MAP_CACHE_GET(map, index);
-        // Note: Just comparing key for value equality will have false negatives, but
-        // these will be handled by the regular path below.
-        if (slot->key == index) {
+    // Note: Just comparing key for value equality will have false negatives, but
+    // these will be handled by the regular path below.
+    if (lookup_kind != MP_MAP_LOOKUP_REMOVE_IF_FOUND) {
+        mp_map_elem_t *slot = mp_map_cache_hit(map, index);
+        if (slot != NULL) {
             return slot;
         }
     }

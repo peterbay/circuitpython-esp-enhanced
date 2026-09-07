@@ -41,6 +41,10 @@
 
 // *FORMAT-OFF*
 
+#if MICROPY_OPT_VM_MAP_CACHE_PROBE && !MICROPY_OPT_MAP_LOOKUP_CACHE
+#error "MICROPY_OPT_VM_MAP_CACHE_PROBE needs MICROPY_OPT_MAP_LOOKUP_CACHE"
+#endif
+
 #if 0
 #if MICROPY_PY_THREAD
 #define TRACE_PREFIX mp_printf(&mp_plat_print, "ts=%p sp=%d ", mp_thread_get_state(), (int)(sp - &code_state->state[0] + 1))
@@ -532,6 +536,32 @@ dispatch_loop:
                 ENTRY(MP_BC_LOAD_GLOBAL): {
                     MARK_EXC_IP_SELECTIVE();
                     DECODE_QSTR;
+                    #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                    // CIRCUITPY-CHANGE: both answers mp_load_global can give from a
+                    // cache are settled here without the call. First the name as a
+                    // builtin -- in a real application that is seven loads in ten --
+                    // in the same order and with the same validity test
+                    // mp_load_global uses, then the name in the module's globals
+                    // through the map lookup cache. Anything else goes through
+                    // mp_load_global as before, which is also what fills both caches.
+                    {
+                        mp_map_t *globals_map = &mp_globals_get()->map;
+                        mp_obj_t found = MP_OBJ_NULL;
+                        #if MICROPY_OPT_LOAD_GLOBAL_CACHE
+                        found = mp_load_global_builtin_hit(qst, globals_map);
+                        #endif
+                        if (found == MP_OBJ_NULL) {
+                            mp_map_elem_t *elem = mp_map_cache_hit(globals_map, MP_OBJ_NEW_QSTR(qst));
+                            if (elem != NULL) {
+                                found = elem->value;
+                            }
+                        }
+                        if (found != MP_OBJ_NULL) {
+                            PUSH(found);
+                            DISPATCH();
+                        }
+                    }
+                    #endif
                     PUSH(mp_load_global(qst));
                     DISPATCH();
                 }
@@ -548,10 +578,28 @@ dispatch_loop:
                     // types are extremely common, so avoid all the other checks and
                     // calls that normally happen first.
                     mp_map_elem_t *elem = NULL;
+                    #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                    // CIRCUITPY-CHANGE: a hit costs two calls here -- mp_obj_get_type,
+                    // then mp_map_lookup, whose first act is to try the cache -- and the
+                    // receiver and the name have to be spilled around them. Only an
+                    // object can be an instance, so the type is read directly, and the
+                    // cache is probed in place; a miss goes to mp_map_lookup as before.
+                    if (mp_obj_is_obj(top)) {
+                        const mp_obj_type_t *top_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(top))->type;
+                        if (mp_obj_is_instance_type(top_type)) {
+                            mp_map_t *members = &((mp_obj_instance_t *)MP_OBJ_TO_PTR(top))->members;
+                            elem = mp_map_cache_hit(members, MP_OBJ_NEW_QSTR(qst));
+                            if (elem == NULL) {
+                                elem = mp_map_lookup(members, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);
+                            }
+                        }
+                    }
+                    #else
                     if (mp_obj_is_instance_type(mp_obj_get_type(top))) {
                         mp_obj_instance_t *self = MP_OBJ_TO_PTR(top);
                         elem = mp_map_lookup(&self->members, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);
                     }
+                    #endif
                     if (elem) {
                         obj = elem->value;
                     } else
@@ -639,8 +687,16 @@ dispatch_loop:
                     // through so that the general path still raises KeyError.
                     if (mp_obj_is_obj(base)
                         && ((mp_obj_base_t *)MP_OBJ_TO_PTR(base))->type == &mp_type_dict) {
-                        mp_map_elem_t *elem = mp_map_lookup(
-                            &((mp_obj_dict_t *)MP_OBJ_TO_PTR(base))->map, index, MP_MAP_LOOKUP);
+                        mp_map_t *map = &((mp_obj_dict_t *)MP_OBJ_TO_PTR(base))->map;
+                        mp_map_elem_t *elem = NULL;
+                        #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                        // CIRCUITPY-CHANGE: the same probe as LOAD_ATTR. Identity is
+                        // the test, so it holds for any key the cache was filled with.
+                        elem = mp_map_cache_hit(map, index);
+                        #endif
+                        if (elem == NULL) {
+                            elem = mp_map_lookup(map, index, MP_MAP_LOOKUP);
+                        }
                         if (elem != NULL) {
                             SET_TOP(elem->value);
                             DISPATCH();
