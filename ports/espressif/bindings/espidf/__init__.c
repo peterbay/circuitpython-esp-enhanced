@@ -58,6 +58,40 @@
 //|
 //|
 
+//| def cycles() -> int:
+//|     """Return the CPU's cycle counter.
+//|
+//|     One count is one CPU clock period, so at 240 MHz the resolution is about
+//|     4 ns. `time.monotonic_ns()` is built from the supervisor tick, which is
+//|     1/32768 of a second, so it cannot resolve anything shorter than 30.5 us;
+//|     this can. Use it to measure a single operation instead of a loop of
+//|     several thousand.
+//|
+//|     The counter is 32 bits and wraps about every 17.9 seconds at 240 MHz, so
+//|     mask the difference::
+//|
+//|         import espidf, microcontroller
+//|         start = espidf.cycles()
+//|         work()
+//|         elapsed = (espidf.cycles() - start) & 0xFFFFFFFF
+//|         seconds = elapsed / microcontroller.cpu.frequency
+//|
+//|     Reading it from Python costs roughly 1500 cycles, and an empty timed
+//|     region roughly 1100, so subtract an empty measurement taken the same way.
+//|     Below about a hundred cycles nothing can be seen from Python.
+//|
+//|     The count is per core, and it keeps running while other tasks do, so it
+//|     measures elapsed time on the CPU rather than time spent in the code
+//|     being timed."""
+//|     ...
+//|
+//|
+
+static mp_obj_t espidf_cycles(void) {
+    return mp_obj_new_int_from_uint(esp_cpu_get_cycle_count());
+}
+MP_DEFINE_CONST_FUN_OBJ_0(espidf_cycles_obj, espidf_cycles);
+
 //| def heap_caps_get_total_size() -> int:
 //|     """Return the total size of the ESP-IDF, which includes the CircuitPython heap."""
 //|     ...
@@ -2969,6 +3003,8 @@ static const mp_rom_map_elem_t espidf_module_globals_table[] = {
     #if CIRCUITPY_ESPIDF_CSI
     { MP_ROM_QSTR(MP_QSTR_CSI), MP_ROM_PTR(&espidf_csi_type) },
     #endif
+
+    { MP_ROM_QSTR(MP_QSTR_cycles), MP_ROM_PTR(&espidf_cycles_obj) },
 
     { MP_ROM_QSTR(MP_QSTR_IDFError), MP_ROM_PTR(&mp_type_espidf_IDFError) },
     { MP_ROM_QSTR(MP_QSTR_MemoryError),      MP_ROM_PTR(&mp_type_espidf_MemoryError) },
