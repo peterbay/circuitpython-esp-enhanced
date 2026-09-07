@@ -771,6 +771,14 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_OPT_VM_MAP_CACHE_PROBE (0)
 #endif
 
+// CIRCUITPY-CHANGE: whether a bytecode function object keeps its prelude
+// decoded, so that a plain positional call builds its frame without decoding
+// the prelude or going through mp_setup_code_state(). Four bytes per function
+// object. Only used with MICROPY_ENABLE_PYSTACK.
+#ifndef MICROPY_OPT_FUN_BC_CALL_INFO
+#define MICROPY_OPT_FUN_BC_CALL_INFO (0)
+#endif
+
 #ifndef MICROPY_OPT_ITERNEXT_FAST_PATH
 #define MICROPY_OPT_ITERNEXT_FAST_PATH (0)
 #endif

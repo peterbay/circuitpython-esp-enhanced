@@ -257,6 +257,35 @@ mp_code_state_t *mp_obj_fun_bc_prepare_codestate(mp_obj_t self_in, size_t n_args
 #endif
 
 // CIRCUITPY-CHANGE: PLACE_IN_ITCM
+#if MICROPY_OPT_FUN_BC_CALL_INFO
+// CIRCUITPY-CHANGE: decode the prelude once. Measured on an ESP32-C5, a call of
+// a function with no arguments spent 134 of its 340 cycles of overhead in
+// mp_setup_code_state(): the prelude decoded a second time, a memset call for
+// a handful of slots, and the frame of a function large enough to handle every
+// call shape. The shapes that fast path covers -- positional arguments only,
+// as many as there are parameters, no *args, **kwargs, keyword-only
+// parameters or cells -- are decided by the prelude alone, so the answer is
+// computed here on the first call and kept in the function object.
+static uint32_t fun_bc_compute_call_info(const mp_obj_fun_bc_t *self) {
+    const byte *ip = self->bytecode;
+    MP_BC_PRELUDE_SIG_DECODE(ip);
+    MP_BC_PRELUDE_SIZE_DECODE(ip);
+    // The first opcode follows the two prelude parts, the line info and one
+    // byte per cell, which is exactly where mp_setup_code_state_helper()
+    // leaves ip for this shape.
+    size_t code_offset = (size_t)(ip - self->bytecode) + n_info + n_cell;
+    if ((scope_flags & (MP_SCOPE_FLAG_VARARGS | MP_SCOPE_FLAG_VARKEYWORDS | MP_SCOPE_FLAG_DEFKWARGS)) != 0
+        || n_kwonly_args != 0 || n_cell != 0
+        || n_pos_args > MP_FUN_BC_CALL_INFO_MAX_ARGS
+        || n_state > MP_FUN_BC_CALL_INFO_MAX_STATE
+        || n_exc_stack > MP_FUN_BC_CALL_INFO_MAX_EXC
+        || code_offset > MP_FUN_BC_CALL_INFO_MAX_OFFSET) {
+        return MP_FUN_BC_CALL_INFO_NONE;
+    }
+    return MP_FUN_BC_CALL_INFO_PACK(n_pos_args, n_state, n_exc_stack, code_offset);
+}
+#endif
+
 mp_obj_t PLACE_IN_ITCM(mp_obj_fun_bc_call)(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_cstack_check();
 
@@ -268,11 +297,48 @@ mp_obj_t PLACE_IN_ITCM(mp_obj_fun_bc_call)(mp_obj_t self_in, size_t n_args, size
 
     mp_obj_fun_bc_t *self = MP_OBJ_TO_PTR(self_in);
 
+    mp_code_state_t *code_state = NULL;
     size_t n_state, state_size;
+    #if MICROPY_OPT_FUN_BC_CALL_INFO && MICROPY_ENABLE_PYSTACK
+    uint32_t info = self->call_info;
+    if (info == 0) {
+        info = fun_bc_compute_call_info(self);
+        self->call_info = info;
+    }
+    if (n_kw == 0 && info != MP_FUN_BC_CALL_INFO_NONE && n_args == MP_FUN_BC_CALL_INFO_ARGS(info)) {
+        // The same frame mp_setup_code_state() would build for this shape,
+        // field for field, without decoding anything.
+        n_state = MP_FUN_BC_CALL_INFO_STATE(info);
+        state_size = n_state * sizeof(mp_obj_t) + MP_FUN_BC_CALL_INFO_EXC(info) * sizeof(mp_exc_stack_t);
+        code_state = mp_pystack_alloc(offsetof(mp_code_state_t, state) + state_size);
+        code_state->fun_bc = self;
+        code_state->ip = self->bytecode + MP_FUN_BC_CALL_INFO_OFFSET(info);
+        code_state->sp = &code_state->state[0] - 1;
+        code_state->n_state = n_state;
+        code_state->exc_sp_idx = 0;
+        #if MICROPY_STACKLESS
+        code_state->prev = NULL;
+        #endif
+        #if MICROPY_PY_SYS_SETTRACE
+        code_state->prev_state = NULL;
+        code_state->frame = NULL;
+        #endif
+        // Locals are laid out from the top: argument i is state[n_state - 1 - i],
+        // and everything below the arguments starts out unbound.
+        mp_obj_t *state = code_state->state;
+        for (size_t i = 0, n = n_state - n_args; i < n; i++) {
+            state[i] = MP_OBJ_NULL;
+        }
+        for (size_t i = 0; i < n_args; i++) {
+            state[n_state - 1 - i] = args[i];
+        }
+        code_state->old_globals = mp_globals_get();
+    } else
+    #endif
+    {
     DECODE_CODESTATE_SIZE(self->bytecode, n_state, state_size);
 
     // allocate state for locals and stack
-    mp_code_state_t *code_state = NULL;
     #if MICROPY_ENABLE_PYSTACK
     code_state = mp_pystack_alloc(offsetof(mp_code_state_t, state) + state_size);
     #else
@@ -294,6 +360,7 @@ mp_obj_t PLACE_IN_ITCM(mp_obj_fun_bc_call)(mp_obj_t self_in, size_t n_args, size
     #endif
 
     INIT_CODESTATE(code_state, self, n_state, n_args, n_kw, args);
+    }
 
     // execute the byte code with the correct globals context
     mp_globals_set(self->context->module.globals);
@@ -436,6 +503,9 @@ mp_obj_t mp_obj_new_fun_bc(const mp_obj_t *def_args, const byte *code, const mp_
     o->bytecode = code;
     o->context = context;
     o->child_table = child_table;
+    #if MICROPY_OPT_FUN_BC_CALL_INFO
+    o->call_info = 0;
+    #endif
     if (def_pos_args != NULL) {
         memcpy(o->extra_args, def_pos_args->items, n_def_args * sizeof(mp_obj_t));
     }

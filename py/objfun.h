@@ -37,11 +37,35 @@ typedef struct _mp_obj_fun_bc_t {
     #if MICROPY_PY_SYS_SETTRACE
     const struct _mp_raw_code_t *rc;
     #endif
+    #if MICROPY_OPT_FUN_BC_CALL_INFO
+    // CIRCUITPY-CHANGE: what a plain positional call needs from the prelude,
+    // decoded once, on the first call, and packed: 0 until then, or
+    // MP_FUN_BC_CALL_INFO_NONE when the function is not that simple. See
+    // mp_obj_fun_bc_call().
+    uint32_t call_info;
+    #endif
     // the following extra_args array is allocated space to take (in order):
     //  - values of positional default args (if any)
     //  - a single slot for default kw args dict (if it has them)
     mp_obj_t extra_args[];
 } mp_obj_fun_bc_t;
+
+#if MICROPY_OPT_FUN_BC_CALL_INFO
+// Packed as: bits 0-7 positional parameters, 8-19 n_state, 20-23 exception
+// stack depth, 24-31 offset of the first opcode from the start of the bytecode.
+// n_state is at least 1, so a real value is never 0 or 1.
+#define MP_FUN_BC_CALL_INFO_NONE (1u)
+#define MP_FUN_BC_CALL_INFO_MAX_ARGS (0xffu)
+#define MP_FUN_BC_CALL_INFO_MAX_STATE (0xfffu)
+#define MP_FUN_BC_CALL_INFO_MAX_EXC (0xfu)
+#define MP_FUN_BC_CALL_INFO_MAX_OFFSET (0xffu)
+#define MP_FUN_BC_CALL_INFO_PACK(args, state, exc, off) \
+    ((uint32_t)(args) | ((uint32_t)(state) << 8) | ((uint32_t)(exc) << 20) | ((uint32_t)(off) << 24))
+#define MP_FUN_BC_CALL_INFO_ARGS(i) ((i) & 0xffu)
+#define MP_FUN_BC_CALL_INFO_STATE(i) (((i) >> 8) & 0xfffu)
+#define MP_FUN_BC_CALL_INFO_EXC(i) (((i) >> 20) & 0xfu)
+#define MP_FUN_BC_CALL_INFO_OFFSET(i) ((i) >> 24)
+#endif
 
 typedef struct _mp_obj_fun_asm_t {
     mp_obj_base_t base;
