@@ -1730,10 +1730,12 @@ yield:
                 #if MICROPY_OPT_MULTI_OPCODE_ENTRIES
                 // CIRCUITPY-CHANGE: the shared MULTI handlers below recover the operand
                 // from the opcode byte -- reload it, subtract the base, scale, add --
-                // on every LOAD_FAST, STORE_FAST and small-int constant. In a real
-                // application (a BLE scanner, 9624 instructions) those three MULTI
-                // forms are 19% of all bytecode. With one entry per value the operand
-                // is an immediate and the handler is the load or store alone.
+                // on every LOAD_FAST, STORE_FAST and small-int constant, and the
+                // operator handlers then switch on it, a second indirect jump through
+                // a table in flash. In a real application (a BLE scanner, 9624
+                // instructions) the five MULTI forms are 24% of all bytecode. With one
+                // entry per value the operand is an immediate: a load or store alone,
+                // or the small-int fast path of one operator as straight-line code.
                 #include "py/vm_multi_entries.h"
                 #else
                 ENTRY(MP_BC_LOAD_CONST_SMALL_INT_MULTI):
@@ -1747,7 +1749,6 @@ yield:
                 ENTRY(MP_BC_STORE_FAST_MULTI):
                     fastn[MP_BC_STORE_FAST_MULTI - (mp_int_t)ip[-1]] = POP();
                     DISPATCH();
-                #endif
 
                 ENTRY(MP_BC_UNARY_OP_MULTI):
                     MARK_EXC_IP_SELECTIVE();
@@ -1887,6 +1888,7 @@ yield:
                     SET_TOP(mp_binary_op(op, lhs, rhs));
                     DISPATCH();
                 }
+                #endif // MICROPY_OPT_MULTI_OPCODE_ENTRIES
 
                 ENTRY_DEFAULT:
                     MARK_EXC_IP_SELECTIVE();
