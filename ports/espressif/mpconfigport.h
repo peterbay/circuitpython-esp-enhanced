@@ -67,6 +67,7 @@ extern volatile struct background_callback *volatile callback_head;
 
 // One pass of an empty loop costs 260 cycles, and every loop pays it.
 #define MICROPY_OPT_ITERNEXT_FAST_PATH      (1)
+#define MICROPY_OPT_MULTI_OPCODE_ENTRIES    (1)
 
 // d["x"] costs 422 cycles, of which the generic subscript path is most of it.
 #define MICROPY_OPT_DICT_SUBSCR_FAST_PATH   (1)

@@ -756,6 +756,14 @@ typedef uint64_t mp_uint_t;
 
 // Call the iternext slot straight from the VM instead of going through
 // mp_iternext_allow_raise. Every pass of every loop goes through here.
+// CIRCUITPY-CHANGE: with computed goto, whether each value of the LOAD_FAST,
+// STORE_FAST and LOAD_CONST_SMALL_INT MULTI opcodes gets its own handler with
+// the operand as an immediate, instead of one shared handler that recovers the
+// operand from the opcode byte.
+#ifndef MICROPY_OPT_MULTI_OPCODE_ENTRIES
+#define MICROPY_OPT_MULTI_OPCODE_ENTRIES (0)
+#endif
+
 #ifndef MICROPY_OPT_ITERNEXT_FAST_PATH
 #define MICROPY_OPT_ITERNEXT_FAST_PATH (0)
 #endif
