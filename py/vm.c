@@ -45,6 +45,43 @@
 #error "MICROPY_OPT_VM_MAP_CACHE_PROBE needs MICROPY_OPT_MAP_LOOKUP_CACHE"
 #endif
 
+#if MICROPY_OPT_VM_MAP_CACHE_PROBE
+// CIRCUITPY-CHANGE: a cache of "this name is not in this map". A method call
+// on an instance has to establish that no instance attribute shadows the
+// method before it may bind it, and the map lookup cache cannot help: it only
+// remembers where a key was found. A miss is remembered here instead, and it
+// holds for as long as no map anywhere has gained or lost a key, which is the
+// same test the builtin name cache in mp_load_global() rests on: a key that
+// appears in this map, or this map being cleared or torn down, bumps
+// mp_map_mutation_count. The map pointer is only ever compared, never
+// followed, so an entry that outlives its object is harmless: a new object at
+// the same address that gained the attribute bumped the count on the way.
+#define VM_ABSENT_CACHE_SIZE (16)
+typedef struct _vm_absent_entry_t {
+    const mp_map_t *map;
+    qstr name;
+    uint32_t mutation;
+} vm_absent_entry_t;
+static vm_absent_entry_t vm_absent_cache[VM_ABSENT_CACHE_SIZE];
+
+static inline vm_absent_entry_t *vm_absent_slot(const mp_map_t *map, qstr name) {
+    // Mixing the map in keeps several receivers of the same name apart.
+    return &vm_absent_cache[(name ^ ((uintptr_t)map >> 4)) % VM_ABSENT_CACHE_SIZE];
+}
+
+static inline bool vm_absent_hit(const mp_map_t *map, qstr name) {
+    const vm_absent_entry_t *e = vm_absent_slot(map, name);
+    return e->map == map && e->name == name && e->mutation == mp_map_mutation_count;
+}
+
+static inline void vm_absent_set(const mp_map_t *map, qstr name) {
+    vm_absent_entry_t *e = vm_absent_slot(map, name);
+    e->map = map;
+    e->name = name;
+    e->mutation = mp_map_mutation_count;
+}
+#endif
+
 #if 0
 #if MICROPY_PY_THREAD
 #define TRACE_PREFIX mp_printf(&mp_plat_print, "ts=%p sp=%d ", mp_thread_get_state(), (int)(sp - &code_state->state[0] + 1))
@@ -637,10 +674,32 @@ dispatch_loop:
                                 && MP_OBJ_TYPE_HAS_SLOT(recv_type, locals_dict)) {
                                 mp_obj_instance_t *self = MP_OBJ_TO_PTR(recv);
                                 mp_obj_t key = MP_OBJ_NEW_QSTR(qst);
-                                if (mp_map_lookup(&self->members, key, MP_MAP_LOOKUP) == NULL) {
-                                    mp_map_elem_t *found = mp_map_lookup(
-                                        &MP_OBJ_TYPE_GET_SLOT(recv_type, locals_dict)->map,
-                                        key, MP_MAP_LOOKUP);
+                                mp_map_t *members = &self->members;
+                                // CIRCUITPY-CHANGE: the miss in the members is remembered
+                                // and the hit in the class locals is probed, so that the
+                                // common case -- a method called again on the same
+                                // object -- reaches the binding without either lookup.
+                                bool absent;
+                                #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                                absent = vm_absent_hit(members, qst);
+                                if (!absent) {
+                                    absent = mp_map_lookup(members, key, MP_MAP_LOOKUP) == NULL;
+                                    if (absent) {
+                                        vm_absent_set(members, qst);
+                                    }
+                                }
+                                #else
+                                absent = mp_map_lookup(members, key, MP_MAP_LOOKUP) == NULL;
+                                #endif
+                                if (absent) {
+                                    mp_map_t *locals = &MP_OBJ_TYPE_GET_SLOT(recv_type, locals_dict)->map;
+                                    mp_map_elem_t *found = NULL;
+                                    #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                                    found = mp_map_cache_hit(locals, key);
+                                    #endif
+                                    if (found == NULL) {
+                                        found = mp_map_lookup(locals, key, MP_MAP_LOOKUP);
+                                    }
                                     if (found != NULL && mp_obj_is_type(found->value, &mp_type_fun_bc)) {
                                         sp[0] = found->value;
                                         sp[1] = recv;
