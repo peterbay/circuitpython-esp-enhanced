@@ -213,14 +213,19 @@ static inline mp_float_t mp_obj_float_get(mp_const_obj_t o) {
     return num.f;
 }
 static inline mp_obj_t mp_obj_new_float(mp_float_t f) {
-    if (isnan(f)) {
-        // prevent creation of bad nanboxed pointers via array.array or struct
-        return mp_const_float_nan;
-    }
     union {
         mp_float_t f;
         mp_uint_t u;
     } num = {.f = f};
+    // CIRCUITPY-CHANGE: isnan() on a chip without an FPU is a call into the
+    // soft-float library for every float this makes; the exponent test is
+    // two instructions. A NaN has all exponent bits set and a nonzero
+    // mantissa, which is the same as the unsigned bits above the sign
+    // exceeding those of infinity.
+    if ((num.u & 0x7fffffffu) > 0x7f800000u) {
+        // prevent creation of bad nanboxed pointers via array.array or struct
+        return mp_const_float_nan;
+    }
     return (mp_obj_t)(((num.u & ~0x3u) | 2u) + 0x80800000u);
 }
 #endif
