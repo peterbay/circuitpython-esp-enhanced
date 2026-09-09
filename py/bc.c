@@ -223,16 +223,27 @@ static void mp_setup_code_state_helper(mp_code_state_t *code_state, size_t n_arg
             *var_pos_kw_args = dict;
         }
 
+        // CIRCUITPY-CHANGE: the names are scanned once per keyword given, and
+        // each name was a call to mp_decode_uint; a name index is one byte
+        // unless the module has more than 127 qstrs, so decode that inline
+        // and only call for the rest. The start of the names is the same for
+        // every keyword.
+        const uint8_t *arg_names_start = mp_decode_uint_skip(code_state->ip);
+        const size_t n_named = n_pos_args + n_kwonly_args;
         for (size_t i = 0; i < n_kw; i++) {
             // the keys in kwargs are expected to be qstr objects
             mp_obj_t wanted_arg_name = kwargs[2 * i];
 
             // get pointer to arg_names array
-            const uint8_t *arg_names = code_state->ip;
-            arg_names = mp_decode_uint_skip(arg_names);
+            const uint8_t *arg_names = arg_names_start;
 
-            for (size_t j = 0; j < n_pos_args + n_kwonly_args; j++) {
-                qstr arg_qstr = mp_decode_uint(&arg_names);
+            for (size_t j = 0; j < n_named; j++) {
+                qstr arg_qstr = *arg_names;
+                if (arg_qstr < 0x80) {
+                    arg_names++;
+                } else {
+                    arg_qstr = mp_decode_uint(&arg_names);
+                }
                 #if MICROPY_EMIT_BYTECODE_USES_QSTR_TABLE
                 arg_qstr = self->context->constants.qstr_table[arg_qstr];
                 #endif
