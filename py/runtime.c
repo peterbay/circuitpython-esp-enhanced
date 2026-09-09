@@ -32,6 +32,7 @@
 #include <unistd.h>
 
 #include "py/parsenum.h"
+#include "supervisor/linker.h"
 #include "py/compile.h"
 // CIRCUITPY-CHANGE: added
 #include "py/mperrno.h"
@@ -361,7 +362,7 @@ void mp_delete_global(qstr qst) {
     mp_obj_dict_delete(MP_OBJ_FROM_PTR(mp_globals_get()), MP_OBJ_NEW_QSTR(qst));
 }
 
-mp_obj_t mp_unary_op(mp_unary_op_t op, mp_obj_t arg) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_unary_op)(mp_unary_op_t op, mp_obj_t arg) {
     DEBUG_OP_printf("unary " UINT_FMT " %q %p\n", op, mp_unary_op_method_name[op], arg);
 
     if (op == MP_UNARY_OP_NOT) {
@@ -785,7 +786,7 @@ mp_obj_t mp_call_function_2(mp_obj_t fun, mp_obj_t arg1, mp_obj_t arg2) {
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static mp_obj_t mp_call_function_n_kw_inner(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args);
-mp_obj_t mp_call_function_n_kw(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_call_function_n_kw)(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     PROF_BEGIN(PROF_CALL_N_KW);
     mp_obj_t _r = mp_call_function_n_kw_inner(fun_in, n_args, n_kw, args);
     PROF_END(PROF_CALL_N_KW);
@@ -793,7 +794,7 @@ mp_obj_t mp_call_function_n_kw(mp_obj_t fun_in, size_t n_args, size_t n_kw, cons
 }
 static mp_obj_t mp_call_function_n_kw_inner(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
 #else
-mp_obj_t mp_call_function_n_kw(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_call_function_n_kw)(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
 #endif
     // TODO improve this: fun object can specify its type and we parse here the arguments,
     // passing to the function arrays of fixed and keyword arguments
@@ -818,7 +819,7 @@ mp_obj_t mp_call_function_n_kw(mp_obj_t fun_in, size_t n_args, size_t n_kw, cons
 
 // args contains: fun  self/NULL  arg(0)  ...  arg(n_args-2)  arg(n_args-1)  kw_key(0)  kw_val(0)  ... kw_key(n_kw-1)  kw_val(n_kw-1)
 // if n_args==0 and n_kw==0 then there are only fun and self/NULL
-mp_obj_t mp_call_method_n_kw(size_t n_args, size_t n_kw, const mp_obj_t *args) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_call_method_n_kw)(size_t n_args, size_t n_kw, const mp_obj_t *args) {
     DEBUG_OP_printf("call method (fun=%p, self=%p, n_args=" UINT_FMT ", n_kw=" UINT_FMT ", args=%p)\n", args[0], args[1], n_args, n_kw, args);
     int adjust = (args[1] == MP_OBJ_NULL) ? 0 : 1;
     return mp_call_function_n_kw(args[0], n_args + adjust, n_kw, args + 2 - adjust);
@@ -1155,7 +1156,7 @@ too_short:
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static mp_obj_t mp_load_attr_inner(mp_obj_t base, qstr attr);
-mp_obj_t mp_load_attr(mp_obj_t base, qstr attr) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_load_attr)(mp_obj_t base, qstr attr) {
     PROF_BEGIN(PROF_LOAD_ATTR);
     mp_obj_t _r = mp_load_attr_inner(base, attr);
     PROF_END(PROF_LOAD_ATTR);
@@ -1163,7 +1164,7 @@ mp_obj_t mp_load_attr(mp_obj_t base, qstr attr) {
 }
 static mp_obj_t mp_load_attr_inner(mp_obj_t base, qstr attr) {
 #else
-mp_obj_t mp_load_attr(mp_obj_t base, qstr attr) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_load_attr)(mp_obj_t base, qstr attr) {
 #endif
     DEBUG_OP_printf("load attr %p.%s\n", base, qstr_str(attr));
     // use load_method
@@ -1223,7 +1224,7 @@ static mp_obj_t mp_obj_new_checked_fun(const mp_obj_type_t *type, mp_obj_t fun) 
 // Conversion means dealing with static/class methods, callables, and values.
 // see http://docs.python.org/3/howto/descriptor.html
 // and also https://mail.python.org/pipermail/python-dev/2015-March/138950.html
-void mp_convert_member_lookup(mp_obj_t self, const mp_obj_type_t *type, mp_obj_t member, mp_obj_t *dest) {
+void PLACE_IN_HOT_CODE(mp_convert_member_lookup)(mp_obj_t self, const mp_obj_type_t *type, mp_obj_t member, mp_obj_t *dest) {
     if (mp_obj_is_obj(member)) {
         const mp_obj_type_t *m_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(member))->type;
         #if MICROPY_PY_BUILTINS_PROPERTY
@@ -1312,7 +1313,7 @@ void mp_convert_member_lookup(mp_obj_t self, const mp_obj_type_t *type, mp_obj_t
 // no attribute found, returns:     dest[0] == MP_OBJ_NULL, dest[1] == MP_OBJ_NULL
 // normal attribute found, returns: dest[0] == <attribute>, dest[1] == MP_OBJ_NULL
 // method attribute found, returns: dest[0] == <method>,    dest[1] == <self>
-void mp_load_method_maybe(mp_obj_t obj, qstr attr, mp_obj_t *dest) {
+void PLACE_IN_HOT_CODE(mp_load_method_maybe)(mp_obj_t obj, qstr attr, mp_obj_t *dest) {
     // clear output to indicate no attribute/method found yet
     dest[0] = MP_OBJ_NULL;
     dest[1] = MP_OBJ_NULL;
@@ -1375,14 +1376,14 @@ void mp_load_method_maybe(mp_obj_t obj, qstr attr, mp_obj_t *dest) {
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static void mp_load_method_inner(mp_obj_t base, qstr attr, mp_obj_t *dest);
-void mp_load_method(mp_obj_t base, qstr attr, mp_obj_t *dest) {
+void PLACE_IN_HOT_CODE(mp_load_method)(mp_obj_t base, qstr attr, mp_obj_t *dest) {
     PROF_BEGIN(PROF_LOAD_METHOD);
     mp_load_method_inner(base, attr, dest);
     PROF_END(PROF_LOAD_METHOD);
 }
 static void mp_load_method_inner(mp_obj_t base, qstr attr, mp_obj_t *dest) {
 #else
-void mp_load_method(mp_obj_t base, qstr attr, mp_obj_t *dest) {
+void PLACE_IN_HOT_CODE(mp_load_method)(mp_obj_t base, qstr attr, mp_obj_t *dest) {
 #endif
     DEBUG_OP_printf("load method %p.%s\n", base, qstr_str(attr));
 
@@ -1440,14 +1441,14 @@ void mp_load_method_protected(mp_obj_t obj, qstr attr, mp_obj_t *dest, bool catc
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static void mp_store_attr_inner(mp_obj_t base, qstr attr, mp_obj_t value);
-void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
+void PLACE_IN_HOT_CODE(mp_store_attr)(mp_obj_t base, qstr attr, mp_obj_t value) {
     PROF_BEGIN(PROF_STORE_ATTR);
     mp_store_attr_inner(base, attr, value);
     PROF_END(PROF_STORE_ATTR);
 }
 static void mp_store_attr_inner(mp_obj_t base, qstr attr, mp_obj_t value) {
 #else
-void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
+void PLACE_IN_HOT_CODE(mp_store_attr)(mp_obj_t base, qstr attr, mp_obj_t value) {
 #endif
     DEBUG_OP_printf("store attr %p.%s <- %p\n", base, qstr_str(attr), value);
     const mp_obj_type_t *type = mp_obj_get_type(base);
@@ -1510,7 +1511,7 @@ void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static mp_obj_t mp_getiter_inner(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf);
-mp_obj_t mp_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_getiter)(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
     PROF_BEGIN(PROF_GETITER);
     mp_obj_t _r = mp_getiter_inner(o_in, iter_buf);
     PROF_END(PROF_GETITER);
@@ -1518,7 +1519,7 @@ mp_obj_t mp_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
 }
 static mp_obj_t mp_getiter_inner(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
 #else
-mp_obj_t mp_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_getiter)(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
 #endif
     assert(o_in);
     const mp_obj_type_t *type = mp_obj_get_type(o_in);
@@ -1585,7 +1586,7 @@ static mp_fun_1_t type_get_iternext(const mp_obj_type_t *type) {
 
 // may return MP_OBJ_STOP_ITERATION as an optimisation instead of raise StopIteration()
 // may also raise StopIteration()
-mp_obj_t mp_iternext_allow_raise(mp_obj_t o_in) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_iternext_allow_raise)(mp_obj_t o_in) {
     const mp_obj_type_t *type = mp_obj_get_type(o_in);
     if (TYPE_HAS_ITERNEXT(type)) {
         MP_STATE_THREAD(stop_iteration_arg) = MP_OBJ_NULL;
@@ -1614,7 +1615,7 @@ mp_obj_t mp_iternext_allow_raise(mp_obj_t o_in) {
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static mp_obj_t mp_iternext_inner(mp_obj_t o_in);
-mp_obj_t mp_iternext(mp_obj_t o_in) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_iternext)(mp_obj_t o_in) {
     PROF_BEGIN(PROF_ITERNEXT);
     mp_obj_t _r = mp_iternext_inner(o_in);
     PROF_END(PROF_ITERNEXT);
@@ -1622,7 +1623,7 @@ mp_obj_t mp_iternext(mp_obj_t o_in) {
 }
 static mp_obj_t mp_iternext_inner(mp_obj_t o_in) {
 #else
-mp_obj_t mp_iternext(mp_obj_t o_in) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_iternext)(mp_obj_t o_in) {
 #endif
     mp_cstack_check(); // enumerate, filter, map and zip can recursively call mp_iternext
     const mp_obj_type_t *type = mp_obj_get_type(o_in);

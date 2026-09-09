@@ -31,6 +31,7 @@
 #include <stdio.h>
 
 #include "py/objlist.h"
+#include "supervisor/linker.h"
 #include "py/objstr.h"
 #include "py/objtuple.h"
 #include "py/objtype.h"
@@ -215,7 +216,7 @@ void mp_obj_exception_initialize0(mp_obj_exception_t *o_exc, const mp_obj_type_t
     mp_obj_exception_clear_traceback(o_exc);
 }
 
-mp_obj_t mp_obj_exception_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_exception_make_new)(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 0, MP_OBJ_FUN_ARGS_MAX, false);
 
     // Try to allocate memory for the exception, with fallback to emergency exception object

@@ -398,7 +398,8 @@ MP_NOINLINE static mp_obj_t *build_slice_stack_allocated(byte op, mp_obj_t *sp, 
 // everything live across the call in memory, and on a register window machine the
 // wrapper also wants the compiler's own non-local goto, which constrains its frame
 // further. Keeping the two apart lets the loop compile as if no setjmp existed.
-static mp_vm_return_kind_t mp_execute_bytecode_loop(mp_code_state_t *code_state, mp_obj_t inject_exc) {
+// CIRCUITPY-CHANGE: placed with the wrapper, see MICROPY_WRAP_MP_EXECUTE_BYTECODE.
+static mp_vm_return_kind_t MICROPY_WRAP_MP_EXECUTE_BYTECODE(mp_execute_bytecode_loop)(mp_code_state_t *code_state, mp_obj_t inject_exc) {
 
 #define SELECTIVE_EXC_IP (0)
 // When disabled, code_state->ip is updated unconditionally during op

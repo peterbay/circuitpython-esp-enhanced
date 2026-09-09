@@ -30,6 +30,7 @@
 #include <assert.h>
 
 #include "py/parsenum.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 
 #if MICROPY_PY_BUILTINS_FLOAT
@@ -240,7 +241,7 @@ static void mp_obj_float_divmod(mp_float_t *x, mp_float_t *y) {
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static mp_obj_t mp_obj_float_binary_op_inner(mp_binary_op_t op, mp_float_t lhs_val, mp_obj_t rhs_in);
-mp_obj_t mp_obj_float_binary_op(mp_binary_op_t op, mp_float_t lhs_val, mp_obj_t rhs_in) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_float_binary_op)(mp_binary_op_t op, mp_float_t lhs_val, mp_obj_t rhs_in) {
     PROF_BEGIN(PROF_FLOAT_BINARY_OP);
     mp_obj_t _r = mp_obj_float_binary_op_inner(op, lhs_val, rhs_in);
     PROF_END(PROF_FLOAT_BINARY_OP);
@@ -248,7 +249,7 @@ mp_obj_t mp_obj_float_binary_op(mp_binary_op_t op, mp_float_t lhs_val, mp_obj_t 
 }
 static mp_obj_t mp_obj_float_binary_op_inner(mp_binary_op_t op, mp_float_t lhs_val, mp_obj_t rhs_in) {
 #else
-mp_obj_t mp_obj_float_binary_op(mp_binary_op_t op, mp_float_t lhs_val, mp_obj_t rhs_in) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_float_binary_op)(mp_binary_op_t op, mp_float_t lhs_val, mp_obj_t rhs_in) {
 #endif
     mp_float_t rhs_val;
     if (!mp_obj_get_float_maybe(rhs_in, &rhs_val)) {

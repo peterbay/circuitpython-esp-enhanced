@@ -30,6 +30,7 @@
 #include <assert.h>
 
 #include "py/bc0.h"
+#include "supervisor/linker.h"
 #include "py/bc.h"
 #include "py/objfun.h"
 #include "supervisor/prof.h"
@@ -356,14 +357,14 @@ static void mp_setup_code_state_helper(mp_code_state_t *code_state, size_t n_arg
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static void mp_setup_code_state_inner(mp_code_state_t *code_state, size_t n_args, size_t n_kw, const mp_obj_t *args);
-void mp_setup_code_state(mp_code_state_t *code_state, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+void PLACE_IN_HOT_CODE(mp_setup_code_state)(mp_code_state_t *code_state, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     PROF_BEGIN(PROF_SETUP_CODE_STATE);
     mp_setup_code_state_inner(code_state, n_args, n_kw, args);
     PROF_END(PROF_SETUP_CODE_STATE);
 }
 static void mp_setup_code_state_inner(mp_code_state_t *code_state, size_t n_args, size_t n_kw, const mp_obj_t *args) {
 #else
-void mp_setup_code_state(mp_code_state_t *code_state, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+void PLACE_IN_HOT_CODE(mp_setup_code_state)(mp_code_state_t *code_state, size_t n_args, size_t n_kw, const mp_obj_t *args) {
 #endif
     code_state->ip = code_state->fun_bc->bytecode;
     code_state->sp = &code_state->state[0] - 1;

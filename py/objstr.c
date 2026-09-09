@@ -29,6 +29,7 @@
 #include <assert.h>
 
 #include "py/unicode.h"
+#include "supervisor/linker.h"
 #include "py/objstr.h"
 #include "py/objlist.h"
 #include "py/runtime.h"
@@ -2367,7 +2368,7 @@ static mp_obj_t mp_obj_new_str_type_from_vstr(const mp_obj_type_t *type, vstr_t 
     return MP_OBJ_FROM_PTR(o);
 }
 
-mp_obj_t mp_obj_new_str_from_vstr(vstr_t *vstr) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_new_str_from_vstr)(vstr_t *vstr) {
     #if MICROPY_PY_BUILTINS_STR_UNICODE && MICROPY_PY_BUILTINS_STR_UNICODE_CHECK
     if (!utf8_check((byte *)vstr->buf, vstr->len)) {
         mp_raise_msg(&mp_type_UnicodeError, NULL);
@@ -2424,7 +2425,7 @@ mp_obj_t mp_obj_str_intern_checked(mp_obj_t obj) {
     return mp_obj_new_str_via_qstr((const char *)data, len);
 }
 
-mp_obj_t mp_obj_new_bytes(const byte *data, size_t len) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_new_bytes)(const byte *data, size_t len) {
     return mp_obj_new_str_copy(&mp_type_bytes, data, len);
 }
 

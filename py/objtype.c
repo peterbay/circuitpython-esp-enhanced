@@ -31,6 +31,7 @@
 #include <assert.h>
 
 #include "py/objtype.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 #include "supervisor/prof.h"
 
@@ -168,7 +169,7 @@ struct class_lookup_data {
 // What the walk found, turned into what the caller asked for: a bound method,
 // a class method bound to the type, a static method's function, a property
 // object handed back raw, or a plain value.
-static void class_lookup_apply(struct class_lookup_data *lookup, const mp_obj_type_t *found_type, mp_obj_t value) {
+static void PLACE_IN_HOT_CODE(class_lookup_apply)(struct class_lookup_data *lookup, const mp_obj_type_t *found_type, mp_obj_t value) {
     if (lookup->is_type) {
         // If we look up a class method, we need to return original type for which we
         // do a lookup, not a (base) type in which we found the class method.
@@ -292,14 +293,14 @@ bool mp_obj_class_lookup_cached(const mp_obj_type_t *type, qstr attr, mp_obj_t *
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static void mp_obj_class_lookup_inner(struct class_lookup_data *lookup, const mp_obj_type_t *type);
-static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
+static void PLACE_IN_HOT_CODE(mp_obj_class_lookup)(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
     PROF_BEGIN(PROF_CLASS_LOOKUP);
     mp_obj_class_lookup_inner(lookup, type);
     PROF_END(PROF_CLASS_LOOKUP);
 }
 static void mp_obj_class_lookup_inner(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
 #else
-static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
+static void PLACE_IN_HOT_CODE(mp_obj_class_lookup)(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
 #endif
     assert(lookup->dest[0] == MP_OBJ_NULL);
     assert(lookup->dest[1] == MP_OBJ_NULL);
@@ -479,7 +480,7 @@ static void instance_print(const mp_print_t *print, mp_obj_t self_in, mp_print_k
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static mp_obj_t mp_obj_instance_make_new_inner(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args);
-static mp_obj_t mp_obj_instance_make_new(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_HOT_CODE(mp_obj_instance_make_new)(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     PROF_BEGIN(PROF_INSTANCE_NEW);
     mp_obj_t _r = mp_obj_instance_make_new_inner(self, n_args, n_kw, args);
     PROF_END(PROF_INSTANCE_NEW);
@@ -487,7 +488,7 @@ static mp_obj_t mp_obj_instance_make_new(const mp_obj_type_t *self, size_t n_arg
 }
 static mp_obj_t mp_obj_instance_make_new_inner(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args) {
 #else
-static mp_obj_t mp_obj_instance_make_new(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_HOT_CODE(mp_obj_instance_make_new)(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args) {
 #endif
     assert(mp_obj_is_instance_type(self));
 
@@ -747,7 +748,7 @@ const byte mp_binary_op_method_name[MP_BINARY_OP_NUM_RUNTIME] = {
     #endif
 };
 
-static mp_obj_t instance_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
+static mp_obj_t PLACE_IN_HOT_CODE(instance_binary_op)(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
     // Note: For ducktyping, CPython does not look in the instance members or use
     // __getattr__ or __getattribute__.  It only looks in the class dictionary.
     mp_obj_instance_t *lhs = MP_OBJ_TO_PTR(lhs_in);
@@ -789,7 +790,7 @@ static mp_obj_t instance_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t 
     return res;
 }
 
-static void mp_obj_instance_load_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+static void PLACE_IN_HOT_CODE(mp_obj_instance_load_attr)(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     // logic: look in instance members then class locals
     assert(mp_obj_is_instance_type(mp_obj_get_type(self_in)));
     mp_obj_instance_t *self = MP_OBJ_TO_PTR(self_in);
@@ -907,7 +908,7 @@ static void mp_obj_instance_load_attr(mp_obj_t self_in, qstr attr, mp_obj_t *des
     }
 }
 
-static bool mp_obj_instance_store_attr(mp_obj_t self_in, qstr attr, mp_obj_t value) {
+static bool PLACE_IN_HOT_CODE(mp_obj_instance_store_attr)(mp_obj_t self_in, qstr attr, mp_obj_t value) {
     mp_obj_instance_t *self = MP_OBJ_TO_PTR(self_in);
 
     if (!(self->base.type->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS)) {
@@ -1053,7 +1054,7 @@ skip_special_accessors:
     }
 }
 
-static void mp_obj_instance_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+static void PLACE_IN_HOT_CODE(mp_obj_instance_attr)(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     if (dest[0] == MP_OBJ_NULL) {
         mp_obj_instance_load_attr(self_in, attr, dest);
     } else {
@@ -1063,7 +1064,7 @@ static void mp_obj_instance_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     }
 }
 
-static mp_obj_t instance_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+static mp_obj_t PLACE_IN_HOT_CODE(instance_subscr)(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     mp_obj_instance_t *self = MP_OBJ_TO_PTR(self_in);
     mp_obj_t member[4] = {MP_OBJ_NULL, MP_OBJ_NULL, index, value};
     struct class_lookup_data lookup = {
@@ -1726,7 +1727,7 @@ void mp_load_super_method(qstr attr, mp_obj_t *dest) {
 
 // object and classinfo should be type objects
 // (but the function will fail gracefully if they are not)
-bool mp_obj_is_subclass_fast(mp_const_obj_t object, mp_const_obj_t classinfo) {
+bool PLACE_IN_HOT_CODE(mp_obj_is_subclass_fast)(mp_const_obj_t object, mp_const_obj_t classinfo) {
     for (;;) {
         if (object == classinfo) {
             return true;

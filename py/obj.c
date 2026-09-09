@@ -32,6 +32,7 @@
 // CIRCUITPY-CHANGE
 #include "shared/runtime/interrupt_char.h"
 #include "py/misc.h"
+#include "supervisor/linker.h"
 #include "py/obj.h"
 #include "py/objtype.h"
 #include "py/objint.h"
@@ -321,7 +322,7 @@ bool mp_obj_is_callable(mp_obj_t o_in) {
 // Furthermore, from the v3.4.2 code for object.c: "Practical amendments: If rich
 // comparison returns NotImplemented, == and != are decided by comparing the object
 // pointer."
-mp_obj_t mp_obj_equal_not_equal(mp_binary_op_t op, mp_obj_t o1, mp_obj_t o2) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_equal_not_equal)(mp_binary_op_t op, mp_obj_t o1, mp_obj_t o2) {
     mp_obj_t local_true = (op == MP_BINARY_OP_NOT_EQUAL) ? mp_const_false : mp_const_true;
     mp_obj_t local_false = (op == MP_BINARY_OP_NOT_EQUAL) ? mp_const_true : mp_const_false;
     int pass_number = 0;
@@ -402,11 +403,11 @@ mp_obj_t mp_obj_equal_not_equal(mp_binary_op_t op, mp_obj_t o1, mp_obj_t o2) {
     return (o1 == o2) ? local_true : local_false;
 }
 
-bool mp_obj_equal(mp_obj_t o1, mp_obj_t o2) {
+bool PLACE_IN_HOT_CODE(mp_obj_equal)(mp_obj_t o1, mp_obj_t o2) {
     return mp_obj_is_true(mp_obj_equal_not_equal(MP_BINARY_OP_EQUAL, o1, o2));
 }
 
-mp_int_t mp_obj_get_int(mp_const_obj_t arg) {
+mp_int_t PLACE_IN_HOT_CODE(mp_obj_get_int)(mp_const_obj_t arg) {
     // This function essentially performs implicit type conversion to int
     // Note that Python does NOT provide implicit type conversion from
     // float to int in the core expression language, try some_list[1.0].
@@ -636,7 +637,7 @@ mp_obj_t mp_obj_id(mp_obj_t o_in) {
 }
 
 // will raise a TypeError if object has no length
-mp_obj_t mp_obj_len(mp_obj_t o_in) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_len)(mp_obj_t o_in) {
     mp_obj_t len = mp_obj_len_maybe(o_in);
     if (len == MP_OBJ_NULL) {
         #if MICROPY_ERROR_REPORTING <= MICROPY_ERROR_REPORTING_TERSE
@@ -671,7 +672,7 @@ mp_obj_t mp_obj_len_maybe(mp_obj_t o_in) {
     }
 }
 
-mp_obj_t mp_obj_subscr(mp_obj_t base, mp_obj_t index, mp_obj_t value) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_subscr)(mp_obj_t base, mp_obj_t index, mp_obj_t value) {
     const mp_obj_type_t *type = mp_obj_get_type(base);
     if (MP_OBJ_TYPE_HAS_SLOT(type, subscr)) {
         mp_obj_t ret = MP_OBJ_TYPE_GET_SLOT(type, subscr)(base, index, value);
@@ -755,7 +756,7 @@ mp_obj_t mp_obj_generic_subscript_getiter(mp_obj_t obj, mp_obj_iter_buf_t *iter_
 //     return self;
 // }
 
-bool mp_get_buffer(mp_obj_t obj, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
+bool PLACE_IN_HOT_CODE(mp_get_buffer)(mp_obj_t obj, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
     const mp_obj_type_t *type = mp_obj_get_type(obj);
     if (MP_OBJ_TYPE_HAS_SLOT(type, buffer)
         && MP_OBJ_TYPE_GET_SLOT(type, buffer)(obj, bufinfo, flags & MP_BUFFER_RW) == 0) {

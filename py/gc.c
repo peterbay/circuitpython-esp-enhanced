@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include "py/gc.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 
 #if defined(__ZEPHYR__)
@@ -986,7 +987,7 @@ bool gc_alloc_possible(void) {
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static void *gc_alloc_inner(size_t n_bytes, unsigned int alloc_flags);
-void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
+void *PLACE_IN_HOT_CODE(gc_alloc)(size_t n_bytes, unsigned int alloc_flags) {
     PROF_BEGIN(PROF_GC_ALLOC);
     void *_r = gc_alloc_inner(n_bytes, alloc_flags);
     PROF_END(PROF_GC_ALLOC);
@@ -994,7 +995,7 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
 }
 static void *gc_alloc_inner(size_t n_bytes, unsigned int alloc_flags) {
 #else
-void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
+void *PLACE_IN_HOT_CODE(gc_alloc)(size_t n_bytes, unsigned int alloc_flags) {
 #endif
     bool has_finaliser = alloc_flags & GC_ALLOC_FLAG_HAS_FINALISER;
     size_t n_blocks = ((n_bytes + BYTES_PER_BLOCK - 1) & (~(BYTES_PER_BLOCK - 1))) / BYTES_PER_BLOCK;

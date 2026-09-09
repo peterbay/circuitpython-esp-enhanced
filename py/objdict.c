@@ -29,6 +29,7 @@
 #include <assert.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 #include "py/builtin.h"
 #include "py/objtype.h"
 #include "py/objstr.h"
@@ -242,7 +243,7 @@ static mp_obj_t dict_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_
 }
 
 // Note: Make sure this is inlined in load part of dict_subscr() below.
-mp_obj_t mp_obj_dict_get(mp_obj_t self_in, mp_obj_t index) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_dict_get)(mp_obj_t self_in, mp_obj_t index) {
     // CIRCUITPY-CHANGE
     mp_obj_dict_t *self = native_dict(self_in);
     mp_map_elem_t *elem = mp_map_lookup(&self->map, index, MP_MAP_LOOKUP);
@@ -757,7 +758,7 @@ void mp_obj_dict_init(mp_obj_dict_t *dict, size_t n_args) {
     mp_map_init(&dict->map, n_args);
 }
 
-mp_obj_t mp_obj_new_dict(size_t n_args) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_new_dict)(size_t n_args) {
     // CIRCUITPY-CHANGE: Use mp_obj_malloc because it is a Python object
     mp_obj_dict_t *o = mp_obj_malloc(mp_obj_dict_t, &mp_type_dict);
     mp_obj_dict_init(o, n_args);
@@ -769,7 +770,7 @@ size_t mp_obj_dict_len(mp_obj_t self_in) {
     return self->map.used;
 }
 
-mp_obj_t mp_obj_dict_store(mp_obj_t self_in, mp_obj_t key, mp_obj_t value) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_dict_store)(mp_obj_t self_in, mp_obj_t key, mp_obj_t value) {
     mp_check_self(mp_obj_is_dict_or_ordereddict(self_in));
     // CIRCUITPY-CHANGE
     mp_obj_dict_t *self = native_dict(self_in);

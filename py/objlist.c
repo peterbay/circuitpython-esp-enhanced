@@ -28,6 +28,7 @@
 #include <assert.h>
 
 #include "py/objlist.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 #include "py/cstack.h"
 
@@ -553,7 +554,7 @@ static mp_obj_list_t *list_new(size_t n) {
     return o;
 }
 
-mp_obj_t mp_obj_new_list(size_t n, mp_obj_t *items) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_new_list)(size_t n, mp_obj_t *items) {
     mp_obj_list_t *o = list_new(n);
     if (items != NULL) {
         for (size_t i = 0; i < n; i++) {

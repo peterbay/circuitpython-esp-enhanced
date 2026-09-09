@@ -29,6 +29,7 @@
 #include <assert.h>
 
 #include "py/objtuple.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 
 /******************************************************************************/
@@ -250,7 +251,7 @@ const mp_obj_tuple_t mp_const_empty_tuple_obj = {{&mp_type_tuple}, 0};
 // CIRCUITPY-CHANGE: No change here, but implementation was copied for
 // mp_obj_new_port_tuple in supervisor/shared/port.c, which allocates using port_malloc().
 // Change that to match if this changes.
-mp_obj_t mp_obj_new_tuple(size_t n, const mp_obj_t *items) {
+mp_obj_t PLACE_IN_HOT_CODE(mp_obj_new_tuple)(size_t n, const mp_obj_t *items) {
     if (n == 0) {
         return mp_const_empty_tuple;
     }
