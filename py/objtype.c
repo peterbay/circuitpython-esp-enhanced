@@ -32,6 +32,7 @@
 
 #include "py/objtype.h"
 #include "py/runtime.h"
+#include "supervisor/prof.h"
 
 #if MICROPY_DEBUG_VERBOSE // print debugging info
 #define DEBUG_PRINT (1)
@@ -288,13 +289,27 @@ bool mp_obj_class_lookup_cached(const mp_obj_type_t *type, qstr attr, mp_obj_t *
 }
 #endif
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static void mp_obj_class_lookup_inner(struct class_lookup_data *lookup, const mp_obj_type_t *type);
 static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
+    PROF_BEGIN(PROF_CLASS_LOOKUP);
+    mp_obj_class_lookup_inner(lookup, type);
+    PROF_END(PROF_CLASS_LOOKUP);
+}
+static void mp_obj_class_lookup_inner(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
+#else
+static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
+#endif
     assert(lookup->dest[0] == MP_OBJ_NULL);
     assert(lookup->dest[1] == MP_OBJ_NULL);
     #if MICROPY_OPT_CLASS_LOOKUP_CACHE
     {
         const class_lookup_entry_t *entry = class_lookup_find(type, lookup->attr, lookup->slot_offset);
         if (entry != NULL) {
+            #if CIRCUITPY_PROF
+            prof_calls[PROF_CLASS_CACHE_HIT]++;
+            #endif
             if (entry->kind == CLASS_LOOKUP_FOUND) {
                 class_lookup_apply(lookup, entry->found_type, entry->elem->value);
             } else if (entry->kind == CLASS_LOOKUP_SLOT) {
@@ -461,7 +476,19 @@ static void instance_print(const mp_print_t *print, mp_obj_t self_in, mp_print_k
     mp_printf(print, "<%q object at %p>", mp_obj_get_type_qstr(self_in), self);
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static mp_obj_t mp_obj_instance_make_new_inner(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args);
 static mp_obj_t mp_obj_instance_make_new(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+    PROF_BEGIN(PROF_INSTANCE_NEW);
+    mp_obj_t _r = mp_obj_instance_make_new_inner(self, n_args, n_kw, args);
+    PROF_END(PROF_INSTANCE_NEW);
+    return _r;
+}
+static mp_obj_t mp_obj_instance_make_new_inner(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+#else
+static mp_obj_t mp_obj_instance_make_new(const mp_obj_type_t *self, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+#endif
     assert(mp_obj_is_instance_type(self));
 
     // look for __new__ function

@@ -39,6 +39,10 @@
 #include "py/bc0.h"
 #include "py/profile.h"
 
+// CIRCUITPY-CHANGE: per-opcode cycle accounting, in the profiling build only.
+#include "supervisor/prof.h"
+#define VM_PROF_STAMP(next) PROF_OP_STAMP(next)
+
 // *FORMAT-OFF*
 
 #if MICROPY_OPT_VM_MAP_CACHE_PROBE && !MICROPY_OPT_MAP_LOOKUP_CACHE
@@ -426,6 +430,7 @@ static mp_vm_return_kind_t mp_execute_bytecode_loop(mp_code_state_t *code_state,
     #define ONE_TRUE_DISPATCH() one_true_dispatch : do { \
         TRACE(ip); \
         MARK_EXC_IP_GLOBAL(); \
+        VM_PROF_STAMP(*ip); \
         goto *(void *)((char *) && entry_MP_BC_LOAD_CONST_FALSE + entry_table[*ip++]); \
 } while (0)
     #define DISPATCH() do { goto one_true_dispatch; } while (0)
@@ -435,6 +440,7 @@ static mp_vm_return_kind_t mp_execute_bytecode_loop(mp_code_state_t *code_state,
         TRACE(ip); \
         MARK_EXC_IP_GLOBAL(); \
         TRACE_TICK(ip, sp, false); \
+        VM_PROF_STAMP(*ip); \
         goto *entry_table[*ip++]; \
 } while (0)
     #endif

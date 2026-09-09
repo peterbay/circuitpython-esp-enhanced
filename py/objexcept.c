@@ -37,6 +37,7 @@
 #include "py/runtime.h"
 #include "py/gc.h"
 #include "py/mperrno.h"
+#include "supervisor/prof.h"
 
 #if MICROPY_ROM_TEXT_COMPRESSION && !defined(NO_QSTR)
 // Extract the MP_MAX_UNCOMPRESSED_TEXT_LEN macro from "genhdr/compressed.data.h".
@@ -641,7 +642,18 @@ void mp_obj_exception_clear_traceback(mp_obj_t self_in) {
 }
 
 // CIRCUITPY-CHANGE: many changes for tracebacks
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static void mp_obj_exception_add_traceback_inner(mp_obj_t self_in, qstr file, size_t line, qstr block);
 void mp_obj_exception_add_traceback(mp_obj_t self_in, qstr file, size_t line, qstr block) {
+    PROF_BEGIN(PROF_EXC_TRACEBACK);
+    mp_obj_exception_add_traceback_inner(self_in, file, line, block);
+    PROF_END(PROF_EXC_TRACEBACK);
+}
+static void mp_obj_exception_add_traceback_inner(mp_obj_t self_in, qstr file, size_t line, qstr block) {
+#else
+void mp_obj_exception_add_traceback(mp_obj_t self_in, qstr file, size_t line, qstr block) {
+#endif
     mp_obj_exception_t *self = mp_obj_exception_get_native(self_in);
 
     // append this traceback info to traceback data

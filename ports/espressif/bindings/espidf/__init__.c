@@ -261,6 +261,12 @@ static mp_obj_t espidf_prof_stats(void) {
             mp_obj_new_str(prof_names[i], strlen(prof_names[i])),
             mp_obj_new_tuple(2, pair));
     }
+    // The two counters the name caches are validated by, as (count, 0), so that
+    // a workload can show how often it moves them.
+    mp_obj_t scope[2] = { mp_obj_new_int_from_uint(mp_scope_mutation_count), MP_OBJ_NEW_SMALL_INT(0) };
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_scope_mutations), mp_obj_new_tuple(2, scope));
+    mp_obj_t map[2] = { mp_obj_new_int_from_uint(mp_map_mutation_count), MP_OBJ_NEW_SMALL_INT(0) };
+    mp_obj_dict_store(result, MP_OBJ_NEW_QSTR(MP_QSTR_map_mutations), mp_obj_new_tuple(2, map));
     #endif
     return result;
 }
@@ -277,6 +283,29 @@ static mp_obj_t espidf_prof_reset(void) {
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_0(espidf_prof_reset_obj, espidf_prof_reset);
+
+//| def prof_opcodes() -> bytes:
+//|     """Per-opcode accounting of the interpreter loop as 256 records of three
+//|     little endian 32-bit words: dispatch count, cycles low, cycles high. Empty
+//|     unless the firmware was built with ``CIRCUITPY_PROF=1``."""
+//|
+//|
+static mp_obj_t espidf_prof_opcodes(void) {
+    #if CIRCUITPY_PROF
+    uint32_t *buf = m_malloc(256 * 3 * sizeof(uint32_t));
+    for (size_t i = 0; i < 256; i++) {
+        buf[3 * i] = prof_op_count[i];
+        buf[3 * i + 1] = (uint32_t)prof_op_cycles[i];
+        buf[3 * i + 2] = (uint32_t)(prof_op_cycles[i] >> 32);
+    }
+    mp_obj_t result = mp_obj_new_bytes((const byte *)buf, 256 * 3 * sizeof(uint32_t));
+    m_free(buf);
+    return result;
+    #else
+    return mp_const_empty_bytes;
+    #endif
+}
+MP_DEFINE_CONST_FUN_OBJ_0(espidf_prof_opcodes_obj, espidf_prof_opcodes);
 
 //| def profiler_start(hz: int = 2000) -> bool:
 //|     """Start sampling the program counter of the calling task."""
@@ -2948,6 +2977,7 @@ static const mp_rom_map_elem_t espidf_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_task_stats), MP_ROM_PTR(&espidf_task_stats_obj)},
     { MP_ROM_QSTR(MP_QSTR_prof_stats), MP_ROM_PTR(&espidf_prof_stats_obj)},
     { MP_ROM_QSTR(MP_QSTR_prof_reset), MP_ROM_PTR(&espidf_prof_reset_obj)},
+    { MP_ROM_QSTR(MP_QSTR_prof_opcodes), MP_ROM_PTR(&espidf_prof_opcodes_obj)},
     { MP_ROM_QSTR(MP_QSTR_profiler_start), MP_ROM_PTR(&espidf_profiler_start_obj)},
     { MP_ROM_QSTR(MP_QSTR_profiler_stop), MP_ROM_PTR(&espidf_profiler_stop_obj)},
     { MP_ROM_QSTR(MP_QSTR_profiler_data), MP_ROM_PTR(&espidf_profiler_data_obj)},

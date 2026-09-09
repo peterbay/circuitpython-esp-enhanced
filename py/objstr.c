@@ -34,6 +34,7 @@
 #include "py/runtime.h"
 #include "py/cstack.h"
 #include "py/objtuple.h"
+#include "supervisor/prof.h"
 
 // CIRCUITPY-CHANGE
 const char nibble_to_hex_upper[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
@@ -1503,7 +1504,19 @@ static vstr_t mp_obj_str_format_helper(const char *str, const char *top, int *ar
     return vstr;
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static mp_obj_t mp_obj_str_format_inner(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs);
 mp_obj_t mp_obj_str_format(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+    PROF_BEGIN(PROF_STR_FORMAT);
+    mp_obj_t _r = mp_obj_str_format_inner(n_args, args, kwargs);
+    PROF_END(PROF_STR_FORMAT);
+    return _r;
+}
+static mp_obj_t mp_obj_str_format_inner(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+#else
+mp_obj_t mp_obj_str_format(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+#endif
     check_is_str_or_bytes(args[0]);
 
     GET_STR_DATA_LEN(args[0], str, len);

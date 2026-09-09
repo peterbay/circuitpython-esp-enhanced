@@ -34,6 +34,7 @@
 #include "supervisor/shared/reload.h"
 #include "supervisor/shared/safe_mode.h"
 #include "supervisor/shared/serial.h"
+#include "supervisor/prof.h"
 #include "supervisor/shared/stack.h"
 #include "supervisor/shared/status_leds.h"
 #include "supervisor/shared/tick.h"
@@ -1155,10 +1156,17 @@ int __attribute__((used)) main(void) {
 }
 
 void gc_collect(void) {
+    // CIRCUITPY-CHANGE: probes for the profiling build, see supervisor/prof.h.
+    PROF_BEGIN(PROF_GC_COLLECT);
+    PROF_BEGIN(PROF_GC_ROOTS);
     gc_collect_start();
+    PROF_END(PROF_GC_ROOTS);
 
+    PROF_BEGIN(PROF_GC_CSTACK);
     gc_helper_collect_regs_and_stack();
+    PROF_END(PROF_GC_CSTACK);
 
+    PROF_BEGIN(PROF_GC_PORT);
     // This collects root pointers from the VFS mount table. Some of them may
     // have lost their references in the VM even though they are mounted.
     gc_collect_root((void **)&MP_STATE_VM(vfs_mount_table), sizeof(mp_vfs_mount_t) / sizeof(mp_uint_t));
@@ -1190,8 +1198,12 @@ void gc_collect(void) {
     #if CIRCUITPY_WIFI
     common_hal_wifi_gc_collect();
     #endif
+    PROF_END(PROF_GC_PORT);
 
+    PROF_BEGIN(PROF_GC_SWEEP);
     gc_collect_end();
+    PROF_END(PROF_GC_SWEEP);
+    PROF_END(PROF_GC_COLLECT);
 }
 
 size_t gc_get_max_new_split(void) {

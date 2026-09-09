@@ -46,6 +46,7 @@
 #include "supervisor/shared/safe_mode.h"
 
 #include "supervisor/shared/serial.h"
+#include "supervisor/prof.h"
 
 #if CIRCUITPY_MEMORYMONITOR
 #include "shared-module/memorymonitor/__init__.h"
@@ -749,6 +750,8 @@ void gc_collect_end(void) {
 
 static void gc_deal_with_stack_overflow(void) {
     while (MP_STATE_MEM(gc_stack_overflow)) {
+        // CIRCUITPY-CHANGE: probe for the profiling build; one call per rescan round.
+        PROF_BEGIN(PROF_GC_RESCAN);
         MP_STATE_MEM(gc_stack_overflow) = 0;
 
         // scan entire memory looking for blocks which have been marked but not their children
@@ -768,6 +771,7 @@ static void gc_deal_with_stack_overflow(void) {
                 }
             }
         }
+        PROF_END(PROF_GC_RESCAN);
     }
 }
 
@@ -979,7 +983,19 @@ bool gc_alloc_possible(void) {
     return MP_STATE_MEM(area).gc_pool_start != 0;
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static void *gc_alloc_inner(size_t n_bytes, unsigned int alloc_flags);
 void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
+    PROF_BEGIN(PROF_GC_ALLOC);
+    void *_r = gc_alloc_inner(n_bytes, alloc_flags);
+    PROF_END(PROF_GC_ALLOC);
+    return _r;
+}
+static void *gc_alloc_inner(size_t n_bytes, unsigned int alloc_flags) {
+#else
+void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
+#endif
     bool has_finaliser = alloc_flags & GC_ALLOC_FLAG_HAS_FINALISER;
     size_t n_blocks = ((n_bytes + BYTES_PER_BLOCK - 1) & (~(BYTES_PER_BLOCK - 1))) / BYTES_PER_BLOCK;
     DEBUG_printf("gc_alloc(" UINT_FMT " bytes -> " UINT_FMT " blocks)\n", n_bytes, n_blocks);

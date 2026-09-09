@@ -20,7 +20,35 @@ const char *const prof_names[PROF_COUNT] = {
     "area_setup",
     "chunk_bus",
     "gc_collect",
+    "gc_alloc",
+    "class_lookup",
+    "map_lookup",
+    "load_method",
+    "load_attr",
+    "store_attr",
+    "binary_op",
+    "setup_code_state",
+    "call_n_kw",
+    "instance_new",
+    "int_binary_op",
+    "float_binary_op",
+    "str_format",
+    "exc_traceback",
+    "qstr_find",
+    "getiter",
+    "iternext",
+    "gc_roots",
+    "gc_cstack",
+    "gc_port",
+    "gc_sweep",
+    "gc_rescan",
+    "class_cache_hit",
 };
+
+uint32_t prof_op_count[256];
+uint64_t prof_op_cycles[256];
+uint32_t prof_op_last;
+uint8_t prof_op_cur;
 
 // Reading the cycle counter is a single instruction, so a probe pair costs about
 // as much as the two additions that follow it.
@@ -33,6 +61,11 @@ void prof_reset(void) {
         prof_cycles[i] = 0;
         prof_calls[i] = 0;
     }
+    for (size_t i = 0; i < 256; i++) {
+        prof_op_count[i] = 0;
+        prof_op_cycles[i] = 0;
+    }
+    prof_op_last = prof_now();
 }
 
 // --- statistical sampling profiler ------------------------------------------

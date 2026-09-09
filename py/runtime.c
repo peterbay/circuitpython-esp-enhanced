@@ -56,6 +56,7 @@
 #if CIRCUITPY_WARNINGS
 #include "shared-module/warnings/__init__.h"
 #endif
+#include "supervisor/prof.h"
 
 #if MICROPY_DEBUG_VERBOSE // print debugging info
 #define DEBUG_PRINT (1)
@@ -442,7 +443,19 @@ mp_obj_t mp_unary_op(mp_unary_op_t op, mp_obj_t arg) {
     }
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static mp_obj_t mp_binary_op_inner(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs);
 mp_obj_t MICROPY_WRAP_MP_BINARY_OP(mp_binary_op)(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
+    PROF_BEGIN(PROF_BINARY_OP);
+    mp_obj_t _r = mp_binary_op_inner(op, lhs, rhs);
+    PROF_END(PROF_BINARY_OP);
+    return _r;
+}
+static mp_obj_t mp_binary_op_inner(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
+#else
+mp_obj_t MICROPY_WRAP_MP_BINARY_OP(mp_binary_op)(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
+#endif
     DEBUG_OP_printf("binary " UINT_FMT " %q %p %p\n", op, mp_binary_op_method_name[op], lhs, rhs);
 
     // TODO correctly distinguish inplace operators for mutable objects
@@ -769,7 +782,19 @@ mp_obj_t mp_call_function_2(mp_obj_t fun, mp_obj_t arg1, mp_obj_t arg2) {
 }
 
 // args contains, eg: arg0  arg1  key0  value0  key1  value1
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static mp_obj_t mp_call_function_n_kw_inner(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args);
 mp_obj_t mp_call_function_n_kw(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+    PROF_BEGIN(PROF_CALL_N_KW);
+    mp_obj_t _r = mp_call_function_n_kw_inner(fun_in, n_args, n_kw, args);
+    PROF_END(PROF_CALL_N_KW);
+    return _r;
+}
+static mp_obj_t mp_call_function_n_kw_inner(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+#else
+mp_obj_t mp_call_function_n_kw(mp_obj_t fun_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+#endif
     // TODO improve this: fun object can specify its type and we parse here the arguments,
     // passing to the function arrays of fixed and keyword arguments
 
@@ -1127,7 +1152,19 @@ too_short:
     #endif
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static mp_obj_t mp_load_attr_inner(mp_obj_t base, qstr attr);
 mp_obj_t mp_load_attr(mp_obj_t base, qstr attr) {
+    PROF_BEGIN(PROF_LOAD_ATTR);
+    mp_obj_t _r = mp_load_attr_inner(base, attr);
+    PROF_END(PROF_LOAD_ATTR);
+    return _r;
+}
+static mp_obj_t mp_load_attr_inner(mp_obj_t base, qstr attr) {
+#else
+mp_obj_t mp_load_attr(mp_obj_t base, qstr attr) {
+#endif
     DEBUG_OP_printf("load attr %p.%s\n", base, qstr_str(attr));
     // use load_method
     mp_obj_t dest[2];
@@ -1335,7 +1372,18 @@ void mp_load_method_maybe(mp_obj_t obj, qstr attr, mp_obj_t *dest) {
     }
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static void mp_load_method_inner(mp_obj_t base, qstr attr, mp_obj_t *dest);
 void mp_load_method(mp_obj_t base, qstr attr, mp_obj_t *dest) {
+    PROF_BEGIN(PROF_LOAD_METHOD);
+    mp_load_method_inner(base, attr, dest);
+    PROF_END(PROF_LOAD_METHOD);
+}
+static void mp_load_method_inner(mp_obj_t base, qstr attr, mp_obj_t *dest) {
+#else
+void mp_load_method(mp_obj_t base, qstr attr, mp_obj_t *dest) {
+#endif
     DEBUG_OP_printf("load method %p.%s\n", base, qstr_str(attr));
 
     mp_load_method_maybe(base, attr, dest);
@@ -1389,7 +1437,18 @@ void mp_load_method_protected(mp_obj_t obj, qstr attr, mp_obj_t *dest, bool catc
     }
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static void mp_store_attr_inner(mp_obj_t base, qstr attr, mp_obj_t value);
 void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
+    PROF_BEGIN(PROF_STORE_ATTR);
+    mp_store_attr_inner(base, attr, value);
+    PROF_END(PROF_STORE_ATTR);
+}
+static void mp_store_attr_inner(mp_obj_t base, qstr attr, mp_obj_t value) {
+#else
+void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
+#endif
     DEBUG_OP_printf("store attr %p.%s <- %p\n", base, qstr_str(attr), value);
     const mp_obj_type_t *type = mp_obj_get_type(base);
     if (MP_OBJ_TYPE_HAS_SLOT(type, attr)) {
@@ -1448,7 +1507,19 @@ void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
     #endif
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static mp_obj_t mp_getiter_inner(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf);
 mp_obj_t mp_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
+    PROF_BEGIN(PROF_GETITER);
+    mp_obj_t _r = mp_getiter_inner(o_in, iter_buf);
+    PROF_END(PROF_GETITER);
+    return _r;
+}
+static mp_obj_t mp_getiter_inner(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
+#else
+mp_obj_t mp_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
+#endif
     assert(o_in);
     const mp_obj_type_t *type = mp_obj_get_type(o_in);
 
@@ -1540,7 +1611,19 @@ mp_obj_t mp_iternext_allow_raise(mp_obj_t o_in) {
 
 // will always return MP_OBJ_STOP_ITERATION instead of raising StopIteration() (or any subclass thereof)
 // may raise other exceptions
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static mp_obj_t mp_iternext_inner(mp_obj_t o_in);
 mp_obj_t mp_iternext(mp_obj_t o_in) {
+    PROF_BEGIN(PROF_ITERNEXT);
+    mp_obj_t _r = mp_iternext_inner(o_in);
+    PROF_END(PROF_ITERNEXT);
+    return _r;
+}
+static mp_obj_t mp_iternext_inner(mp_obj_t o_in) {
+#else
+mp_obj_t mp_iternext(mp_obj_t o_in) {
+#endif
     mp_cstack_check(); // enumerate, filter, map and zip can recursively call mp_iternext
     const mp_obj_type_t *type = mp_obj_get_type(o_in);
     if (TYPE_HAS_ITERNEXT(type)) {

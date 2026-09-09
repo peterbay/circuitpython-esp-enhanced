@@ -36,6 +36,7 @@
 #if MICROPY_PY_BUILTINS_FLOAT
 #include <math.h>
 #endif
+#include "supervisor/prof.h"
 
 #if MICROPY_LONGINT_IMPL == MICROPY_LONGINT_IMPL_MPZ
 
@@ -179,7 +180,19 @@ mp_obj_t mp_obj_int_unary_op(mp_unary_op_t op, mp_obj_t o_in) {
     }
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static mp_obj_t mp_obj_int_binary_op_inner(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in);
 mp_obj_t mp_obj_int_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
+    PROF_BEGIN(PROF_INT_BINARY_OP);
+    mp_obj_t _r = mp_obj_int_binary_op_inner(op, lhs_in, rhs_in);
+    PROF_END(PROF_INT_BINARY_OP);
+    return _r;
+}
+static mp_obj_t mp_obj_int_binary_op_inner(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
+#else
+mp_obj_t mp_obj_int_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
+#endif
     const mpz_t *zlhs;
     const mpz_t *zrhs;
     mpz_t z_int;

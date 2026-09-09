@@ -32,6 +32,7 @@
 #include "py/qstr.h"
 #include "py/gc.h"
 #include "py/runtime.h"
+#include "supervisor/prof.h"
 
 #if MICROPY_DEBUG_VERBOSE // print debugging info
 #define DEBUG_printf DEBUG_printf
@@ -303,7 +304,19 @@ static qstr qstr_add(mp_uint_t len, const char *q_ptr) {
     return MP_STATE_VM(last_pool)->total_prev_len + at;
 }
 
+// CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
+#if CIRCUITPY_PROF
+static qstr qstr_find_strn_inner(const char *str, size_t str_len);
 qstr qstr_find_strn(const char *str, size_t str_len) {
+    PROF_BEGIN(PROF_QSTR_FIND);
+    qstr _r = qstr_find_strn_inner(str, str_len);
+    PROF_END(PROF_QSTR_FIND);
+    return _r;
+}
+static qstr qstr_find_strn_inner(const char *str, size_t str_len) {
+#else
+qstr qstr_find_strn(const char *str, size_t str_len) {
+#endif
     if (str_len == 0) {
         // strncmp behaviour is undefined for str==NULL.
         return MP_QSTR_;
