@@ -801,7 +801,7 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(array_decode_obj, 1, 3, array_decode);
 
 
 #if MICROPY_PY_BUILTINS_BYTEARRAY
-static const mp_rom_map_elem_t bytearray_locals_dict_table[] = {
+static const mp_rom_map_elem_t PLACE_IN_DTCM_DATA(bytearray_locals_dict_table[]) = {
     { MP_ROM_QSTR(MP_QSTR_append), MP_ROM_PTR(&mp_obj_array_append_obj) },
     { MP_ROM_QSTR(MP_QSTR_extend), MP_ROM_PTR(&mp_obj_array_extend_obj) },
 
@@ -815,7 +815,7 @@ static const mp_rom_map_elem_t bytearray_locals_dict_table[] = {
     #endif
 };
 
-MP_DEFINE_CONST_DICT(bytearray_locals_dict, bytearray_locals_dict_table);
+MP_DEFINE_CONST_DICT(PLACE_IN_DTCM_DATA(bytearray_locals_dict), bytearray_locals_dict_table);
 #endif
 
 
@@ -837,7 +837,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
 
 #if MICROPY_PY_BUILTINS_BYTEARRAY
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_bytearray,
+    PLACE_IN_DTCM_DATA(mp_type_bytearray),
     MP_QSTR_bytearray,
     MP_TYPE_FLAG_EQ_CHECKS_OTHER_TYPE | MP_TYPE_FLAG_ITER_IS_GETITER | MP_TYPE_FLAG_SUBSCR_ALLOWS_STACK_SLICE,
     make_new, bytearray_make_new,
@@ -876,7 +876,7 @@ MP_DEFINE_CONST_DICT(memoryview_locals_dict, memoryview_locals_dict_table);
 #endif
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_memoryview,
+    PLACE_IN_DTCM_DATA(mp_type_memoryview),
     MP_QSTR_memoryview,
     MP_TYPE_FLAG_EQ_CHECKS_OTHER_TYPE | MP_TYPE_FLAG_ITER_IS_GETITER | MP_TYPE_FLAG_SUBSCR_ALLOWS_STACK_SLICE,
     make_new, memoryview_make_new,

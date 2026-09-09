@@ -2143,7 +2143,7 @@ void mp_obj_str_set_data(mp_obj_str_t *str, const byte *data, size_t len) {
 
 // This locals table is used for the following types: str, bytes, bytearray, array.array.
 // Each type takes a different section (start to end offset) of this table.
-static const mp_rom_map_elem_t array_bytearray_str_bytes_locals_table[] = {
+static const mp_rom_map_elem_t PLACE_IN_DTCM_DATA(array_bytearray_str_bytes_locals_table[]) = {
     #if MICROPY_PY_ARRAY || MICROPY_PY_BUILTINS_BYTEARRAY
     { MP_ROM_QSTR(MP_QSTR_append), MP_ROM_PTR(&mp_obj_array_append_obj) },
     { MP_ROM_QSTR(MP_QSTR_extend), MP_ROM_PTR(&mp_obj_array_extend_obj) },
@@ -2213,20 +2213,20 @@ static const mp_rom_map_elem_t array_bytearray_str_bytes_locals_table[] = {
 #define TABLE_ENTRIES_ARRAY 0
 #endif
 
-MP_DEFINE_CONST_DICT_WITH_SIZE(mp_obj_str_locals_dict,
+MP_DEFINE_CONST_DICT_WITH_SIZE(PLACE_IN_DTCM_DATA(mp_obj_str_locals_dict),
     array_bytearray_str_bytes_locals_table + TABLE_ENTRIES_ARRAY + TABLE_ENTRIES_HEX + TABLE_ENTRIES_COMPAT,
     MP_ARRAY_SIZE(array_bytearray_str_bytes_locals_table) - (TABLE_ENTRIES_ARRAY + TABLE_ENTRIES_HEX + TABLE_ENTRIES_COMPAT));
 
 #if TABLE_ENTRIES_COMPAT == 0
 #define mp_obj_bytes_locals_dict mp_obj_str_locals_dict
 #else
-MP_DEFINE_CONST_DICT_WITH_SIZE(mp_obj_bytes_locals_dict,
+MP_DEFINE_CONST_DICT_WITH_SIZE(PLACE_IN_DTCM_DATA(mp_obj_bytes_locals_dict),
     array_bytearray_str_bytes_locals_table + TABLE_ENTRIES_ARRAY,
     MP_ARRAY_SIZE(array_bytearray_str_bytes_locals_table) - (TABLE_ENTRIES_ARRAY + TABLE_ENTRIES_COMPAT));
 #endif
 
 #if MICROPY_PY_BUILTINS_BYTEARRAY
-MP_DEFINE_CONST_DICT_WITH_SIZE(mp_obj_bytearray_locals_dict,
+MP_DEFINE_CONST_DICT_WITH_SIZE(PLACE_IN_DTCM_DATA(mp_obj_bytearray_locals_dict),
     array_bytearray_str_bytes_locals_table,
     MP_ARRAY_SIZE(array_bytearray_str_bytes_locals_table) - TABLE_ENTRIES_COMPAT);
 #endif
@@ -2249,7 +2249,7 @@ static mp_obj_t mp_obj_new_str_iterator(mp_obj_t str, mp_obj_iter_buf_t *iter_bu
 
 // CIRCUITPY-CHANGE: Diagnose json.dump on invalid types
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_str,
+    PLACE_IN_DTCM_DATA(mp_type_str),
     MP_QSTR_str,
     MP_TYPE_FLAG_PRINT_JSON,
     make_new, mp_obj_str_make_new,
@@ -2264,7 +2264,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
 
 // Reuses most methods from str
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_bytes,
+    PLACE_IN_DTCM_DATA(mp_type_bytes),
     MP_QSTR_bytes,
     MP_TYPE_FLAG_NONE,
     make_new, bytes_make_new,

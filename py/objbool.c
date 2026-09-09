@@ -27,6 +27,7 @@
 #include <stdlib.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 
 #if MICROPY_OBJ_IMMEDIATE_OBJS
 
@@ -97,6 +98,6 @@ MP_DEFINE_CONST_OBJ_TYPE(
     );
 
 #if !MICROPY_OBJ_IMMEDIATE_OBJS
-const mp_obj_bool_t mp_const_false_obj = {{&mp_type_bool}, false};
-const mp_obj_bool_t mp_const_true_obj = {{&mp_type_bool}, true};
+const mp_obj_bool_t PLACE_IN_DTCM_DATA(mp_const_false_obj) = {{&mp_type_bool}, false};
+const mp_obj_bool_t PLACE_IN_DTCM_DATA(mp_const_true_obj) = {{&mp_type_bool}, true};
 #endif

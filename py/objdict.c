@@ -697,7 +697,7 @@ static mp_obj_t dict_getiter(mp_obj_t self_in, mp_obj_iter_buf_t *iter_buf) {
 /******************************************************************************/
 /* dict constructors & public C API                                           */
 
-static const mp_rom_map_elem_t dict_locals_dict_table[] = {
+static const mp_rom_map_elem_t PLACE_IN_DTCM_DATA(dict_locals_dict_table[]) = {
     { MP_ROM_QSTR(MP_QSTR_clear), MP_ROM_PTR(&dict_clear_obj) },
     { MP_ROM_QSTR(MP_QSTR_copy), MP_ROM_PTR(&dict_copy_obj) },
     #if MICROPY_PY_BUILTINS_DICT_FROMKEYS
@@ -720,11 +720,11 @@ static const mp_rom_map_elem_t dict_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR___delitem__), MP_ROM_PTR(&mp_op_delitem_obj) },
 };
 
-static MP_DEFINE_CONST_DICT(dict_locals_dict, dict_locals_dict_table);
+static MP_DEFINE_CONST_DICT(PLACE_IN_DTCM_DATA(dict_locals_dict), dict_locals_dict_table);
 
 // CIRCUITPY-CHANGE: Diagnose json.dump on invalid types
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_dict,
+    PLACE_IN_DTCM_DATA(mp_type_dict),
     MP_QSTR_dict,
     MP_TYPE_FLAG_ITER_IS_GETITER | MP_TYPE_FLAG_PRINT_JSON,
     make_new, mp_obj_dict_make_new,

@@ -601,7 +601,7 @@ static MP_DEFINE_CONST_DICT(int_locals_dict, int_locals_dict_table);
 
 // CIRCUITPY-CHANGE: Diagnose json.dump on invalid types
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_int,
+    PLACE_IN_DTCM_DATA(mp_type_int),
     MP_QSTR_int,
     MP_TYPE_FLAG_PRINT_JSON,
     make_new, mp_obj_int_make_new,

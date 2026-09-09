@@ -34,7 +34,13 @@
 // about 19 KB, so that they neither suffer from the aliasing nor cause it.
 // CIRCUITPY_HOT_CODE_IN_IRAM is 1 for the interpreter core (the first two
 // tiers) and 2 to add the runtime the libraries lean on (the third).
-#define PLACE_IN_DTCM_DATA(name) name
+// The same cache serves the constant data in flash, and the tables the
+// interpreter reads on every step -- the opcode dispatch table, the type
+// structs, the qstr hashes and lengths -- alias just like code does, and
+// a text pad does not move them (the rodata segment starts on a 64 KB
+// boundary). PLACE_IN_DTCM_DATA puts such a table in internal RAM, where
+// .dram1 is copied at boot; .bss is in internal RAM already.
+#define PLACE_IN_DTCM_DATA(name) name __attribute__((section(".dram1." #name)))
 #define PLACE_IN_DTCM_BSS(name) name
 #define PLACE_IN_ITCM(name) __attribute__((section(".iram1." #name), noinline)) name
 #define PLACE_IN_HOT_CODE(name) PLACE_IN_ITCM(name)

@@ -544,7 +544,7 @@ static const mp_rom_map_elem_t set_locals_dict_table[] = {
 static MP_DEFINE_CONST_DICT(set_locals_dict, set_locals_dict_table);
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_set,
+    PLACE_IN_DTCM_DATA(mp_type_set),
     MP_QSTR_set,
     MP_TYPE_FLAG_ITER_IS_GETITER,
     make_new, set_make_new,

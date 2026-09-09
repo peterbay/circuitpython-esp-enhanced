@@ -84,7 +84,7 @@ size_t PLACE_IN_WARM_CODE(qstr_compute_hash)(const byte *data, size_t len) {
 // contains additional qstrs that must have IDs <256, see unsorted_qstr_list
 // in makeqstrdata.py.
 #if MICROPY_QSTR_BYTES_IN_HASH
-const qstr_hash_t mp_qstr_const_hashes_static[] = {
+const qstr_hash_t PLACE_IN_DTCM_DATA(mp_qstr_const_hashes_static[]) = {
     #ifndef NO_QSTR
 #define QDEF0(id, hash, len, str) hash,
 #define QDEF1(id, hash, len, str)
@@ -99,7 +99,7 @@ const qstr_hash_t mp_qstr_const_hashes_static[] = {
 };
 #endif
 
-const qstr_len_t mp_qstr_const_lengths_static[] = {
+const qstr_len_t PLACE_IN_DTCM_DATA(mp_qstr_const_lengths_static[]) = {
     #ifndef NO_QSTR
 #define QDEF0(id, hash, len, str) len,
 #define QDEF1(id, hash, len, str)
@@ -141,7 +141,7 @@ const qstr_pool_t mp_qstr_const_pool_static = {
 // The next pool is the remainder of the qstrs defined in the firmware. This
 // is sorted.
 #if MICROPY_QSTR_BYTES_IN_HASH
-const qstr_hash_t mp_qstr_const_hashes[] = {
+const qstr_hash_t PLACE_IN_DTCM_DATA(mp_qstr_const_hashes[]) = {
     #ifndef NO_QSTR
 #define QDEF0(id, hash, len, str)
 #define QDEF1(id, hash, len, str) hash,
@@ -156,7 +156,7 @@ const qstr_hash_t mp_qstr_const_hashes[] = {
 };
 #endif
 
-const qstr_len_t mp_qstr_const_lengths[] = {
+const qstr_len_t PLACE_IN_DTCM_DATA(mp_qstr_const_lengths[]) = {
     #ifndef NO_QSTR
 #define QDEF0(id, hash, len, str)
 #define QDEF1(id, hash, len, str) len,

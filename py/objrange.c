@@ -57,7 +57,7 @@ static mp_obj_t PLACE_IN_WARM_CODE(range_it_iternext)(mp_obj_t o_in) {
 }
 
 static MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_range_it,
+    PLACE_IN_DTCM_DATA(mp_type_range_it),
     MP_QSTR_iterator,
     MP_TYPE_FLAG_ITER_IS_ITERNEXT,
     iter, range_it_iternext
@@ -223,7 +223,7 @@ static void range_attr(mp_obj_t o_in, qstr attr, mp_obj_t *dest) {
 #endif
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_range,
+    PLACE_IN_DTCM_DATA(mp_type_range),
     MP_QSTR_range,
     MP_TYPE_FLAG_NONE,
     make_new, range_make_new,

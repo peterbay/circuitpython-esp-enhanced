@@ -94,7 +94,7 @@ static mp_obj_t gen_wrap_call(mp_obj_t self_in, size_t n_args, size_t n_kw, cons
 #endif
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_gen_wrap,
+    PLACE_IN_DTCM_DATA(mp_type_gen_wrap),
     MP_QSTR_generator,
     MP_TYPE_FLAG_BINDS_SELF,
     GEN_WRAP_TYPE_ATTR
@@ -438,7 +438,7 @@ static const mp_rom_map_elem_t gen_instance_locals_dict_table[] = {
 static MP_DEFINE_CONST_DICT(gen_instance_locals_dict, gen_instance_locals_dict_table);
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_gen_instance,
+    PLACE_IN_DTCM_DATA(mp_type_gen_instance),
     MP_QSTR_generator,
     MP_TYPE_FLAG_ITER_IS_ITERNEXT,
     print, gen_instance_print,

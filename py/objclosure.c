@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include "py/obj.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 
 typedef struct _mp_obj_closure_t {
@@ -105,7 +106,7 @@ static void mp_obj_closure_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
 #endif
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_closure,
+    PLACE_IN_DTCM_DATA(mp_type_closure),
     MP_QSTR_closure,
     MP_TYPE_FLAG_BINDS_SELF,
     CLOSURE_TYPE_ATTR

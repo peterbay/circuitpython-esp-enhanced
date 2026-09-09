@@ -61,7 +61,7 @@ static mp_obj_t PLACE_IN_ITCM(fun_builtin_0_call)(mp_obj_t self_in, size_t n_arg
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_fun_builtin_0, MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
+    PLACE_IN_DTCM_DATA(mp_type_fun_builtin_0), MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
     call, fun_builtin_0_call
     );
 
@@ -74,7 +74,7 @@ static mp_obj_t PLACE_IN_ITCM(fun_builtin_1_call)(mp_obj_t self_in, size_t n_arg
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_fun_builtin_1, MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
+    PLACE_IN_DTCM_DATA(mp_type_fun_builtin_1), MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
     call, fun_builtin_1_call
     );
 
@@ -87,7 +87,7 @@ static mp_obj_t PLACE_IN_ITCM(fun_builtin_2_call)(mp_obj_t self_in, size_t n_arg
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_fun_builtin_2, MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
+    PLACE_IN_DTCM_DATA(mp_type_fun_builtin_2), MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
     call, fun_builtin_2_call
     );
 
@@ -100,7 +100,7 @@ static mp_obj_t PLACE_IN_ITCM(fun_builtin_3_call)(mp_obj_t self_in, size_t n_arg
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_fun_builtin_3, MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
+    PLACE_IN_DTCM_DATA(mp_type_fun_builtin_3), MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
     call, fun_builtin_3_call
     );
 
@@ -130,7 +130,7 @@ static mp_obj_t PLACE_IN_WARM_CODE(fun_builtin_var_call)(mp_obj_t self_in, size_
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_fun_builtin_var, MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
+    PLACE_IN_DTCM_DATA(mp_type_fun_builtin_var), MP_QSTR_function, MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN,
     call, fun_builtin_var_call
     );
 
@@ -476,7 +476,7 @@ void mp_obj_fun_bc_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
 #endif
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_fun_bc,
+    PLACE_IN_DTCM_DATA(mp_type_fun_bc),
     MP_QSTR_function,
     MP_TYPE_FLAG_BINDS_SELF,
     FUN_BC_MAKE_NEW

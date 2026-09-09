@@ -29,6 +29,7 @@
 
 // CIRCUITPY-CHANGE
 #include "py/nlr.h"
+#include "supervisor/linker.h"
 #include "py/objproperty.h"
 #include "py/runtime.h"
 
@@ -95,7 +96,7 @@ static const mp_rom_map_elem_t property_locals_dict_table[] = {
 static MP_DEFINE_CONST_DICT(property_locals_dict, property_locals_dict_table);
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_property,
+    PLACE_IN_DTCM_DATA(mp_type_property),
     MP_QSTR_property,
     MP_TYPE_FLAG_NONE,
     make_new, property_make_new,

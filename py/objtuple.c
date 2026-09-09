@@ -233,7 +233,7 @@ static MP_DEFINE_CONST_DICT(tuple_locals_dict, tuple_locals_dict_table);
 
 // CIRCUITPY-CHANGE: Diagnose json.dump on invalid types
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_tuple,
+    PLACE_IN_DTCM_DATA(mp_type_tuple),
     MP_QSTR_tuple,
     MP_TYPE_FLAG_ITER_IS_GETITER | MP_TYPE_FLAG_PRINT_JSON,
     make_new, mp_obj_tuple_make_new,
@@ -246,7 +246,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
     );
 
 // the zero-length tuple
-const mp_obj_tuple_t mp_const_empty_tuple_obj = {{&mp_type_tuple}, 0};
+const mp_obj_tuple_t PLACE_IN_DTCM_DATA(mp_const_empty_tuple_obj) = {{&mp_type_tuple}, 0};
 
 // CIRCUITPY-CHANGE: No change here, but implementation was copied for
 // mp_obj_new_port_tuple in supervisor/shared/port.c, which allocates using port_malloc().

@@ -113,7 +113,7 @@ static void PLACE_IN_HOT_CODE(module_attr)(mp_obj_t self_in, qstr attr, mp_obj_t
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_module,
+    PLACE_IN_DTCM_DATA(mp_type_module),
     MP_QSTR_module,
     MP_TYPE_FLAG_NONE,
     print, module_print,

@@ -1409,7 +1409,7 @@ static void type_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_type,
+    PLACE_IN_DTCM_DATA(mp_type_type),
     MP_QSTR_type,
     MP_TYPE_FLAG_NONE,
     make_new, type_make_new,
@@ -1709,7 +1709,7 @@ static void super_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_super,
+    PLACE_IN_DTCM_DATA(mp_type_super),
     MP_QSTR_super,
     MP_TYPE_FLAG_NONE,
     make_new, super_make_new,
@@ -1834,14 +1834,14 @@ static mp_obj_t static_class_method_make_new(const mp_obj_type_t *type, size_t n
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_staticmethod,
+    PLACE_IN_DTCM_DATA(mp_type_staticmethod),
     MP_QSTR_staticmethod,
     MP_TYPE_FLAG_NONE,
     make_new, static_class_method_make_new
     );
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_classmethod,
+    PLACE_IN_DTCM_DATA(mp_type_classmethod),
     MP_QSTR_classmethod,
     MP_TYPE_FLAG_NONE,
     make_new, static_class_method_make_new

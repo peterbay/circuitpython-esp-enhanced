@@ -28,6 +28,7 @@
 #include <assert.h>
 
 #include "py/obj.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 
 /******************************************************************************/
@@ -143,7 +144,7 @@ static MP_DEFINE_CONST_DICT(slice_locals_dict, slice_locals_dict_table);
 #endif
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_slice,
+    PLACE_IN_DTCM_DATA(mp_type_slice),
     MP_QSTR_slice,
     MP_TYPE_FLAG_NONE,
     unary_op, slice_unary_op,

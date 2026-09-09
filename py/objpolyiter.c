@@ -27,6 +27,7 @@
 #include <stdlib.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 
 // This is universal iterator type which calls "iternext" method stored in
 // particular object instance. (So, each instance of this time can have its
@@ -46,7 +47,7 @@ static mp_obj_t polymorph_it_iternext(mp_obj_t self_in) {
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_polymorph_iter,
+    PLACE_IN_DTCM_DATA(mp_type_polymorph_iter),
     MP_QSTR_iterator,
     MP_TYPE_FLAG_ITER_IS_ITERNEXT,
     iter, polymorph_it_iternext

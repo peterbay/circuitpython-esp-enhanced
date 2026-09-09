@@ -371,7 +371,7 @@ void mp_obj_exception_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
 }
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_BaseException,
+    PLACE_IN_DTCM_DATA(mp_type_BaseException),
     MP_QSTR_BaseException,
     MP_TYPE_FLAG_NONE,
     make_new, mp_obj_exception_make_new,

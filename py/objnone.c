@@ -27,6 +27,7 @@
 #include <stdlib.h>
 
 #include "py/obj.h"
+#include "supervisor/linker.h"
 
 #if !MICROPY_OBJ_IMMEDIATE_OBJS
 typedef struct _mp_obj_none_t {
@@ -45,12 +46,12 @@ static void none_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_
 
 // CIRCUITPY-CHANGE: Diagnose json.dump on invalid types
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_NoneType,
+    PLACE_IN_DTCM_DATA(mp_type_NoneType),
     MP_QSTR_NoneType,
     MP_TYPE_FLAG_PRINT_JSON,
     print, none_print
     );
 
 #if !MICROPY_OBJ_IMMEDIATE_OBJS
-const mp_obj_none_t mp_const_none_obj = {{&mp_type_NoneType}};
+const mp_obj_none_t PLACE_IN_DTCM_DATA(mp_const_none_obj) = {{&mp_type_NoneType}};
 #endif

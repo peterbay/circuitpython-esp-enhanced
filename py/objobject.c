@@ -27,6 +27,7 @@
 #include <stdlib.h>
 
 #include "py/objtype.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 
 typedef struct _mp_obj_object_t {
@@ -119,7 +120,7 @@ static MP_DEFINE_CONST_DICT(object_locals_dict, object_locals_dict_table);
 #endif
 
 MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_object,
+    PLACE_IN_DTCM_DATA(mp_type_object),
     MP_QSTR_object,
     MP_TYPE_FLAG_NONE,
     make_new, object_make_new
