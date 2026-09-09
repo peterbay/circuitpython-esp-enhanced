@@ -29,6 +29,7 @@
 #include <assert.h>
 
 #include "py/emitglue.h"
+#include "supervisor/linker.h"
 #include "py/objcode.h"
 #include "py/objtuple.h"
 #include "py/objfun.h"
@@ -103,7 +104,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
     call, fun_builtin_3_call
     );
 
-static mp_obj_t fun_builtin_var_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(fun_builtin_var_call)(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     assert(mp_obj_is_type(self_in, &mp_type_fun_builtin_var));
     mp_obj_fun_builtin_var_t *self = MP_OBJ_TO_PTR(self_in);
 

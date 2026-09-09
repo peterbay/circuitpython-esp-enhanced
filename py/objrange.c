@@ -27,6 +27,7 @@
 #include <stdlib.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 #include "py/smallint.h"
 
 /******************************************************************************/
@@ -39,7 +40,7 @@ typedef struct _mp_obj_range_it_t {
     mp_int_t step;
 } mp_obj_range_it_t;
 
-static mp_obj_t range_it_iternext(mp_obj_t o_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(range_it_iternext)(mp_obj_t o_in) {
     mp_obj_range_it_t *o = MP_OBJ_TO_PTR(o_in);
     if ((o->step > 0 && o->cur < o->stop) || (o->step < 0 && o->cur > o->stop)) {
         mp_int_t cur = o->cur;
@@ -93,7 +94,7 @@ static void range_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind
     }
 }
 
-static mp_obj_t range_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(range_make_new)(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 1, 3, false);
 
     mp_obj_range_t *o = mp_obj_malloc(mp_obj_range_t, type);
@@ -186,7 +187,7 @@ static mp_obj_t range_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     }
 }
 
-static mp_obj_t range_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
+static mp_obj_t PLACE_IN_WARM_CODE(range_getiter)(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
     mp_obj_range_t *o = MP_OBJ_TO_PTR(o_in);
     return mp_obj_new_range_iterator(o->start, o->stop, o->step, iter_buf);
 }

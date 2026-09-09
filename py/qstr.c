@@ -29,6 +29,7 @@
 #include <stdio.h>
 
 #include "py/mpstate.h"
+#include "supervisor/linker.h"
 #include "py/qstr.h"
 #include "py/gc.h"
 #include "py/runtime.h"
@@ -62,7 +63,7 @@
 #define MICROPY_ALLOC_QSTR_ENTRIES_INIT (10)
 
 // this must match the equivalent function in makeqstrdata.py
-size_t qstr_compute_hash(const byte *data, size_t len) {
+size_t PLACE_IN_WARM_CODE(qstr_compute_hash)(const byte *data, size_t len) {
     // djb2 algorithm; see http://www.cse.yorku.ca/~oz/hash.html
     size_t hash = 5381;
     for (const byte *top = data + len; data < top; data++) {
@@ -232,7 +233,7 @@ void qstr_init(void) {
     #endif
 }
 
-static const qstr_pool_t *find_qstr(qstr *q) {
+static const qstr_pool_t *PLACE_IN_WARM_CODE(find_qstr)(qstr *q) {
     // search pool for this qstr
     // total_prev_len==0 in the final pool, so the loop will always terminate
     const qstr_pool_t *pool = MP_STATE_VM(last_pool);
@@ -469,7 +470,7 @@ qstr qstr_from_strn_static(const char *str, size_t len) {
 }
 #endif
 
-mp_uint_t qstr_hash(qstr q) {
+mp_uint_t PLACE_IN_WARM_CODE(qstr_hash)(qstr q) {
     const qstr_pool_t *pool = find_qstr(&q);
     #if MICROPY_QSTR_BYTES_IN_HASH
     return pool->hashes[q];
@@ -478,7 +479,7 @@ mp_uint_t qstr_hash(qstr q) {
     #endif
 }
 
-size_t qstr_len(qstr q) {
+size_t PLACE_IN_WARM_CODE(qstr_len)(qstr q) {
     const qstr_pool_t *pool = find_qstr(&q);
     return pool->lengths[q];
 }
@@ -488,7 +489,7 @@ const char *qstr_str(qstr q) {
     return pool->qstrs[q];
 }
 
-const byte *qstr_data(qstr q, size_t *len) {
+const byte *PLACE_IN_WARM_CODE(qstr_data)(qstr q, size_t *len) {
     const qstr_pool_t *pool = find_qstr(&q);
     *len = pool->lengths[q];
     return (byte *)pool->qstrs[q];

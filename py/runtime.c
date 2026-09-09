@@ -1041,7 +1041,7 @@ mp_obj_t mp_call_method_n_kw_var(bool have_self, size_t n_args_n_kw, const mp_ob
 
 // unpacked items are stored in reverse order into the array pointed to by items
 // CIRCUITPY-CHANGE: noline
-MP_NOINLINE void mp_unpack_sequence(mp_obj_t seq_in, size_t num, mp_obj_t *items) {
+MP_NOINLINE void PLACE_IN_WARM_CODE(mp_unpack_sequence)(mp_obj_t seq_in, size_t num, mp_obj_t *items) {
     size_t seq_len;
     if (mp_obj_is_type(seq_in, &mp_type_tuple) || mp_obj_is_type(seq_in, &mp_type_list)) {
         mp_obj_t *seq_items;
@@ -1423,7 +1423,7 @@ void PLACE_IN_HOT_CODE(mp_load_method)(mp_obj_t base, qstr attr, mp_obj_t *dest)
 }
 
 // Acts like mp_load_method_maybe but catches AttributeError, and all other exceptions if requested
-void mp_load_method_protected(mp_obj_t obj, qstr attr, mp_obj_t *dest, bool catch_all_exc) {
+void PLACE_IN_WARM_CODE(mp_load_method_protected)(mp_obj_t obj, qstr attr, mp_obj_t *dest, bool catch_all_exc) {
     nlr_buf_t nlr;
     if (nlr_push(&nlr) == 0) {
         mp_load_method_maybe(obj, attr, dest);

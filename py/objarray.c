@@ -30,6 +30,7 @@
 #include <stdint.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 #include "py/binary.h"
 #include "py/objstr.h"
 #include "py/objarray.h"
@@ -177,7 +178,7 @@ static mp_obj_t array_construct(char typecode, mp_obj_t initializer) {
 #endif
 
 #if MICROPY_PY_ARRAY
-static mp_obj_t array_make_new(const mp_obj_type_t *type_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(array_make_new)(const mp_obj_type_t *type_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     (void)type_in;
     mp_arg_check_num(n_args, n_kw, 1, 2, false);
 
@@ -195,7 +196,7 @@ static mp_obj_t array_make_new(const mp_obj_type_t *type_in, size_t n_args, size
 #endif
 
 #if MICROPY_PY_BUILTINS_BYTEARRAY
-static mp_obj_t bytearray_make_new(const mp_obj_type_t *type_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(bytearray_make_new)(const mp_obj_type_t *type_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     (void)type_in;
     // Can take 2nd/3rd arg if constructs from str
     mp_arg_check_num(n_args, n_kw, 0, 3, false);
@@ -237,7 +238,7 @@ mp_obj_t mp_obj_new_memoryview(byte typecode, size_t nitems, void *items) {
     return MP_OBJ_FROM_PTR(self);
 }
 
-static mp_obj_t memoryview_make_new(const mp_obj_type_t *type_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(memoryview_make_new)(const mp_obj_type_t *type_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     (void)type_in;
 
     // TODO possibly allow memoryview constructor to take start/stop so that one
@@ -622,7 +623,7 @@ static mp_obj_t buffer_rindex(size_t n_args, const mp_obj_t *args) {
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(buffer_rindex_obj, 2, 4, buffer_rindex);
 #endif
 
-static mp_obj_t array_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t value) {
+static mp_obj_t PLACE_IN_WARM_CODE(array_subscr)(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t value) {
     if (value == MP_OBJ_NULL) {
         // delete item
         // TODO implement
@@ -762,7 +763,7 @@ static mp_obj_t array_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t value
     }
 }
 
-static mp_int_t array_get_buffer(mp_obj_t o_in, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
+static mp_int_t PLACE_IN_WARM_CODE(array_get_buffer)(mp_obj_t o_in, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
     mp_obj_array_t *o = MP_OBJ_TO_PTR(o_in);
     size_t sz = mp_binary_get_size('@', o->typecode & TYPECODE_MASK, NULL);
     bufinfo->buf = o->items;
@@ -896,7 +897,7 @@ size_t mp_obj_array_len(mp_obj_t self_in) {
 */
 
 #if MICROPY_PY_BUILTINS_BYTEARRAY
-mp_obj_t mp_obj_new_bytearray(size_t n, const void *items) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_bytearray)(size_t n, const void *items) {
     mp_obj_array_t *o = array_new(BYTEARRAY_TYPECODE, n);
     memcpy(o->items, items, n);
     return MP_OBJ_FROM_PTR(o);
@@ -910,7 +911,7 @@ mp_obj_t mp_obj_new_bytearray_of_zeros(size_t n) {
 }
 
 // Create bytearray which references specified memory area
-mp_obj_t mp_obj_new_bytearray_by_ref(size_t n, void *items) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_bytearray_by_ref)(size_t n, void *items) {
     mp_obj_array_t *o = mp_obj_malloc(mp_obj_array_t, &mp_type_bytearray);
     o->typecode = BYTEARRAY_TYPECODE;
     o->free = 0;

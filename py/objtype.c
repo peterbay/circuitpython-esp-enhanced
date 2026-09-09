@@ -119,7 +119,7 @@ static MP_DEFINE_CONST_FUN_OBJ_KW(native_base_init_wrapper_obj, 1, native_base_i
 #if !MICROPY_CPYTHON_COMPAT
 static
 #endif
-mp_obj_instance_t *mp_obj_new_instance(const mp_obj_type_t *class, const mp_obj_type_t **native_base) {
+mp_obj_instance_t *PLACE_IN_WARM_CODE(mp_obj_new_instance)(const mp_obj_type_t *class, const mp_obj_type_t **native_base) {
     size_t num_native_bases = instance_count_native_bases(class, native_base);
     assert(num_native_bases < 2);
     mp_obj_instance_t *o = mp_obj_malloc_var(mp_obj_instance_t, subobj, mp_obj_t, num_native_bases, class);
@@ -255,7 +255,7 @@ static inline bool class_lookup_entry_valid(const class_lookup_entry_t *entry, c
            && entry->version == mp_scope_mutation_count;
 }
 
-static inline const class_lookup_entry_t *class_lookup_find(const mp_obj_type_t *type, qstr attr, size_t slot_offset) {
+static const class_lookup_entry_t *PLACE_IN_WARM_CODE(class_lookup_find)(const mp_obj_type_t *type, qstr attr, size_t slot_offset) {
     const class_lookup_entry_t *set = class_lookup_set(type, attr);
     if (class_lookup_entry_valid(&set[0], type, attr, slot_offset)) {
         return &set[0];
@@ -266,7 +266,7 @@ static inline const class_lookup_entry_t *class_lookup_find(const mp_obj_type_t 
     return NULL;
 }
 
-static void class_lookup_record(const mp_obj_type_t *type, const struct class_lookup_data *lookup, uint32_t version,
+static void PLACE_IN_WARM_CODE(class_lookup_record)(const mp_obj_type_t *type, const struct class_lookup_data *lookup, uint32_t version,
     uint8_t kind, const mp_obj_type_t *found_type, const mp_map_elem_t *elem) {
     class_lookup_entry_t *set = class_lookup_set(type, lookup->attr);
     set[1] = set[0];
@@ -1291,7 +1291,7 @@ static mp_obj_t type_make_new(const mp_obj_type_t *type_in, size_t n_args, size_
     }
 }
 
-static mp_obj_t type_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(type_call)(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     // instantiate an instance of a class
 
     mp_obj_type_t *self = MP_OBJ_TO_PTR(self_in);
@@ -1769,7 +1769,7 @@ bool PLACE_IN_HOT_CODE(mp_obj_is_subclass_fast)(mp_const_obj_t object, mp_const_
     }
 }
 
-static mp_obj_t mp_obj_is_subclass(mp_obj_t object, mp_obj_t classinfo) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_obj_is_subclass)(mp_obj_t object, mp_obj_t classinfo) {
     size_t len;
     mp_obj_t *items;
     if (mp_obj_is_type(classinfo, &mp_type_type)) {
@@ -1799,7 +1799,7 @@ static mp_obj_t mp_builtin_issubclass(mp_obj_t object, mp_obj_t classinfo) {
 
 MP_DEFINE_CONST_FUN_OBJ_2(mp_builtin_issubclass_obj, mp_builtin_issubclass);
 
-static mp_obj_t mp_builtin_isinstance(mp_obj_t object, mp_obj_t classinfo) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_builtin_isinstance)(mp_obj_t object, mp_obj_t classinfo) {
     return mp_obj_is_subclass(MP_OBJ_FROM_PTR(mp_obj_get_type(object)), classinfo);
 }
 

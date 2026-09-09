@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 #include "py/binary.h"
 #include "py/parsenum.h"
 #include "shared-bindings/struct/__init__.h"
@@ -22,7 +23,7 @@ static void struct_validate_format(char fmt) {
     #endif
 }
 
-static char get_fmt_type(const char **fmt) {
+static char PLACE_IN_WARM_CODE(get_fmt_type)(const char **fmt) {
     char t = **fmt;
     switch (t) {
         case '!':
@@ -41,7 +42,7 @@ static char get_fmt_type(const char **fmt) {
     return t;
 }
 
-static mp_uint_t get_fmt_num(const char **p) {
+static mp_uint_t PLACE_IN_WARM_CODE(get_fmt_num)(const char **p) {
     const char *num = *p;
     uint len = 1;
     while (unichar_isdigit(*++num)) {
@@ -63,7 +64,7 @@ static mp_uint_t get_fmt_num(const char **p) {
     return val;
 }
 
-static mp_uint_t calcsize_items(const char *fmt) {
+static mp_uint_t PLACE_IN_WARM_CODE(calcsize_items)(const char *fmt) {
     mp_uint_t cnt = 0;
     while (*fmt) {
         int num = 1;
@@ -82,7 +83,7 @@ static mp_uint_t calcsize_items(const char *fmt) {
     return cnt;
 }
 
-mp_uint_t shared_modules_struct_calcsize(mp_obj_t fmt_in) {
+mp_uint_t PLACE_IN_WARM_CODE(shared_modules_struct_calcsize)(mp_obj_t fmt_in) {
     const char *fmt = mp_obj_str_get_str(fmt_in);
     char fmt_type = get_fmt_type(&fmt);
 
@@ -161,7 +162,7 @@ void shared_modules_struct_pack_into(mp_obj_t fmt_in, byte *p, byte *end_p, size
     (void)mp_arg_validate_length(n_args, i, MP_QSTR_values);
 }
 
-mp_obj_tuple_t *shared_modules_struct_unpack_from(mp_obj_t fmt_in, byte *p, byte *end_p, bool exact_size) {
+mp_obj_tuple_t *PLACE_IN_WARM_CODE(shared_modules_struct_unpack_from)(mp_obj_t fmt_in, byte *p, byte *end_p, bool exact_size) {
 
     const char *fmt = mp_obj_str_get_str(fmt_in);
     char fmt_type = get_fmt_type(&fmt);

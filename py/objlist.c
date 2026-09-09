@@ -99,7 +99,7 @@ static mp_obj_list_t *native_list(mp_obj_t self_in) {
     return MP_OBJ_TO_PTR(mp_obj_cast_to_native_base(self_in, MP_OBJ_FROM_PTR(&mp_type_list)));
 }
 
-static mp_obj_t list_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(list_unary_op)(mp_unary_op_t op, mp_obj_t self_in) {
     // CIRCUITPY-CHANGE
     mp_obj_list_t *self = native_list(self_in);
     switch (op) {
@@ -171,7 +171,7 @@ static mp_obj_t list_binary_op(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
     }
 }
 
-static mp_obj_t list_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+static mp_obj_t PLACE_IN_WARM_CODE(list_subscr)(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     #if MICROPY_PY_BUILTINS_SLICE
     if (mp_obj_is_type(index, &mp_type_slice)) {
         // CIRCUITPY-CHANGE: handle subclassing
@@ -237,11 +237,11 @@ static mp_obj_t list_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     }
 }
 
-static mp_obj_t list_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
+static mp_obj_t PLACE_IN_WARM_CODE(list_getiter)(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
     return mp_obj_new_list_iterator(o_in, 0, iter_buf);
 }
 
-mp_obj_t mp_obj_list_append(mp_obj_t self_in, mp_obj_t arg) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_list_append)(mp_obj_t self_in, mp_obj_t arg) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_list));
     // CIRCUITPY-CHANGE: handle subclassing
     mp_obj_list_t *self = native_list(self_in);
@@ -538,7 +538,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
     );
 
 
-void mp_obj_list_init(mp_obj_list_t *o, size_t n) {
+void PLACE_IN_WARM_CODE(mp_obj_list_init)(mp_obj_list_t *o, size_t n) {
     o->base.type = &mp_type_list;
     o->alloc = n < LIST_MIN_ALLOC ? LIST_MIN_ALLOC : n;
     o->len = n;
@@ -595,7 +595,7 @@ typedef struct _mp_obj_list_it_t {
     size_t cur;
 } mp_obj_list_it_t;
 
-static mp_obj_t list_it_iternext(mp_obj_t self_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(list_it_iternext)(mp_obj_t self_in) {
     mp_obj_list_it_t *self = MP_OBJ_TO_PTR(self_in);
     mp_obj_list_t *list = MP_OBJ_TO_PTR(self->list);
     if (self->cur < list->len) {

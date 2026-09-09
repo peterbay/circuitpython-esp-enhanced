@@ -31,6 +31,7 @@
 #include <assert.h>
 
 #include "py/mpconfig.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 #include "py/mpprint.h"
 
@@ -38,7 +39,7 @@
 #define ROUND_ALLOC(a) (((a) & ((~0U) - 7)) + 8)
 
 // Init the vstr so it allocs exactly given number of bytes.  Set length to zero.
-void vstr_init(vstr_t *vstr, size_t alloc) {
+void PLACE_IN_WARM_CODE(vstr_init)(vstr_t *vstr, size_t alloc) {
     if (alloc < 1) {
         alloc = 1;
     }
@@ -50,7 +51,7 @@ void vstr_init(vstr_t *vstr, size_t alloc) {
 
 // Init the vstr so it allocs exactly enough ram to hold a null-terminated
 // string of the given length, and set the length.
-void vstr_init_len(vstr_t *vstr, size_t len) {
+void PLACE_IN_WARM_CODE(vstr_init_len)(vstr_t *vstr, size_t len) {
     // CIRCUITPY-CHANGE: check for invalid length
     if (len == SIZE_MAX) {
         m_malloc_fail(len);
@@ -72,7 +73,7 @@ void vstr_init_print(vstr_t *vstr, size_t alloc, mp_print_t *print) {
     print->print_strn = (mp_print_strn_t)vstr_add_strn;
 }
 
-void vstr_clear(vstr_t *vstr) {
+void PLACE_IN_WARM_CODE(vstr_clear)(vstr_t *vstr) {
     if (!vstr->fixed_buf) {
         m_del(char, vstr->buf, vstr->alloc);
     }
@@ -95,7 +96,7 @@ void vstr_free(vstr_t *vstr) {
 }
 
 // Extend vstr strictly by requested size, return pointer to newly added chunk.
-char *vstr_extend(vstr_t *vstr, size_t size) {
+char *PLACE_IN_WARM_CODE(vstr_extend)(vstr_t *vstr, size_t size) {
     if (vstr->fixed_buf) {
         // We can't reallocate, and the caller is expecting the space to
         // be there, so the only safe option is to raise an exception.
@@ -108,7 +109,7 @@ char *vstr_extend(vstr_t *vstr, size_t size) {
     return p;
 }
 
-static void vstr_ensure_extra(vstr_t *vstr, size_t size) {
+static void PLACE_IN_WARM_CODE(vstr_ensure_extra)(vstr_t *vstr, size_t size) {
     if (vstr->len + size > vstr->alloc) {
         if (vstr->fixed_buf) {
             // We can't reallocate, and the caller is expecting the space to
@@ -145,7 +146,7 @@ char *vstr_add_len(vstr_t *vstr, size_t len) {
 }
 
 // Doesn't increase len, just makes sure there is a null byte at the end
-char *vstr_null_terminated_str(vstr_t *vstr) {
+char *PLACE_IN_WARM_CODE(vstr_null_terminated_str)(vstr_t *vstr) {
     // If there's no more room, add single byte
     if (vstr->alloc == vstr->len) {
         vstr_extend(vstr, 1);
@@ -154,12 +155,12 @@ char *vstr_null_terminated_str(vstr_t *vstr) {
     return vstr->buf;
 }
 
-void vstr_add_byte(vstr_t *vstr, byte b) {
+void PLACE_IN_WARM_CODE(vstr_add_byte)(vstr_t *vstr, byte b) {
     byte *buf = (byte *)vstr_add_len(vstr, 1);
     buf[0] = b;
 }
 
-void vstr_add_char(vstr_t *vstr, unichar c) {
+void PLACE_IN_WARM_CODE(vstr_add_char)(vstr_t *vstr, unichar c) {
     #if MICROPY_PY_BUILTINS_STR_UNICODE
     // TODO: Can this be simplified and deduplicated?
     // Is it worth just calling vstr_add_len(vstr, 4)?
@@ -192,7 +193,7 @@ void vstr_add_str(vstr_t *vstr, const char *str) {
     vstr_add_strn(vstr, str, strlen(str));
 }
 
-void vstr_add_strn(vstr_t *vstr, const char *str, size_t len) {
+void PLACE_IN_WARM_CODE(vstr_add_strn)(vstr_t *vstr, const char *str, size_t len) {
     vstr_ensure_extra(vstr, len);
     memmove(vstr->buf + vstr->len, str, len);
     vstr->len += len;

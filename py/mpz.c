@@ -28,6 +28,7 @@
 #include <assert.h>
 
 #include "py/mpz.h"
+#include "supervisor/linker.h"
 
 #if MICROPY_LONGINT_IMPL == MICROPY_LONGINT_IMPL_MPZ
 
@@ -59,7 +60,7 @@ static size_t mpn_remove_trailing_zeros(mpz_dig_t *oidig, mpz_dig_t *idig) {
    returns sign(i - j)
    assumes i, j are normalised
 */
-static int mpn_cmp(const mpz_dig_t *idig, size_t ilen, const mpz_dig_t *jdig, size_t jlen) {
+static int PLACE_IN_WARM_CODE(mpn_cmp)(const mpz_dig_t *idig, size_t ilen, const mpz_dig_t *jdig, size_t jlen) {
     if (ilen < jlen) {
         return -1;
     }
@@ -156,7 +157,7 @@ static size_t mpn_shr(mpz_dig_t *idig, mpz_dig_t *jdig, size_t jlen, mp_uint_t n
    assumes enough memory in i; assumes normalised j, k; assumes jlen >= klen
    can have i, j, k pointing to same memory
 */
-static size_t mpn_add(mpz_dig_t *idig, const mpz_dig_t *jdig, size_t jlen, const mpz_dig_t *kdig, size_t klen) {
+static size_t PLACE_IN_WARM_CODE(mpn_add)(mpz_dig_t *idig, const mpz_dig_t *jdig, size_t jlen, const mpz_dig_t *kdig, size_t klen) {
     mpz_dig_t *oidig = idig;
     mpz_dbl_dig_t carry = 0;
 
@@ -186,7 +187,7 @@ static size_t mpn_add(mpz_dig_t *idig, const mpz_dig_t *jdig, size_t jlen, const
    assumes enough memory in i; assumes normalised j, k; assumes j >= k
    can have i, j, k pointing to same memory
 */
-static size_t mpn_sub(mpz_dig_t *idig, const mpz_dig_t *jdig, size_t jlen, const mpz_dig_t *kdig, size_t klen) {
+static size_t PLACE_IN_WARM_CODE(mpn_sub)(mpz_dig_t *idig, const mpz_dig_t *jdig, size_t jlen, const mpz_dig_t *kdig, size_t klen) {
     mpz_dig_t *oidig = idig;
     mpz_dbl_dig_signed_t borrow = 0;
 
@@ -616,7 +617,7 @@ void mpz_init_zero(mpz_t *z) {
     z->dig = NULL;
 }
 
-void mpz_init_from_int(mpz_t *z, mp_int_t val) {
+void PLACE_IN_WARM_CODE(mpz_init_from_int)(mpz_t *z, mp_int_t val) {
     mpz_init_zero(z);
     mpz_set_from_int(z, val);
 }
@@ -679,7 +680,7 @@ static void mpz_free(mpz_t *z) {
     }
 }
 
-static void mpz_need_dig(mpz_t *z, size_t need) {
+static void PLACE_IN_WARM_CODE(mpz_need_dig)(mpz_t *z, size_t need) {
     if (need < MIN_ALLOC) {
         need = MIN_ALLOC;
     }
@@ -693,7 +694,7 @@ static void mpz_need_dig(mpz_t *z, size_t need) {
     }
 }
 
-static mpz_t *mpz_clone(const mpz_t *src) {
+static mpz_t *PLACE_IN_WARM_CODE(mpz_clone)(const mpz_t *src) {
     assert(src->alloc != 0);
     mpz_t *z = m_new_obj(mpz_t);
     z->neg = src->neg;
@@ -715,7 +716,7 @@ void mpz_set(mpz_t *dest, const mpz_t *src) {
     memcpy(dest->dig, src->dig, src->len * sizeof(mpz_dig_t));
 }
 
-void mpz_set_from_int(mpz_t *z, mp_int_t val) {
+void PLACE_IN_WARM_CODE(mpz_set_from_int)(mpz_t *z, mp_int_t val) {
     if (val == 0) {
         z->neg = 0;
         z->len = 0;
@@ -740,7 +741,7 @@ void mpz_set_from_int(mpz_t *z, mp_int_t val) {
     }
 }
 
-void mpz_set_from_ll(mpz_t *z, long long val, bool is_signed) {
+void PLACE_IN_WARM_CODE(mpz_set_from_ll)(mpz_t *z, long long val, bool is_signed) {
     mpz_need_dig(z, MPZ_NUM_DIG_FOR_LL);
 
     unsigned long long uval;
@@ -1136,7 +1137,7 @@ void mpz_shr_inpl(mpz_t *dest, const mpz_t *lhs, mp_uint_t rhs) {
 /* computes dest = lhs + rhs
    can have dest, lhs, rhs the same
 */
-void mpz_add_inpl(mpz_t *dest, const mpz_t *lhs, const mpz_t *rhs) {
+void PLACE_IN_WARM_CODE(mpz_add_inpl)(mpz_t *dest, const mpz_t *lhs, const mpz_t *rhs) {
     if (mpn_cmp(lhs->dig, lhs->len, rhs->dig, rhs->len) < 0) {
         const mpz_t *temp = lhs;
         lhs = rhs;
@@ -1157,7 +1158,7 @@ void mpz_add_inpl(mpz_t *dest, const mpz_t *lhs, const mpz_t *rhs) {
 /* computes dest = lhs - rhs
    can have dest, lhs, rhs the same
 */
-void mpz_sub_inpl(mpz_t *dest, const mpz_t *lhs, const mpz_t *rhs) {
+void PLACE_IN_WARM_CODE(mpz_sub_inpl)(mpz_t *dest, const mpz_t *lhs, const mpz_t *rhs) {
     bool neg = false;
 
     if (mpn_cmp(lhs->dig, lhs->len, rhs->dig, rhs->len) < 0) {
@@ -1293,7 +1294,7 @@ void mpz_xor_inpl(mpz_t *dest, const mpz_t *lhs, const mpz_t *rhs) {
 /* computes dest = lhs * rhs
    can have dest, lhs, rhs the same
 */
-void mpz_mul_inpl(mpz_t *dest, const mpz_t *lhs, const mpz_t *rhs) {
+void PLACE_IN_WARM_CODE(mpz_mul_inpl)(mpz_t *dest, const mpz_t *lhs, const mpz_t *rhs) {
     if (lhs->len == 0 || rhs->len == 0) {
         mpz_set_from_int(dest, 0);
         return;
@@ -1484,7 +1485,7 @@ mpz_t *mpz_lcm(const mpz_t *z1, const mpz_t *z2) {
    can have lhs, rhs the same
    assumes rhs != 0 (undefined behaviour if it is)
 */
-void mpz_divmod_inpl(mpz_t *dest_quo, mpz_t *dest_rem, const mpz_t *lhs, const mpz_t *rhs) {
+void PLACE_IN_WARM_CODE(mpz_divmod_inpl)(mpz_t *dest_quo, mpz_t *dest_rem, const mpz_t *lhs, const mpz_t *rhs) {
     assert(!mpz_is_zero(rhs));
 
     mpz_need_dig(dest_quo, lhs->len + 1); // +1 necessary?
@@ -1537,7 +1538,7 @@ mpz_t *mpz_mod(const mpz_t *lhs, const mpz_t *rhs) {
 #endif
 
 // must return actual int value if it fits in mp_int_t
-mp_int_t mpz_hash(const mpz_t *z) {
+mp_int_t PLACE_IN_WARM_CODE(mpz_hash)(const mpz_t *z) {
     mp_uint_t val = 0;
     mpz_dig_t *d = z->dig + z->len;
 
@@ -1553,7 +1554,7 @@ mp_int_t mpz_hash(const mpz_t *z) {
     return val;
 }
 
-bool mpz_as_int_checked(const mpz_t *i, mp_int_t *value) {
+bool PLACE_IN_WARM_CODE(mpz_as_int_checked)(const mpz_t *i, mp_int_t *value) {
     mp_uint_t val = 0;
     mpz_dig_t *d = i->dig + i->len;
 

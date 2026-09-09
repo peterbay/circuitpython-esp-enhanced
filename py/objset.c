@@ -29,6 +29,7 @@
 #include <assert.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 #include "py/builtin.h"
 
 #if MICROPY_PY_BUILTINS_SET
@@ -581,7 +582,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
     );
 #endif
 
-mp_obj_t mp_obj_new_set(size_t n_args, mp_obj_t *items) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_set)(size_t n_args, mp_obj_t *items) {
     mp_obj_set_t *o = mp_obj_malloc(mp_obj_set_t, &mp_type_set);
     mp_set_init(&o->set, n_args);
     for (size_t i = 0; i < n_args; i++) {

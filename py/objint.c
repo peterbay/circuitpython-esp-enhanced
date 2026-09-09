@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "py/parsenum.h"
+#include "supervisor/linker.h"
 #include "py/smallint.h"
 #include "py/objint.h"
 #include "py/objstr.h"
@@ -40,7 +41,7 @@
 #endif
 
 // This dispatcher function is expected to be independent of the implementation of long int
-static mp_obj_t mp_obj_int_make_new(const mp_obj_type_t *type_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_obj_int_make_new)(const mp_obj_type_t *type_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     (void)type_in;
     mp_arg_check_num(n_args, n_kw, 0, 2, false);
 
@@ -140,7 +141,7 @@ static mp_fp_as_int_class_t mp_classify_fp_as_int(mp_float_t val) {
 #undef MP_FLOAT_SIGN_SHIFT_I32
 #undef MP_FLOAT_EXP_SHIFT_I32
 
-mp_obj_t mp_obj_new_int_from_float(mp_float_t val) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_int_from_float)(mp_float_t val) {
     mp_float_union_t u = {val};
     // IEEE-754: if biased exponent is all 1 bits...
     if (u.p.exp == ((1 << MP_FLOAT_EXP_BITS) - 1)) {
@@ -229,7 +230,7 @@ size_t mp_int_format_size(size_t num_bits, int base, const char *prefix, char co
 //
 // The resulting formatted string will be returned from this function and the
 // formatted size will be in *fmt_size.
-char *mp_obj_int_formatted(char **buf, size_t *buf_size, size_t *fmt_size, mp_const_obj_t self_in,
+char *PLACE_IN_WARM_CODE(mp_obj_int_formatted)(char **buf, size_t *buf_size, size_t *fmt_size, mp_const_obj_t self_in,
     int base, const char *prefix, char base_char, char comma) {
     fmt_int_t num;
     #if MICROPY_LONGINT_IMPL == MICROPY_LONGINT_IMPL_NONE

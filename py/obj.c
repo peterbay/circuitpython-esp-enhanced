@@ -47,7 +47,7 @@
 #include "supervisor/shared/stack.h"
 
 // Allocates an object and also sets type, for mp_obj_malloc{,_var} macros.
-MP_NOINLINE void *mp_obj_malloc_helper(size_t num_bytes, const mp_obj_type_t *type) {
+MP_NOINLINE void *PLACE_IN_WARM_CODE(mp_obj_malloc_helper)(size_t num_bytes, const mp_obj_type_t *type) {
     // CIRCUITPY-CHANGE
     mp_obj_base_t *base = (mp_obj_base_t *)m_malloc_helper(num_bytes, M_MALLOC_RAISE_ERROR | M_MALLOC_COLLECT);
     base->type = type;
@@ -127,7 +127,7 @@ const char *mp_obj_get_type_str(mp_const_obj_t o_in) {
     return qstr_str(mp_obj_get_type_qstr(o_in));
 }
 
-void mp_obj_print_helper(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind) {
+void PLACE_IN_WARM_CODE(mp_obj_print_helper)(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind) {
     // There can be data structures nested too deep, or just recursive
     mp_cstack_check();
     // CIRCUITPY-CHANGE
@@ -162,7 +162,7 @@ void mp_obj_print_helper(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t
     }
 }
 
-void mp_obj_print(mp_obj_t o_in, mp_print_kind_t kind) {
+void PLACE_IN_WARM_CODE(mp_obj_print)(mp_obj_t o_in, mp_print_kind_t kind) {
     mp_obj_print_helper(MP_PYTHON_PRINTER, o_in, kind);
 }
 
@@ -459,7 +459,7 @@ mp_int_t mp_obj_get_int_truncated(mp_const_obj_t arg) {
 // returns false if arg is not of integral type
 // returns true and sets *value if it is of integral type
 // can throw OverflowError if arg is of integral type, but doesn't fit in a mp_int_t
-bool mp_obj_get_int_maybe(mp_const_obj_t arg, mp_int_t *value) {
+bool PLACE_IN_WARM_CODE(mp_obj_get_int_maybe)(mp_const_obj_t arg, mp_int_t *value) {
     if (arg == mp_const_false) {
         *value = 0;
     } else if (arg == mp_const_true) {
@@ -480,7 +480,7 @@ bool mp_obj_get_int_maybe(mp_const_obj_t arg, mp_int_t *value) {
 }
 
 #if MICROPY_PY_BUILTINS_FLOAT
-bool mp_obj_get_float_maybe(mp_obj_t arg, mp_float_t *value) {
+bool PLACE_IN_WARM_CODE(mp_obj_get_float_maybe)(mp_obj_t arg, mp_float_t *value) {
     mp_float_t val;
 
     if (arg == mp_const_false) {
@@ -507,7 +507,7 @@ bool mp_obj_get_float_maybe(mp_obj_t arg, mp_float_t *value) {
     return true;
 }
 
-mp_float_t mp_obj_get_float(mp_obj_t arg) {
+mp_float_t PLACE_IN_WARM_CODE(mp_obj_get_float)(mp_obj_t arg) {
     mp_float_t val;
 
     if (!mp_obj_get_float_maybe(arg, &val)) {
@@ -554,7 +554,7 @@ void mp_obj_get_complex(mp_obj_t arg, mp_float_t *real, mp_float_t *imag) {
 #endif
 
 // note: returned value in *items may point to the interior of a GC block
-void mp_obj_get_array(mp_obj_t o, size_t *len, mp_obj_t **items) {
+void PLACE_IN_WARM_CODE(mp_obj_get_array)(mp_obj_t o, size_t *len, mp_obj_t **items) {
     // CIRCUITPY-CHANGE
     if (mp_obj_is_tuple_compatible(o)) {
         mp_obj_tuple_get(o, len, items);
@@ -572,7 +572,7 @@ void mp_obj_get_array(mp_obj_t o, size_t *len, mp_obj_t **items) {
 }
 
 // note: returned value in *items may point to the interior of a GC block
-void mp_obj_get_array_fixed_n(mp_obj_t o, size_t len, mp_obj_t **items) {
+void PLACE_IN_WARM_CODE(mp_obj_get_array_fixed_n)(mp_obj_t o, size_t len, mp_obj_t **items) {
     size_t seq_len;
     mp_obj_get_array(o, &seq_len, items);
     if (seq_len != len) {
@@ -586,7 +586,7 @@ void mp_obj_get_array_fixed_n(mp_obj_t o, size_t len, mp_obj_t **items) {
 }
 
 // is_slice determines whether the index is a slice index
-size_t mp_get_index(const mp_obj_type_t *type, size_t len, mp_obj_t index, bool is_slice) {
+size_t PLACE_IN_WARM_CODE(mp_get_index)(const mp_obj_type_t *type, size_t len, mp_obj_t index, bool is_slice) {
     mp_int_t i;
     if (mp_obj_is_small_int(index)) {
         i = MP_OBJ_SMALL_INT_VALUE(index);
@@ -653,7 +653,7 @@ mp_obj_t PLACE_IN_HOT_CODE(mp_obj_len)(mp_obj_t o_in) {
 }
 
 // may return MP_OBJ_NULL
-mp_obj_t mp_obj_len_maybe(mp_obj_t o_in) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_len_maybe)(mp_obj_t o_in) {
     if (
         #if !MICROPY_PY_BUILTINS_STR_UNICODE
         // It's simple - unicode is slow, non-unicode is fast

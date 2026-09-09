@@ -28,6 +28,7 @@
 #include <stdlib.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 #include "py/misc.h"
 #include "py/parsenumbase.h"
 #include "py/parsenum.h"
@@ -68,7 +69,7 @@ typedef unsigned long long parsed_int_t;
 #define PARSED_INT_FITS(I) ((I) <= (unsigned long long)LLONG_MAX + 1)
 #endif
 
-mp_obj_t mp_parse_num_integer(const char *restrict str_, size_t len, int base, mp_lexer_t *lex) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_parse_num_integer)(const char *restrict str_, size_t len, int base, mp_lexer_t *lex) {
     const byte *restrict str = (const byte *)str_;
     const byte *restrict top = str + len;
     bool neg = false;
@@ -225,7 +226,7 @@ typedef enum {
 #endif
 
 // Helper to compute `num * (10.0 ** dec_exp)`
-mp_large_float_t mp_decimal_exp(mp_large_float_t num, int dec_exp) {
+mp_large_float_t PLACE_IN_WARM_CODE(mp_decimal_exp)(mp_large_float_t num, int dec_exp) {
     // CIRCUITPY-CHANGE: ignore float equal warning
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wfloat-equal"
@@ -307,7 +308,7 @@ static mp_large_float_uint_t accept_digit(mp_large_float_uint_t p_mantissa, unsi
 }
 
 // Helper to parse an unsigned decimal number into a mp_float_t
-const char *mp_parse_float_internal(const char *str, size_t len, mp_float_t *res) {
+const char *PLACE_IN_WARM_CODE(mp_parse_float_internal)(const char *str, size_t len, mp_float_t *res) {
     const char *top = str + len;
 
     parse_dec_in_t in = PARSE_DEC_IN_INTG;
@@ -387,7 +388,7 @@ const char *mp_parse_float_internal(const char *str, size_t len, mp_float_t *res
 #endif // MICROPY_PY_BUILTINS_FLOAT
 
 #if MICROPY_PY_BUILTINS_COMPLEX
-mp_obj_t mp_parse_num_decimal(const char *str, size_t len, bool allow_imag, bool force_complex, mp_lexer_t *lex)
+mp_obj_t PLACE_IN_WARM_CODE(mp_parse_num_decimal)(const char *str, size_t len, bool allow_imag, bool force_complex, mp_lexer_t *lex)
 #else
 mp_obj_t mp_parse_num_float(const char *str, size_t len, bool allow_imag, mp_lexer_t *lex)
 #endif

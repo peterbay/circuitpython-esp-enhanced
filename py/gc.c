@@ -565,7 +565,7 @@ static inline mp_state_mem_area_t *gc_get_ptr_area(const void *ptr) {
 #endif
 #endif
 
-void gc_collect_start(void) {
+void PLACE_IN_WARM_CODE(gc_collect_start)(void) {
     gc_collect_start_common();
     #if MICROPY_GC_ALLOC_THRESHOLD
     MP_STATE_MEM(gc_alloc_amount) = 0;
@@ -593,7 +593,7 @@ static void gc_collect_start_common(void) {
     MP_STATE_MEM(gc_stack_overflow) = 0;
 }
 
-void gc_collect_root(void **ptrs, size_t len) {
+void PLACE_IN_WARM_CODE(gc_collect_root)(void **ptrs, size_t len) {
     #if !MICROPY_GC_SPLIT_HEAP
     mp_state_mem_area_t *area = &MP_STATE_MEM(area);
     #endif
@@ -734,7 +734,7 @@ void gc_sweep_all(void) {
     gc_collect_end();
 }
 
-void gc_collect_end(void) {
+void PLACE_IN_WARM_CODE(gc_collect_end)(void) {
     gc_deal_with_stack_overflow();
     gc_sweep_run_finalisers();
     gc_sweep_free_blocks();
@@ -1199,7 +1199,7 @@ found:
 
 // force the freeing of a piece of memory
 // TODO: freeing here does not call finaliser
-void gc_free(void *ptr) {
+void PLACE_IN_WARM_CODE(gc_free)(void *ptr) {
     // Cannot free while the GC is locked, unless we're only doing a gc sweep.
     // However free is an optimisation to reclaim the memory immediately, this
     // means it will now be left until the next collection.
@@ -1314,7 +1314,7 @@ size_t gc_nbytes(const void *ptr) {
     return 0;
 }
 
-void *gc_realloc(void *ptr_in, size_t n_bytes, bool allow_move) {
+void *PLACE_IN_WARM_CODE(gc_realloc)(void *ptr_in, size_t n_bytes, bool allow_move) {
     // check for pure allocation
     if (ptr_in == NULL) {
         // CIRCUITPY-CHANGE

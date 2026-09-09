@@ -24,15 +24,18 @@
 #define MICROPY_OPT_MAP_LOOKUP_CACHE_SIZE   (1024)
 
 // The interpreter loop and the functions it calls on every opcode live in IRAM,
-// out of the flash cache's way; see supervisor/linker.h. 29 KB of internal
-// SRAM. With PSRAM the Python heap lives there and the cost falls on the IDF
-// heap alone (on the XIAO ESP32-C5: 198 KB -> 169 KB at run time, the Python
-// heap's 8 MB untouched); without PSRAM the Python heap is carved from the
-// same SRAM and would lose the 29 KB, so a board without it has to opt in.
+// out of the flash cache's way; see supervisor/linker.h. Level 1 is the
+// interpreter core, 29 KB of internal SRAM; level 2 adds the runtime that
+// library code leans on (strings, formatting, numbers, struct, containers,
+// allocation), 23 KB more. With PSRAM the Python heap lives there and the
+// cost falls on the IDF heap alone (on the XIAO ESP32-C5: 198 KB free at run
+// time without any of it, the Python heap's 8 MB untouched); without PSRAM
+// the Python heap is carved from the same SRAM and would lose it all, so a
+// board without it has to opt in.
 #include "sdkconfig.h"
 #ifndef CIRCUITPY_HOT_CODE_IN_IRAM
 #ifdef CONFIG_SPIRAM
-#define CIRCUITPY_HOT_CODE_IN_IRAM (1)
+#define CIRCUITPY_HOT_CODE_IN_IRAM (2)
 #else
 #define CIRCUITPY_HOT_CODE_IN_IRAM (0)
 #endif

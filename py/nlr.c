@@ -25,6 +25,7 @@
  */
 
 #include "py/mpstate.h"
+#include "supervisor/linker.h"
 
 #if !MICROPY_NLR_SETJMP
 // When not using setjmp, nlr_push_tail is called from inline asm so needs special care
@@ -37,7 +38,7 @@ __attribute__((used)) unsigned int nlr_push_tail(nlr_buf_t *nlr);
 #endif
 #endif
 
-unsigned int nlr_push_tail(nlr_buf_t *nlr) {
+unsigned int PLACE_IN_WARM_CODE(nlr_push_tail)(nlr_buf_t *nlr) {
     nlr_buf_t **top = &MP_STATE_THREAD(nlr_top);
     nlr->prev = *top;
     MP_NLR_SAVE_PYSTACK(nlr);
@@ -45,7 +46,7 @@ unsigned int nlr_push_tail(nlr_buf_t *nlr) {
     return 0; // normal return
 }
 
-void nlr_pop(void) {
+void PLACE_IN_WARM_CODE(nlr_pop)(void) {
     nlr_buf_t **top = &MP_STATE_THREAD(nlr_top);
     *top = (*top)->prev;
 }

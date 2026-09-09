@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "py/mphal.h"
+#include "supervisor/linker.h"
 #include "py/mpprint.h"
 #include "py/obj.h"
 #include "py/objint.h"
@@ -62,7 +63,7 @@ static void plat_print_strn(void *env, const char *str, size_t len) {
 
 const mp_print_t mp_plat_print = {NULL, plat_print_strn};
 
-int mp_print_str(const mp_print_t *print, const char *str) {
+int PLACE_IN_WARM_CODE(mp_print_str)(const mp_print_t *print, const char *str) {
     size_t len = strlen(str);
     if (len) {
         print->print_strn(print->data, str, len);
@@ -70,7 +71,7 @@ int mp_print_str(const mp_print_t *print, const char *str) {
     return len;
 }
 
-int mp_print_strn(const mp_print_t *print, const char *str, size_t len, unsigned int flags, char fill, int width) {
+int PLACE_IN_WARM_CODE(mp_print_strn)(const mp_print_t *print, const char *str, size_t len, unsigned int flags, char fill, int width) {
     int left_pad = 0;
     int right_pad = 0;
     int pad = width - len;
@@ -230,7 +231,7 @@ static int mp_print_int(const mp_print_t *print, mp_uint_t x, int sgn, int base,
     return len;
 }
 
-int mp_print_mp_int(const mp_print_t *print, mp_obj_t x, unsigned int base, int base_char, int flags, char fill, int width, int prec) {
+int PLACE_IN_WARM_CODE(mp_print_mp_int)(const mp_print_t *print, mp_obj_t x, unsigned int base, int base_char, int flags, char fill, int width, int prec) {
     // These are the only values for "base" that are required to be supported by this
     // function, since Python only allows the user to format integers in these bases.
     // If needed this function could be generalised to handle other values.
@@ -366,7 +367,7 @@ int mp_print_mp_int(const mp_print_t *print, mp_obj_t x, unsigned int base, int 
 }
 
 #if MICROPY_PY_BUILTINS_FLOAT
-int mp_print_float(const mp_print_t *print, mp_float_t f, char fmt, unsigned int flags, char fill, int width, int prec) {
+int PLACE_IN_WARM_CODE(mp_print_float)(const mp_print_t *print, mp_float_t f, char fmt, unsigned int flags, char fill, int width, int prec) {
     char buf[36];
     char sign = '\0';
     int chrs = 0;

@@ -265,7 +265,7 @@ mp_obj_t PLACE_IN_HOT_CODE(mp_obj_new_tuple)(size_t n, const mp_obj_t *items) {
     return MP_OBJ_FROM_PTR(o);
 }
 
-void mp_obj_tuple_get(mp_obj_t self_in, size_t *len, mp_obj_t **items) {
+void PLACE_IN_WARM_CODE(mp_obj_tuple_get)(mp_obj_t self_in, size_t *len, mp_obj_t **items) {
     assert(mp_obj_is_tuple_compatible(self_in));
     mp_obj_tuple_t *self = MP_OBJ_TO_PTR(self_in);
     *len = self->len;
@@ -288,7 +288,7 @@ typedef struct _mp_obj_tuple_it_t {
     size_t cur;
 } mp_obj_tuple_it_t;
 
-static mp_obj_t tuple_it_iternext(mp_obj_t self_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(tuple_it_iternext)(mp_obj_t self_in) {
     mp_obj_tuple_it_t *self = MP_OBJ_TO_PTR(self_in);
     if (self->cur < self->tuple->len) {
         mp_obj_t o_out = self->tuple->items[self->cur];

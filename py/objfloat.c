@@ -167,7 +167,7 @@ static mp_obj_t float_unary_op(mp_unary_op_t op, mp_obj_t o_in) {
     }
 }
 
-static mp_obj_t float_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(float_binary_op)(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
     mp_float_t lhs_val = mp_obj_float_get(lhs_in);
     #if MICROPY_PY_BUILTINS_COMPLEX
     if (mp_obj_is_type(rhs_in, &mp_type_complex)) {
@@ -188,7 +188,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
 
 #if MICROPY_OBJ_REPR != MICROPY_OBJ_REPR_C && MICROPY_OBJ_REPR != MICROPY_OBJ_REPR_D
 
-mp_obj_t mp_obj_new_float(mp_float_t value) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_float)(mp_float_t value) {
     // CIRCUITPY-CHANGE: Use mp_obj_malloc because it is a Python object
     mp_obj_float_t *o = mp_obj_malloc(mp_obj_float_t, &mp_type_float);
     o->value = value;

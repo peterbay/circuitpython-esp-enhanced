@@ -409,14 +409,14 @@ mp_obj_t mp_obj_int_pow3(mp_obj_t base, mp_obj_t exponent,  mp_obj_t modulus) {
 }
 #endif
 
-mp_obj_t mp_obj_new_int(mp_int_t value) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_int)(mp_int_t value) {
     if (MP_SMALL_INT_FITS(value)) {
         return MP_OBJ_NEW_SMALL_INT(value);
     }
     return mp_obj_new_int_from_ll(value);
 }
 
-mp_obj_t mp_obj_new_int_from_ll(long long val) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_int_from_ll)(long long val) {
     mp_obj_int_t *o = mp_obj_int_new_mpz();
     mpz_set_from_ll(&o->mpz, val, true);
     return MP_OBJ_FROM_PTR(o);
@@ -428,7 +428,7 @@ mp_obj_t mp_obj_new_int_from_ull(unsigned long long val) {
     return MP_OBJ_FROM_PTR(o);
 }
 
-mp_obj_t mp_obj_new_int_from_uint(mp_uint_t value) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_int_from_uint)(mp_uint_t value) {
     // SMALL_INT accepts only signed numbers, so make sure the input
     // value fits completely in the small-int positive range.
     if ((value & ~MP_SMALL_INT_POSITIVE_MASK) == 0) {
@@ -454,7 +454,7 @@ mp_int_t mp_obj_int_get_truncated(mp_const_obj_t self_in) {
     }
 }
 
-mp_int_t mp_obj_int_get_checked(mp_const_obj_t self_in) {
+mp_int_t PLACE_IN_WARM_CODE(mp_obj_int_get_checked)(mp_const_obj_t self_in) {
     if (mp_obj_is_small_int(self_in)) {
         return MP_OBJ_SMALL_INT_VALUE(self_in);
     } else {

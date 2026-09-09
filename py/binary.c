@@ -32,6 +32,7 @@
 #include <assert.h>
 
 #include "py/binary.h"
+#include "supervisor/linker.h"
 #include "py/smallint.h"
 #include "py/objint.h"
 #include "py/runtime.h"
@@ -42,7 +43,7 @@
 #define alignof(type) offsetof(struct { char c; type t; }, t)
 #endif
 
-size_t mp_binary_get_size(char struct_type, char val_type, size_t *palign) {
+size_t PLACE_IN_WARM_CODE(mp_binary_get_size)(char struct_type, char val_type, size_t *palign) {
     size_t size = 0;
     int align = 1;
     switch (struct_type) {
@@ -305,7 +306,7 @@ mp_obj_t mp_binary_get_val_array(char typecode, void *p, size_t index) {
 // The long long type is guaranteed to hold at least 64 bits, and size is at
 // most 8 (for q and Q), so we will always be able to parse the given data
 // and fit it into a long long.
-long long mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const byte *src) {
+long long PLACE_IN_WARM_CODE(mp_binary_get_int)(size_t size, bool is_signed, bool big_endian, const byte *src) {
     int delta;
     if (!big_endian) {
         delta = -1;
@@ -329,7 +330,7 @@ long long mp_binary_get_int(size_t size, bool is_signed, bool big_endian, const 
 }
 
 #define is_signed(typecode) (typecode > 'Z')
-mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte *p_base, byte **ptr) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_binary_get_val)(char struct_type, char val_type, byte *p_base, byte **ptr) {
     byte *p = *ptr;
     size_t align;
 
@@ -402,7 +403,7 @@ void mp_binary_set_int(size_t val_sz, bool big_endian, byte *dest, mp_uint_t val
     }
 }
 
-void mp_binary_set_val(char struct_type, char val_type, mp_obj_t val_in, byte *p_base, byte **ptr) {
+void PLACE_IN_WARM_CODE(mp_binary_set_val)(char struct_type, char val_type, mp_obj_t val_in, byte *p_base, byte **ptr) {
     byte *p = *ptr;
     size_t align;
 

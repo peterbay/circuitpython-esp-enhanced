@@ -254,7 +254,7 @@ mp_obj_t PLACE_IN_HOT_CODE(mp_obj_dict_get)(mp_obj_t self_in, mp_obj_t index) {
     }
 }
 
-static mp_obj_t dict_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+static mp_obj_t PLACE_IN_WARM_CODE(dict_subscr)(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     if (value == MP_OBJ_NULL) {
         // delete
         mp_obj_dict_delete(self_in, index);
@@ -386,7 +386,7 @@ static mp_obj_t dict_get_helper(size_t n_args, const mp_obj_t *args, mp_map_look
     return value;
 }
 
-static mp_obj_t dict_get(size_t n_args, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(dict_get)(size_t n_args, const mp_obj_t *args) {
     return dict_get_helper(n_args, args, MP_MAP_LOOKUP);
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(dict_get_obj, 2, 3, dict_get);
@@ -779,7 +779,7 @@ mp_obj_t PLACE_IN_HOT_CODE(mp_obj_dict_store)(mp_obj_t self_in, mp_obj_t key, mp
     return self_in;
 }
 
-mp_obj_t mp_obj_dict_delete(mp_obj_t self_in, mp_obj_t key) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_dict_delete)(mp_obj_t self_in, mp_obj_t key) {
     mp_obj_t args[2] = {self_in, key};
     dict_get_helper(2, args, MP_MAP_LOOKUP_REMOVE_IF_FOUND);
     return self_in;

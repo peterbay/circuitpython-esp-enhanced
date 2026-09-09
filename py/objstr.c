@@ -347,7 +347,7 @@ wrong_args:
 
 // like strstr but with specified length and allows \0 bytes
 // TODO replace with something more efficient/standard
-const byte *find_subbytes(const byte *haystack, size_t hlen, const byte *needle, size_t nlen, int direction) {
+const byte *PLACE_IN_WARM_CODE(find_subbytes)(const byte *haystack, size_t hlen, const byte *needle, size_t nlen, int direction) {
     if (hlen >= nlen) {
         size_t str_index, str_index_end;
         if (direction > 0) {
@@ -375,7 +375,7 @@ const byte *find_subbytes(const byte *haystack, size_t hlen, const byte *needle,
 // Note: this function is used to check if an object is a str or bytes, which
 // works because both those types use it as their binary_op method.  Revisit
 // mp_obj_is_str_or_bytes if this fact changes.
-mp_obj_t mp_obj_str_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_str_binary_op)(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
     // check for modulo
     if (op == MP_BINARY_OP_MODULO) {
         #if MICROPY_PY_BUILTINS_STR_OP_MODULO
@@ -1040,7 +1040,7 @@ static MP_NORETURN void terse_str_format_value_error(void) {
 #define terse_str_format_value_error()
 #endif
 
-static vstr_t mp_obj_str_format_helper(const char *str, const char *top, int *arg_i, size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+static vstr_t PLACE_IN_WARM_CODE(mp_obj_str_format_helper)(const char *str, const char *top, int *arg_i, size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
     vstr_t vstr;
     mp_print_t print;
     vstr_init_print(&vstr, 16, &print);
@@ -1508,7 +1508,7 @@ static vstr_t mp_obj_str_format_helper(const char *str, const char *top, int *ar
 // CIRCUITPY-CHANGE: probe for the profiling build, see supervisor/prof.h.
 #if CIRCUITPY_PROF
 static mp_obj_t mp_obj_str_format_inner(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs);
-mp_obj_t mp_obj_str_format(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_str_format)(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
     PROF_BEGIN(PROF_STR_FORMAT);
     mp_obj_t _r = mp_obj_str_format_inner(n_args, args, kwargs);
     PROF_END(PROF_STR_FORMAT);
@@ -1516,7 +1516,7 @@ mp_obj_t mp_obj_str_format(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs
 }
 static mp_obj_t mp_obj_str_format_inner(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
 #else
-mp_obj_t mp_obj_str_format(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_str_format)(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
 #endif
     check_is_str_or_bytes(args[0]);
 
@@ -2282,7 +2282,7 @@ const mp_obj_str_t mp_const_empty_bytes_obj = {{&mp_type_bytes}, 0, 0, (const by
 // Create a str/bytes object using the given data.  New memory is allocated and
 // the data is copied across.  This function should only be used if the type is bytes,
 // or if the type is str and the string data is known to be not interned.
-mp_obj_t mp_obj_new_str_copy(const mp_obj_type_t *type, const byte *data, size_t len) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_str_copy)(const mp_obj_type_t *type, const byte *data, size_t len) {
     mp_obj_str_t *o = mp_obj_malloc(mp_obj_str_t, type);
     o->len = len;
     if (data) {
@@ -2321,7 +2321,7 @@ mp_obj_t mp_obj_new_str_via_qstr(const char *data, size_t len) {
 // Create a str/bytes object from the given vstr.  The vstr buffer is resized to
 // the exact length required and then reused for the str/bytes object.  The vstr
 // is cleared and can safely be passed to vstr_free if it was heap allocated.
-static mp_obj_t mp_obj_new_str_type_from_vstr(const mp_obj_type_t *type, vstr_t *vstr) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_str_type_from_vstr)(const mp_obj_type_t *type, vstr_t *vstr) {
     // if not a bytes object, look if a qstr with this data already exists
     if (type == &mp_type_str) {
         #if MICROPY_OPT_STR_NO_INTERN
@@ -2388,7 +2388,7 @@ mp_obj_t mp_obj_new_bytes_from_vstr(vstr_t *vstr) {
     return mp_obj_new_str_type_from_vstr(&mp_type_bytes, vstr);
 }
 
-mp_obj_t mp_obj_new_str(const char *data, size_t len) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_str)(const char *data, size_t len) {
     #if MICROPY_PY_BUILTINS_STR_UNICODE && MICROPY_PY_BUILTINS_STR_UNICODE_CHECK
     if (!utf8_check((byte *)data, len)) {
         mp_raise_msg(&mp_type_UnicodeError, NULL);
@@ -2438,7 +2438,7 @@ mp_obj_t mp_obj_new_bytes_of_zeros(size_t len) {
 }
 
 
-bool mp_obj_str_equal(mp_obj_t s1, mp_obj_t s2) {
+bool PLACE_IN_WARM_CODE(mp_obj_str_equal)(mp_obj_t s1, mp_obj_t s2) {
     if (mp_obj_is_qstr(s1) && mp_obj_is_qstr(s2)) {
         return s1 == s2;
     } else {
@@ -2471,7 +2471,7 @@ static MP_NORETURN void bad_implicit_conversion(mp_obj_t self_in) {
 
 // use this if you will anyway convert the string to a qstr
 // will be more efficient for the case where it's already a qstr
-qstr mp_obj_str_get_qstr(mp_obj_t self_in) {
+qstr PLACE_IN_WARM_CODE(mp_obj_str_get_qstr)(mp_obj_t self_in) {
     if (mp_obj_is_qstr(self_in)) {
         return MP_OBJ_QSTR_VALUE(self_in);
     } else if (mp_obj_is_exact_type(self_in, &mp_type_str)) {
@@ -2484,7 +2484,7 @@ qstr mp_obj_str_get_qstr(mp_obj_t self_in) {
 
 // only use this function if you need the str data to be zero terminated
 // at the moment all strings are zero terminated to help with C ASCIIZ compatibility
-const char *mp_obj_str_get_str(mp_obj_t self_in) {
+const char *PLACE_IN_WARM_CODE(mp_obj_str_get_str)(mp_obj_t self_in) {
     if (mp_obj_is_str_or_bytes(self_in)) {
         GET_STR_DATA_LEN(self_in, s, l);
         (void)l; // len unused
@@ -2494,7 +2494,7 @@ const char *mp_obj_str_get_str(mp_obj_t self_in) {
     }
 }
 
-const char *mp_obj_str_get_data(mp_obj_t self_in, size_t *len) {
+const char *PLACE_IN_WARM_CODE(mp_obj_str_get_data)(mp_obj_t self_in, size_t *len) {
     if (mp_obj_is_str_or_bytes(self_in)) {
         GET_STR_DATA_LEN(self_in, s, l);
         *len = l;
@@ -2505,7 +2505,7 @@ const char *mp_obj_str_get_data(mp_obj_t self_in, size_t *len) {
 }
 
 #if MICROPY_OBJ_REPR == MICROPY_OBJ_REPR_C || MICROPY_OBJ_REPR == MICROPY_OBJ_REPR_D
-const byte *mp_obj_str_get_data_no_check(mp_obj_t self_in, size_t *len) {
+const byte *PLACE_IN_WARM_CODE(mp_obj_str_get_data_no_check)(mp_obj_t self_in, size_t *len) {
     if (mp_obj_is_qstr(self_in)) {
         return qstr_data(MP_OBJ_QSTR_VALUE(self_in), len);
     } else {

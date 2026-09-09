@@ -25,6 +25,7 @@
  */
 
 #include "py/mpconfig.h"
+#include "supervisor/linker.h"
 #include "py/misc.h"
 #if MICROPY_FLOAT_IMPL != MICROPY_FLOAT_IMPL_NONE
 
@@ -160,7 +161,7 @@ static char *mp_prepend_zeros(char *s, int cnt) {
 }
 
 // Helper to convert a decimal mantissa (provided as an mp_large_float_uint_t) to string
-static int mp_format_mantissa(mp_large_float_uint_t mantissa, mp_large_float_uint_t mantissa_cap, char *buf, char *s,
+static int PLACE_IN_WARM_CODE(mp_format_mantissa)(mp_large_float_uint_t mantissa, mp_large_float_uint_t mantissa_cap, char *buf, char *s,
     int num_digits, int max_exp_zeros, int trailing_zeros, int dec, int e, int fmt_flags) {
 
     DEBUG_PRINTF("mantissa=" MP_FFUINT_FMT " exp=%d (cap=" MP_FFUINT_FMT "):\n", mantissa, e, mantissa_cap);
@@ -272,7 +273,7 @@ static int mp_format_mantissa(mp_large_float_uint_t mantissa, mp_large_float_uin
 // minimal value expected for buf_size, to avoid checking everywhere for overflow
 #define MIN_BUF_SIZE (MAX_MANTISSA_DIGITS + 10)
 
-int mp_format_float(mp_float_t f_entry, char *buf_entry, size_t buf_size, char fmt, int prec, char sign) {
+int PLACE_IN_WARM_CODE(mp_format_float)(mp_float_t f_entry, char *buf_entry, size_t buf_size, char fmt, int prec, char sign) {
     assert(buf_size >= MIN_BUF_SIZE);
 
     // Handle sign

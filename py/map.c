@@ -30,6 +30,7 @@
 #include <assert.h>
 
 #include "py/mpconfig.h"
+#include "supervisor/linker.h"
 #include "py/misc.h"
 #include "py/runtime.h"
 #include "supervisor/prof.h"
@@ -110,7 +111,7 @@ static size_t get_hash_alloc_greater_or_equal_to(size_t x) {
 // CIRCUITPY-CHANGE: Helper for allocating tables of elements
 #define malloc_table(num) m_new0(mp_map_elem_t, num)
 
-void mp_map_init(mp_map_t *map, size_t n) {
+void PLACE_IN_WARM_CODE(mp_map_init)(mp_map_t *map, size_t n) {
     if (n == 0) {
         map->alloc = 0;
         map->table = NULL;
@@ -126,7 +127,7 @@ void mp_map_init(mp_map_t *map, size_t n) {
     map->is_scope = 0;
 }
 
-void mp_map_init_fixed_table(mp_map_t *map, size_t n, const mp_obj_t *table) {
+void PLACE_IN_WARM_CODE(mp_map_init_fixed_table)(mp_map_t *map, size_t n, const mp_obj_t *table) {
     map->alloc = n;
     map->used = n;
     map->all_keys_are_qstrs = 1;
@@ -157,7 +158,7 @@ void mp_map_clear(mp_map_t *map) {
     map->table = NULL;
 }
 
-static void mp_map_rehash(mp_map_t *map) {
+static void PLACE_IN_WARM_CODE(mp_map_rehash)(mp_map_t *map) {
     size_t old_alloc = map->alloc;
     size_t new_alloc = get_hash_alloc_greater_or_equal_to(map->alloc + 1);
     DEBUG_printf("mp_map_rehash(%p): " UINT_FMT " -> " UINT_FMT "\n", map, old_alloc, new_alloc);
@@ -379,7 +380,7 @@ mp_map_elem_t *MICROPY_WRAP_MP_MAP_LOOKUP(mp_map_lookup)(mp_map_t * map, mp_obj_
 
 #if MICROPY_PY_BUILTINS_SET
 
-void mp_set_init(mp_set_t *set, size_t n) {
+void PLACE_IN_WARM_CODE(mp_set_init)(mp_set_t *set, size_t n) {
     set->alloc = n;
     set->used = 0;
     // CIRCUITPY-CHANGE
@@ -401,7 +402,7 @@ static void mp_set_rehash(mp_set_t *set) {
     m_del(mp_obj_t, old_table, old_alloc);
 }
 
-mp_obj_t mp_set_lookup(mp_set_t *set, mp_obj_t index, mp_map_lookup_kind_t lookup_kind) {
+mp_obj_t PLACE_IN_WARM_CODE(mp_set_lookup)(mp_set_t *set, mp_obj_t index, mp_map_lookup_kind_t lookup_kind) {
     // Note: lookup_kind can be MP_MAP_LOOKUP_ADD_IF_NOT_FOUND_OR_REMOVE_IF_FOUND which
     // is handled by using bitwise operations.
 

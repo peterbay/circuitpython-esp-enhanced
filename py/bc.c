@@ -60,7 +60,7 @@ void mp_encode_uint(void *env, mp_encode_uint_allocator_t allocator, mp_uint_t v
     }
 }
 
-mp_uint_t mp_decode_uint(const byte **ptr) {
+mp_uint_t PLACE_IN_WARM_CODE(mp_decode_uint)(const byte **ptr) {
     mp_uint_t unum = 0;
     byte val;
     const byte *p = *ptr;
@@ -78,13 +78,13 @@ mp_uint_t mp_decode_uint(const byte **ptr) {
 // must allocate a slot on the stack for ptr, and this slot cannot be reused for
 // anything else in the function because the pointer may have been stored in a global
 // and reused later in the function.
-mp_uint_t mp_decode_uint_value(const byte *ptr) {
+mp_uint_t PLACE_IN_WARM_CODE(mp_decode_uint_value)(const byte *ptr) {
     return mp_decode_uint(&ptr);
 }
 
 // This function is used to help reduce stack usage at the caller, for the case when
 // the caller doesn't need the actual value and just wants to skip over it.
-const byte *mp_decode_uint_skip(const byte *ptr) {
+const byte *PLACE_IN_WARM_CODE(mp_decode_uint_skip)(const byte *ptr) {
     while ((*ptr++) & 0x80) {
     }
     return ptr;

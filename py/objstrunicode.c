@@ -29,6 +29,7 @@
 #include <assert.h>
 
 #include "py/objstr.h"
+#include "supervisor/linker.h"
 #include "py/objlist.h"
 #include "py/runtime.h"
 
@@ -105,7 +106,7 @@ static void uni_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t
     }
 }
 
-static mp_obj_t uni_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(uni_unary_op)(mp_unary_op_t op, mp_obj_t self_in) {
     GET_STR_DATA_LEN(self_in, str_data, str_len);
     switch (op) {
         case MP_UNARY_OP_BOOL:
@@ -119,7 +120,7 @@ static mp_obj_t uni_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
 
 // Convert an index into a pointer to its lead byte. Out of bounds indexing will raise IndexError or
 // be capped to the first/last character of the string, depending on is_slice.
-const byte *str_index_to_ptr(const mp_obj_type_t *type, const byte *self_data, size_t self_len,
+const byte *PLACE_IN_WARM_CODE(str_index_to_ptr)(const mp_obj_type_t *type, const byte *self_data, size_t self_len,
     mp_obj_t index, bool is_slice) {
     // All str functions also handle bytes objects, and they call str_index_to_ptr(),
     // so it must handle bytes.
@@ -185,7 +186,7 @@ const byte *str_index_to_ptr(const mp_obj_type_t *type, const byte *self_data, s
     return s;
 }
 
-static mp_obj_t str_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+static mp_obj_t PLACE_IN_WARM_CODE(str_subscr)(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     const mp_obj_type_t *type = mp_obj_get_type(self_in);
     assert(type == &mp_type_str);
     GET_STR_DATA_LEN(self_in, self_data, self_len);

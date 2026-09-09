@@ -28,6 +28,7 @@
 #include <assert.h>
 
 #include "py/smallint.h"
+#include "supervisor/linker.h"
 #include "py/objint.h"
 #include "py/objstr.h"
 #include "py/objtype.h"
@@ -88,7 +89,7 @@ static mp_obj_t mp_builtin___build_class__(size_t n_args, const mp_obj_t *args) 
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR(mp_builtin___build_class___obj, 2, mp_builtin___build_class__);
 
-static mp_obj_t mp_builtin_abs(mp_obj_t o_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_builtin_abs)(mp_obj_t o_in) {
     return mp_unary_op(MP_UNARY_OP_ABS, o_in);
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_abs_obj, mp_builtin_abs);
@@ -134,7 +135,7 @@ static mp_obj_t mp_builtin_callable(mp_obj_t o_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_callable_obj, mp_builtin_callable);
 
-static mp_obj_t mp_builtin_chr(mp_obj_t o_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_builtin_chr)(mp_obj_t o_in) {
     #if MICROPY_PY_BUILTINS_STR_UNICODE
     mp_uint_t c = mp_obj_get_int(o_in);
     if (c >= 0x110000) {
@@ -263,7 +264,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_iter_obj, mp_builtin_iter);
 
 #if MICROPY_PY_BUILTINS_MIN_MAX
 
-static mp_obj_t mp_builtin_min_max(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs, mp_uint_t op) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_builtin_min_max)(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs, mp_uint_t op) {
     mp_map_elem_t *key_elem = mp_map_lookup(kwargs, MP_OBJ_NEW_QSTR(MP_QSTR_key), MP_MAP_LOOKUP);
     mp_map_elem_t *default_elem;
     mp_obj_t key_fn = key_elem == NULL ? MP_OBJ_NULL : key_elem->value;
@@ -354,7 +355,7 @@ static mp_obj_t mp_builtin_oct(mp_obj_t o_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_oct_obj, mp_builtin_oct);
 
-static mp_obj_t mp_builtin_ord(mp_obj_t o_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_builtin_ord)(mp_obj_t o_in) {
     size_t len;
     const byte *str = (const byte *)mp_obj_str_get_data(o_in, &len);
     #if MICROPY_PY_BUILTINS_STR_UNICODE
@@ -581,7 +582,7 @@ static inline mp_obj_t mp_load_attr_default(mp_obj_t base, qstr attr, mp_obj_t d
     }
 }
 
-static mp_obj_t mp_builtin_getattr(size_t n_args, const mp_obj_t *args) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_builtin_getattr)(size_t n_args, const mp_obj_t *args) {
     mp_obj_t defval = MP_OBJ_NULL;
     if (n_args > 2) {
         defval = args[2];
@@ -590,7 +591,7 @@ static mp_obj_t mp_builtin_getattr(size_t n_args, const mp_obj_t *args) {
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_builtin_getattr_obj, 2, 3, mp_builtin_getattr);
 
-static mp_obj_t mp_builtin_setattr(mp_obj_t base, mp_obj_t attr, mp_obj_t value) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_builtin_setattr)(mp_obj_t base, mp_obj_t attr, mp_obj_t value) {
     mp_store_attr(base, mp_obj_str_get_qstr(attr), value);
     return mp_const_none;
 }
@@ -603,7 +604,7 @@ static mp_obj_t mp_builtin_delattr(mp_obj_t base, mp_obj_t attr) {
 MP_DEFINE_CONST_FUN_OBJ_2(mp_builtin_delattr_obj, mp_builtin_delattr);
 #endif
 
-static mp_obj_t mp_builtin_hasattr(mp_obj_t object_in, mp_obj_t attr_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(mp_builtin_hasattr)(mp_obj_t object_in, mp_obj_t attr_in) {
     qstr attr = mp_obj_str_get_qstr(attr_in);
     mp_obj_t dest[2];
     mp_load_method_protected(object_in, attr, dest, false);

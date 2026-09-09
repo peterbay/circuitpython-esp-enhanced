@@ -29,6 +29,7 @@
 #include <assert.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 #include "py/bc.h"
 #include "py/objstr.h"
 #include "py/objgenerator.h"
@@ -204,7 +205,7 @@ static void coro_instance_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
 }
 #endif
 
-mp_vm_return_kind_t mp_obj_gen_resume(mp_obj_t self_in, mp_obj_t send_value, mp_obj_t throw_value, mp_obj_t *ret_val) {
+mp_vm_return_kind_t PLACE_IN_WARM_CODE(mp_obj_gen_resume)(mp_obj_t self_in, mp_obj_t send_value, mp_obj_t throw_value, mp_obj_t *ret_val) {
     mp_cstack_check();
     // CIRCUITPY-CHANGE
     // note that self may have as its type either gen or coro,
@@ -316,7 +317,7 @@ mp_vm_return_kind_t mp_obj_gen_resume(mp_obj_t self_in, mp_obj_t send_value, mp_
     return ret_kind;
 }
 
-static mp_obj_t gen_resume_and_raise(mp_obj_t self_in, mp_obj_t send_value, mp_obj_t throw_value, bool raise_stop_iteration) {
+static mp_obj_t PLACE_IN_WARM_CODE(gen_resume_and_raise)(mp_obj_t self_in, mp_obj_t send_value, mp_obj_t throw_value, bool raise_stop_iteration) {
     mp_obj_t ret;
     switch (mp_obj_gen_resume(self_in, send_value, throw_value, &ret)) {
         case MP_VM_RETURN_NORMAL:
@@ -340,11 +341,11 @@ static mp_obj_t gen_resume_and_raise(mp_obj_t self_in, mp_obj_t send_value, mp_o
     }
 }
 
-static mp_obj_t gen_instance_iternext(mp_obj_t self_in) {
+static mp_obj_t PLACE_IN_WARM_CODE(gen_instance_iternext)(mp_obj_t self_in) {
     return gen_resume_and_raise(self_in, mp_const_none, MP_OBJ_NULL, false);
 }
 
-static mp_obj_t gen_instance_send(mp_obj_t self_in, mp_obj_t send_value) {
+static mp_obj_t PLACE_IN_WARM_CODE(gen_instance_send)(mp_obj_t self_in, mp_obj_t send_value) {
     return gen_resume_and_raise(self_in, send_value, MP_OBJ_NULL, true);
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(gen_instance_send_obj, gen_instance_send);

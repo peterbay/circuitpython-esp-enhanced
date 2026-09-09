@@ -27,6 +27,7 @@
 #include <stdint.h>
 
 #include "py/unicode.h"
+#include "supervisor/linker.h"
 
 // attribute flags
 #define FL_PRINT (0x01)
@@ -103,7 +104,7 @@ mp_uint_t utf8_ptr_to_index(const byte *s, const byte *ptr) {
     return i;
 }
 
-size_t utf8_charlen(const byte *str, size_t len) {
+size_t PLACE_IN_WARM_CODE(utf8_charlen)(const byte *str, size_t len) {
     size_t charlen = 0;
     for (const byte *top = str + len; str < top; ++str) {
         if (!UTF8_IS_CONT(*str)) {
@@ -180,7 +181,7 @@ mp_uint_t unichar_xdigit_value(unichar c) {
 
 #if MICROPY_PY_BUILTINS_STR_UNICODE
 
-bool utf8_check(const byte *p, size_t len) {
+bool PLACE_IN_WARM_CODE(utf8_check)(const byte *p, size_t len) {
     uint8_t need = 0;
     const byte *end = p + len;
     for (; p < end; p++) {

@@ -28,6 +28,7 @@
 #include <assert.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 
 // CIRCUITPY-CHANGE: PLACE_IN_ITCM
 void PLACE_IN_ITCM(mp_arg_check_num_sig)(size_t n_args, size_t n_kw, uint32_t sig) {
@@ -84,7 +85,7 @@ inline void mp_arg_check_num_kw_array(size_t n_args, size_t n_kw, size_t n_args_
     mp_arg_check_num_sig(n_args, n_kw, MP_OBJ_FUN_MAKE_SIG(n_args_min, n_args_max, takes_kw));
 }
 
-void mp_arg_parse_all(size_t n_pos, const mp_obj_t *pos, mp_map_t *kws, size_t n_allowed, const mp_arg_t *allowed, mp_arg_val_t *out_vals) {
+void PLACE_IN_WARM_CODE(mp_arg_parse_all)(size_t n_pos, const mp_obj_t *pos, mp_map_t *kws, size_t n_allowed, const mp_arg_t *allowed, mp_arg_val_t *out_vals) {
     size_t pos_found = 0, kws_found = 0;
     for (size_t i = 0; i < n_allowed; i++) {
         mp_obj_t given_arg;
@@ -163,7 +164,7 @@ void mp_arg_parse_all(size_t n_pos, const mp_obj_t *pos, mp_map_t *kws, size_t n
     }
 }
 
-void mp_arg_parse_all_kw_array(size_t n_pos, size_t n_kw, const mp_obj_t *args, size_t n_allowed, const mp_arg_t *allowed, mp_arg_val_t *out_vals) {
+void PLACE_IN_WARM_CODE(mp_arg_parse_all_kw_array)(size_t n_pos, size_t n_kw, const mp_obj_t *args, size_t n_allowed, const mp_arg_t *allowed, mp_arg_val_t *out_vals) {
     mp_map_t kw_args;
     mp_map_init_fixed_table(&kw_args, n_kw, args + n_pos);
     mp_arg_parse_all(n_pos, args, &kw_args, n_allowed, allowed, out_vals);

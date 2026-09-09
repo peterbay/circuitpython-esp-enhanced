@@ -599,7 +599,7 @@ mp_obj_t mp_obj_new_exception_msg_vlist(const mp_obj_type_t *exc_type, mp_rom_er
 #endif
 
 // return true if the given object is an exception type
-bool mp_obj_is_exception_type(mp_obj_t self_in) {
+bool PLACE_IN_WARM_CODE(mp_obj_is_exception_type)(mp_obj_t self_in) {
     if (mp_obj_is_type(self_in, &mp_type_type)) {
         // optimisation when self_in is a builtin exception
         mp_obj_type_t *self = MP_OBJ_TO_PTR(self_in);
@@ -618,7 +618,7 @@ bool mp_obj_is_exception_instance(mp_obj_t self_in) {
 // Return true if exception (type or instance) is a subclass of given
 // exception type.  Assumes exc_type is a subclass of BaseException, as
 // defined by mp_obj_is_exception_type(exc_type).
-bool mp_obj_exception_match(mp_obj_t exc, mp_const_obj_t exc_type) {
+bool PLACE_IN_WARM_CODE(mp_obj_exception_match)(mp_obj_t exc, mp_const_obj_t exc_type) {
     // if exc is an instance of an exception, then extract and use its type
     if (mp_obj_is_exception_instance(exc)) {
         exc = MP_OBJ_FROM_PTR(mp_obj_get_type(exc));

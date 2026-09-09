@@ -7,6 +7,7 @@
 #include "stack.h"
 
 #include "py/mpconfig.h"
+#include "supervisor/linker.h"
 #include "py/runtime.h"
 #include "supervisor/cpu.h"
 #include "supervisor/port.h"
@@ -20,14 +21,14 @@ void stack_init(void) {
     #endif
 }
 
-inline bool stack_ok(void) {
+bool PLACE_IN_WARM_CODE(stack_ok)(void) {
     #ifndef __ZEPHYR__
     uint32_t *stack_limit = port_stack_get_limit();
     return *stack_limit == STACK_CANARY_VALUE;
     #endif
 }
 
-inline void assert_heap_ok(void) {
+void PLACE_IN_WARM_CODE(assert_heap_ok)(void) {
     #ifndef __ZEPHYR__
     if (!stack_ok()) {
         reset_into_safe_mode(SAFE_MODE_STACK_OVERFLOW);

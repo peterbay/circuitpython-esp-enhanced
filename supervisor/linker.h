@@ -32,10 +32,15 @@
 // unchanged, and whole workloads moved by a quarter. IRAM is uncached SRAM.
 // The interpreter loop and the functions it calls on every opcode go there,
 // about 19 KB, so that they neither suffer from the aliasing nor cause it.
+// CIRCUITPY_HOT_CODE_IN_IRAM is 1 for the interpreter core (the first two
+// tiers) and 2 to add the runtime the libraries lean on (the third).
 #define PLACE_IN_DTCM_DATA(name) name
 #define PLACE_IN_DTCM_BSS(name) name
 #define PLACE_IN_ITCM(name) __attribute__((section(".iram1." #name), noinline)) name
 #define PLACE_IN_HOT_CODE(name) PLACE_IN_ITCM(name)
+#if CIRCUITPY_HOT_CODE_IN_IRAM >= 2
+#define PLACE_IN_WARM_CODE(name) PLACE_IN_ITCM(name)
+#endif
 #else
 #define PLACE_IN_DTCM_DATA(name) name
 #define PLACE_IN_DTCM_BSS(name) name
@@ -48,4 +53,14 @@
 // for the first tier only; this one is placed where a port asks for it.
 #ifndef PLACE_IN_HOT_CODE
 #define PLACE_IN_HOT_CODE(name) name
+#endif
+
+// CIRCUITPY-CHANGE: the third tier -- what library code reaches through the
+// second: strings and their formatting, number parsing and printing, big
+// ints, struct, lists, dicts, sets, ranges, bytearrays, allocation, the
+// collector's sweep, argument parsing, generators and the exception path.
+// Sampling seven workloads built from Adafruit bundle libraries found these
+// taking most of what still ran from flash after the first two tiers.
+#ifndef PLACE_IN_WARM_CODE
+#define PLACE_IN_WARM_CODE(name) name
 #endif

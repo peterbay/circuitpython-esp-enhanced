@@ -25,10 +25,11 @@
  */
 
 #include "py/mpstate.h"
+#include "supervisor/linker.h"
 
 #if MICROPY_NLR_SETJMP
 
-void nlr_jump(void *val) {
+void PLACE_IN_WARM_CODE(nlr_jump)(void *val) {
     MP_NLR_JUMP_HEAD(val, top);
     #if MICROPY_NLR_SETJMP_BUILTIN
     // This is where the register file flush happens instead, and only on an

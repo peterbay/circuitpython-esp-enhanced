@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include "py/mpconfig.h"
+#include "supervisor/linker.h"
 #include "py/misc.h"
 #include "py/mpstate.h"
 
@@ -89,7 +90,7 @@ static void *realloc_ext(void *ptr, size_t n_bytes, bool allow_move) {
 #endif // MICROPY_ENABLE_GC
 
 // CIRCUITPY-CHANGE: Add malloc helper to factor out flag handling and allow combinations.
-void *m_malloc_helper(size_t num_bytes, uint8_t flags) {
+void *PLACE_IN_WARM_CODE(m_malloc_helper)(size_t num_bytes, uint8_t flags) {
     void *ptr;
     #if MICROPY_ENABLE_GC
     uint8_t gc_flags = 0;
@@ -125,12 +126,12 @@ void *m_malloc_helper(size_t num_bytes, uint8_t flags) {
     return ptr;
 }
 
-void *m_malloc(size_t num_bytes) {
+void *PLACE_IN_WARM_CODE(m_malloc)(size_t num_bytes) {
     // CIRCUITPY-CHANGE: use helper
     return m_malloc_helper(num_bytes, M_MALLOC_RAISE_ERROR | M_MALLOC_COLLECT);
 }
 
-void *m_malloc_maybe(size_t num_bytes) {
+void *PLACE_IN_WARM_CODE(m_malloc_maybe)(size_t num_bytes) {
     // CIRCUITPY-CHANGE: use helper
     return m_malloc_helper(num_bytes, M_MALLOC_COLLECT);
 }
@@ -161,9 +162,9 @@ void *m_malloc_maybe_without_collect(size_t num_bytes) {
 }
 
 #if MICROPY_MALLOC_USES_ALLOCATED_SIZE
-void *m_realloc(void *ptr, size_t old_num_bytes, size_t new_num_bytes)
+void *PLACE_IN_WARM_CODE(m_realloc)(void *ptr, size_t old_num_bytes, size_t new_num_bytes)
 #else
-void *m_realloc(void *ptr, size_t new_num_bytes)
+void *PLACE_IN_WARM_CODE(m_realloc)(void *ptr, size_t new_num_bytes)
 #endif
 {
     void *new_ptr = realloc(ptr, new_num_bytes);
@@ -190,9 +191,9 @@ void *m_realloc(void *ptr, size_t new_num_bytes)
 }
 
 #if MICROPY_MALLOC_USES_ALLOCATED_SIZE
-void *m_realloc_maybe(void *ptr, size_t old_num_bytes, size_t new_num_bytes, bool allow_move)
+void *PLACE_IN_WARM_CODE(m_realloc_maybe)(void *ptr, size_t old_num_bytes, size_t new_num_bytes, bool allow_move)
 #else
-void *m_realloc_maybe(void *ptr, size_t new_num_bytes, bool allow_move)
+void *PLACE_IN_WARM_CODE(m_realloc_maybe)(void *ptr, size_t new_num_bytes, bool allow_move)
 #endif
 {
     void *new_ptr = realloc_ext(ptr, new_num_bytes, allow_move);
@@ -219,9 +220,9 @@ void *m_realloc_maybe(void *ptr, size_t new_num_bytes, bool allow_move)
 }
 
 #if MICROPY_MALLOC_USES_ALLOCATED_SIZE
-void m_free(void *ptr, size_t num_bytes)
+void PLACE_IN_WARM_CODE(m_free)(void *ptr, size_t num_bytes)
 #else
-void m_free(void *ptr)
+void PLACE_IN_WARM_CODE(m_free)(void *ptr)
 #endif
 {
     free(ptr);
