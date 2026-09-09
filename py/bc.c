@@ -285,29 +285,37 @@ static void mp_setup_code_state_helper(mp_code_state_t *code_state, size_t n_arg
             }
         }
 
-        // Check that all mandatory keyword args are specified
-        // Fill in default kw args if we have them
-        const uint8_t *arg_names = mp_decode_uint_skip(code_state->ip);
-        for (size_t i = 0; i < n_pos_args; i++) {
-            arg_names = mp_decode_uint_skip(arg_names);
-        }
-        for (size_t i = 0; i < n_kwonly_args; i++) {
-            qstr arg_qstr = mp_decode_uint(&arg_names);
-            #if MICROPY_EMIT_BYTECODE_USES_QSTR_TABLE
-            arg_qstr = self->context->constants.qstr_table[arg_qstr];
-            #endif
-            if (code_state_state[n_state - 1 - n_pos_args - i] == MP_OBJ_NULL) {
-                mp_map_elem_t *elem = NULL;
-                if ((scope_flags & MP_SCOPE_FLAG_DEFKWARGS) != 0) {
-                    elem = mp_map_lookup(&((mp_obj_dict_t *)MP_OBJ_TO_PTR(self->extra_args[n_def_pos_args]))->map, MP_OBJ_NEW_QSTR(arg_qstr), MP_MAP_LOOKUP);
-                }
-                if (elem != NULL) {
-                    code_state_state[n_state - 1 - n_pos_args - i] = elem->value;
-                } else {
-                    // CIRCUITPY-CHANGE: more specific mp_raise routine
-                    mp_raise_TypeError_varg(
-                        MP_ERROR_TEXT("function missing required keyword argument '%q'"),
-                        MP_OBJ_QSTR_VALUE(arg_names[n_pos_args + i]));
+        // CIRCUITPY-CHANGE: locating keyword-only names is unnecessary when
+        // there are no keyword-only parameters to validate or fill in.
+        if (n_kwonly_args != 0) {
+            // Check that all mandatory keyword args are specified
+            // Fill in default kw args if we have them
+            const uint8_t *arg_names = mp_decode_uint_skip(code_state->ip);
+            for (size_t i = 0; i < n_pos_args; i++) {
+                arg_names = mp_decode_uint_skip(arg_names);
+            }
+            for (size_t i = 0; i < n_kwonly_args; i++) {
+                qstr arg_qstr = mp_decode_uint(&arg_names);
+                #if MICROPY_EMIT_BYTECODE_USES_QSTR_TABLE
+                arg_qstr = self->context->constants.qstr_table[arg_qstr];
+                #endif
+                if (code_state_state[n_state - 1 - n_pos_args - i] == MP_OBJ_NULL) {
+                    mp_map_elem_t *elem = NULL;
+                    if ((scope_flags & MP_SCOPE_FLAG_DEFKWARGS) != 0) {
+                        elem = mp_map_lookup(&((mp_obj_dict_t *)MP_OBJ_TO_PTR(self->extra_args[n_def_pos_args]))->map, MP_OBJ_NEW_QSTR(arg_qstr), MP_MAP_LOOKUP);
+                    }
+                    if (elem != NULL) {
+                        code_state_state[n_state - 1 - n_pos_args - i] = elem->value;
+                    } else {
+                        // CIRCUITPY-CHANGE: more specific mp_raise routine.
+                        // The name is arg_qstr, decoded just above. arg_names
+                        // is a pointer into the bytecode, so indexing it named
+                        // whatever byte happened to be there: a function
+                        // missing 'bravo' reported '__dir__'.
+                        mp_raise_TypeError_varg(
+                            MP_ERROR_TEXT("function missing required keyword argument '%q'"),
+                            arg_qstr);
+                    }
                 }
             }
         }
