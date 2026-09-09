@@ -17,6 +17,12 @@
 
 #define CIRCUITPY_DIGITALIO_HAVE_INPUT_ONLY (1)
 
+// The map lookup cache is indexed by qstr, one byte per entry, and shared by
+// every map. In a program with a few hundred names the default 128 entries
+// thrash: LOAD_GLOBAL averaged 225-250 cycles in the library workloads against
+// 65 in a benchmark. 1 KB.
+#define MICROPY_OPT_MAP_LOOKUP_CACHE_SIZE   (1024)
+
 // The interpreter loop and the functions it calls on every opcode live in IRAM,
 // out of the flash cache's way; see supervisor/linker.h. 27 KB of internal
 // SRAM. With PSRAM the Python heap lives there and the cost falls on the IDF
