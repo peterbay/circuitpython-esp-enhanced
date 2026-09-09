@@ -115,6 +115,11 @@ extern volatile struct background_callback *volatile callback_head;
 // "if a_list:" costs 235 cycles against 102 for "if an_int:".
 #define MICROPY_OPT_TRUTH_FAST_PATH         (1)
 
+// A loop making 24-byte objects paid 12000 cycles for each one after 2000
+// of them: every run of two or more blocks was looked for from the first
+// hole in the heap.
+#define MICROPY_GC_NEXT_FIT_MULTI           (1)
+
 #define CIRCUITPY_DEFAULT_STACK_SIZE        0x6000
 
 // PSRAM can require more stack space for GC.

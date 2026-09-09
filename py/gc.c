@@ -31,6 +31,11 @@
 
 #include "py/gc.h"
 #include "supervisor/linker.h"
+
+
+
+
+
 #include "py/runtime.h"
 
 #if defined(__ZEPHYR__)
@@ -271,6 +276,9 @@ static void gc_setup_area(mp_state_mem_area_t *area, void *start, void *end) {
     memset(area->gc_alloc_table_start, 0, tables_size);
 
     area->gc_last_free_atb_index = 0;
+    #if MICROPY_GC_NEXT_FIT_MULTI
+    area->gc_multi_free_atb_index = 0;
+    #endif
     area->gc_last_used_block = 0;
 
     #if MICROPY_GC_SPLIT_HEAP
@@ -743,6 +751,9 @@ void PLACE_IN_WARM_CODE(gc_collect_end)(void) {
     #endif
     for (mp_state_mem_area_t *area = &MP_STATE_MEM(area); area != NULL; area = NEXT_AREA(area)) {
         area->gc_last_free_atb_index = 0;
+        #if MICROPY_GC_NEXT_FIT_MULTI
+        area->gc_multi_free_atb_index = 0;
+        #endif
     }
     MP_STATE_THREAD(gc_lock_depth) &= ~GC_COLLECT_FLAG;
     GC_EXIT();
@@ -1018,6 +1029,10 @@ void *PLACE_IN_HOT_CODE(gc_alloc)(size_t n_bytes, unsigned int alloc_flags) {
     size_t end_block;
     size_t start_block;
     size_t n_free;
+    // CIRCUITPY-CHANGE: where the scan started, and whether it passed a free
+    // run too short for this allocation; see the cursor update at "found".
+    size_t scan_from;
+    bool skipped_free;
     int collected = !MP_STATE_MEM(gc_auto_collect_enabled);
     #if MICROPY_GC_SPLIT_HEAP_AUTO
     bool added = false;
@@ -1047,17 +1062,42 @@ void *PLACE_IN_HOT_CODE(gc_alloc)(size_t n_bytes, unsigned int alloc_flags) {
 
         // look for a run of n_blocks available blocks
         for (; area != NULL; area = NEXT_AREA(area), i = 0) {
+            scan_from = area->gc_last_free_atb_index;
+            #if MICROPY_GC_NEXT_FIT_MULTI
+            // CIRCUITPY-CHANGE: a run of two or more blocks is looked for
+            // from where the last such run was taken. The first-fit cursor
+            // only moves past holes as single blocks fill them, so with a
+            // few single-block holes low in the heap every longer allocation
+            // scanned over all of them: a loop making 24-byte objects
+            // measured 12000 cycles each after 2000 of them. The holes below
+            // the hint are still looked at, once, before the area is given
+            // up on, and a collection resets the hint with the cursor.
+            if (n_blocks > 1 && area->gc_multi_free_atb_index > scan_from) {
+                scan_from = area->gc_multi_free_atb_index;
+            }
+        rescan:
+            #endif
             n_free = 0;
-            for (i = area->gc_last_free_atb_index; i < area->gc_alloc_table_byte_len; i++) {
+            skipped_free = false;
+            for (i = scan_from; i < area->gc_alloc_table_byte_len; i++) {
                 MICROPY_GC_HOOK_LOOP(i);
                 byte a = area->gc_alloc_table_start[i];
                 // *FORMAT-OFF*
-                if (ATB_0_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 0; goto found; } } else { n_free = 0; }
-                if (ATB_1_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 1; goto found; } } else { n_free = 0; }
-                if (ATB_2_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 2; goto found; } } else { n_free = 0; }
-                if (ATB_3_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 3; goto found; } } else { n_free = 0; }
+                if (ATB_0_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 0; goto found; } } else { skipped_free |= n_free != 0; n_free = 0; }
+                if (ATB_1_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 1; goto found; } } else { skipped_free |= n_free != 0; n_free = 0; }
+                if (ATB_2_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 2; goto found; } } else { skipped_free |= n_free != 0; n_free = 0; }
+                if (ATB_3_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 3; goto found; } } else { skipped_free |= n_free != 0; n_free = 0; }
                 // *FORMAT-ON*
             }
+            #if MICROPY_GC_NEXT_FIT_MULTI
+            if (scan_from > area->gc_last_free_atb_index) {
+                // nothing from the hint on; the holes below it have not been
+                // looked at yet
+                area->gc_multi_free_atb_index = 0;
+                scan_from = area->gc_last_free_atb_index;
+                goto rescan;
+            }
+            #endif
 
             // No free blocks found on this heap. Mark this heap as
             // filled, so we won't try to find free space here again until
@@ -1110,12 +1150,21 @@ found:
     // for a single free block, which guarantees that there are no free blocks
     // before this one.  Also, whenever we free or shink a block we must check
     // if this index needs adjusting (see gc_realloc and gc_free).
-    if (n_free == 1) {
+    // CIRCUITPY-CHANGE: the same guarantee holds for a longer run when the
+    // scan began at the cursor and passed no free block on its way to it,
+    // which is what skipped_free records (a single block is always found at
+    // the first free one, so this covers that case too).
+    if (!skipped_free && scan_from == area->gc_last_free_atb_index) {
         #if MICROPY_GC_SPLIT_HEAP
         MP_STATE_MEM(gc_last_free_area) = area;
         #endif
         area->gc_last_free_atb_index = (i + 1) / BLOCKS_PER_ATB;
     }
+    #if MICROPY_GC_NEXT_FIT_MULTI
+    if (n_blocks > 1) {
+        area->gc_multi_free_atb_index = (i + 1) / BLOCKS_PER_ATB;
+    }
+    #endif
 
     // CIRCUITPY-CHANGE
     #ifdef LOG_HEAP_ACTIVITY

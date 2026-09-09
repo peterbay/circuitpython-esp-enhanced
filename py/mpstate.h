@@ -126,6 +126,11 @@ typedef struct _mp_state_mem_area_t {
     byte *gc_pool_end;
 
     size_t gc_last_free_atb_index;
+    #if MICROPY_GC_NEXT_FIT_MULTI
+    // CIRCUITPY-CHANGE: where the last run of two or more blocks was taken;
+    // the next such search starts there. See gc_alloc.
+    size_t gc_multi_free_atb_index;
+    #endif
     size_t gc_last_used_block; // The block ID of the highest block allocated in the area
 } mp_state_mem_area_t;
 

@@ -296,6 +296,16 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_GC_ALLOC_THRESHOLD (MICROPY_CONFIG_ROM_LEVEL_AT_LEAST_CORE_FEATURES)
 #endif
 
+// CIRCUITPY-CHANGE: look for a run of two or more free blocks from where the
+// last such run was taken, rather than from the first free block of the heap
+// every time. The first-fit cursor only passes a hole once a single block has
+// filled it, so with a few small holes low in the heap every longer allocation
+// walked over all of them. Holes below the hint are still tried once before
+// an area is given up on, and a collection starts both over.
+#ifndef MICROPY_GC_NEXT_FIT_MULTI
+#define MICROPY_GC_NEXT_FIT_MULTI (0)
+#endif
+
 // Number of bytes to allocate initially when creating new chunks to store
 // interned string data.  Smaller numbers lead to more chunks being needed
 // and more wastage at the end of the chunk.  Larger numbers lead to wasted
