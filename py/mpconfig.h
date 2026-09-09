@@ -765,6 +765,14 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_OPT_QSTR_FIND_CACHE (0)
 #endif
 
+// With the mpz long ints, do the operators of two ints that fit 64 bits in
+// machine arithmetic, and keep the digits of such an int in the same
+// allocation as its object. On a port with 31-bit small ints every 32-bit
+// value is a long int.
+#ifndef MICROPY_OPT_INT64_FAST_PATH
+#define MICROPY_OPT_INT64_FAST_PATH (0)
+#endif
+
 // Call a builtin straight from the VM. The generic path costs a frame, a type
 // lookup, an indirect jump and then the slot function's own argument check.
 #ifndef MICROPY_OPT_CALL_BUILTIN_FAST_PATH

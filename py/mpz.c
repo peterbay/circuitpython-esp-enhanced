@@ -26,6 +26,7 @@
 
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 
 #include "py/mpz.h"
 #include "supervisor/linker.h"
@@ -1572,6 +1573,31 @@ bool PLACE_IN_WARM_CODE(mpz_as_int_checked)(const mpz_t *i, mp_int_t *value) {
     }
 
     *value = val;
+    return true;
+}
+
+// CIRCUITPY-CHANGE: the value as a long long, if it fits one.
+bool PLACE_IN_WARM_CODE(mpz_as_ll_checked)(const mpz_t *i, long long *value) {
+    if (i->len > MPZ_NUM_DIG_FOR_LL) {
+        return false;
+    }
+    unsigned long long val = 0;
+    for (size_t k = i->len; k > 0; k--) {
+        val = (val << DIG_SIZE) | i->dig[k - 1];
+    }
+    if (i->neg != 0) {
+        // one beyond LLONG_MAX in magnitude is LLONG_MIN, which is why the
+        // negation goes through val - 1
+        if (val > (unsigned long long)LLONG_MAX + 1) {
+            return false;
+        }
+        *value = -(long long)(val - 1) - 1;
+    } else {
+        if (val > (unsigned long long)LLONG_MAX) {
+            return false;
+        }
+        *value = (long long)val;
+    }
     return true;
 }
 

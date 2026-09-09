@@ -27,6 +27,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <limits.h>
+#include <stdint.h>
 
 #include "py/parsenumbase.h"
 #include "supervisor/linker.h"
@@ -81,6 +83,144 @@ mp_obj_int_t *mp_obj_int_new_mpz(void) {
     mpz_init_zero(&o->mpz);
     return o;
 }
+
+#if MICROPY_OPT_INT64_FAST_PATH
+// CIRCUITPY-CHANGE: an int that fits 64 bits keeps its digits in the same
+// block as the object, one allocation instead of two. The digits are fixed:
+// an int is immutable and nothing writes into an existing one's mpz, and
+// sys.maxsize is such an object already.
+static mp_obj_t mp_obj_new_int_from_ll_fixed(long long val, bool is_signed) {
+    mp_obj_int_t *o = mp_obj_malloc_helper(sizeof(mp_obj_int_t) + MPZ_NUM_DIG_FOR_LL * sizeof(mpz_dig_t), &mp_type_int);
+    o->mpz.neg = 0;
+    o->mpz.fixed_dig = 1;
+    o->mpz.alloc = MPZ_NUM_DIG_FOR_LL;
+    o->mpz.len = 0;
+    o->mpz.dig = (mpz_dig_t *)(o + 1);
+    mpz_set_from_ll(&o->mpz, val, is_signed);
+    return MP_OBJ_FROM_PTR(o);
+}
+
+// The operands of an int operator as long longs, when both fit.
+static bool int_pair_as_ll(mp_obj_t lhs_in, mp_obj_t rhs_in, long long *a, long long *b) {
+    if (mp_obj_is_small_int(lhs_in)) {
+        *a = MP_OBJ_SMALL_INT_VALUE(lhs_in);
+    } else if (!mpz_as_ll_checked(&((mp_obj_int_t *)MP_OBJ_TO_PTR(lhs_in))->mpz, a)) {
+        return false;
+    }
+    if (mp_obj_is_small_int(rhs_in)) {
+        *b = MP_OBJ_SMALL_INT_VALUE(rhs_in);
+        return true;
+    }
+    return mp_obj_is_exact_type(rhs_in, &mp_type_int)
+           && mpz_as_ll_checked(&((mp_obj_int_t *)MP_OBJ_TO_PTR(rhs_in))->mpz, b);
+}
+
+static mp_obj_t int64_result(long long r) {
+    if (r >= (long long)MP_SMALL_INT_MIN && r <= (long long)MP_SMALL_INT_MAX) {
+        return MP_OBJ_NEW_SMALL_INT((mp_int_t)r);
+    }
+    return mp_obj_new_int_from_ll(r);
+}
+
+// The operators of two ints that fit 64 bits, in machine arithmetic; returns
+// MP_OBJ_NULL for a shape it does not handle (an overflowing one, a power, a
+// divmod, a true division), which then goes the mpz way.
+static mp_obj_t PLACE_IN_HOT_CODE(int64_binary_op)(mp_binary_op_t op, long long a, long long b) {
+    long long r;
+    switch (op) {
+        case MP_BINARY_OP_ADD:
+        case MP_BINARY_OP_INPLACE_ADD:
+            if (__builtin_add_overflow(a, b, &r)) {
+                return MP_OBJ_NULL;
+            }
+            return int64_result(r);
+        case MP_BINARY_OP_SUBTRACT:
+        case MP_BINARY_OP_INPLACE_SUBTRACT:
+            if (__builtin_sub_overflow(a, b, &r)) {
+                return MP_OBJ_NULL;
+            }
+            return int64_result(r);
+        case MP_BINARY_OP_MULTIPLY:
+        case MP_BINARY_OP_INPLACE_MULTIPLY:
+            // operands of 32 bits cannot overflow the product
+            if (a != (int32_t)a || b != (int32_t)b) {
+                return MP_OBJ_NULL;
+            }
+            return int64_result(a * b);
+        case MP_BINARY_OP_FLOOR_DIVIDE:
+        case MP_BINARY_OP_INPLACE_FLOOR_DIVIDE:
+            if (b == 0) {
+                mp_raise_ZeroDivisionError();
+            }
+            if (a == LLONG_MIN && b == -1) {
+                return MP_OBJ_NULL;
+            }
+            r = a / b;
+            // round toward minus infinity, as Python does
+            if (a % b != 0 && ((a < 0) != (b < 0))) {
+                r -= 1;
+            }
+            return int64_result(r);
+        case MP_BINARY_OP_MODULO:
+        case MP_BINARY_OP_INPLACE_MODULO:
+            if (b == 0) {
+                mp_raise_ZeroDivisionError();
+            }
+            if (a == LLONG_MIN && b == -1) {
+                return MP_OBJ_NULL;
+            }
+            r = a % b;
+            // the remainder takes the sign of the divisor, as Python does
+            if (r != 0 && ((r < 0) != (b < 0))) {
+                r += b;
+            }
+            return int64_result(r);
+        case MP_BINARY_OP_AND:
+        case MP_BINARY_OP_INPLACE_AND:
+            return int64_result(a & b);
+        case MP_BINARY_OP_OR:
+        case MP_BINARY_OP_INPLACE_OR:
+            return int64_result(a | b);
+        case MP_BINARY_OP_XOR:
+        case MP_BINARY_OP_INPLACE_XOR:
+            return int64_result(a ^ b);
+        case MP_BINARY_OP_LSHIFT:
+        case MP_BINARY_OP_INPLACE_LSHIFT:
+            if (b < 0) {
+                mp_raise_ValueError(MP_ERROR_TEXT("negative shift count"));
+            }
+            if (b >= 63) {
+                return MP_OBJ_NULL;
+            }
+            r = (long long)((unsigned long long)a << b);
+            if ((r >> b) != a) {
+                return MP_OBJ_NULL;
+            }
+            return int64_result(r);
+        case MP_BINARY_OP_RSHIFT:
+        case MP_BINARY_OP_INPLACE_RSHIFT:
+            if (b < 0) {
+                mp_raise_ValueError(MP_ERROR_TEXT("negative shift count"));
+            }
+            if (b >= 63) {
+                return int64_result(a < 0 ? -1 : 0);
+            }
+            return int64_result(a >> b);
+        case MP_BINARY_OP_LESS:
+            return mp_obj_new_bool(a < b);
+        case MP_BINARY_OP_MORE:
+            return mp_obj_new_bool(a > b);
+        case MP_BINARY_OP_LESS_EQUAL:
+            return mp_obj_new_bool(a <= b);
+        case MP_BINARY_OP_MORE_EQUAL:
+            return mp_obj_new_bool(a >= b);
+        case MP_BINARY_OP_EQUAL:
+            return mp_obj_new_bool(a == b);
+        default:
+            return MP_OBJ_NULL;
+    }
+}
+#endif
 
 // This routine expects you to pass in a buffer and size (in *buf and buf_size).
 // If, for some reason, this buffer is too small, then it will allocate a
@@ -194,6 +334,24 @@ static mp_obj_t mp_obj_int_binary_op_inner(mp_binary_op_t op, mp_obj_t lhs_in, m
 #else
 mp_obj_t PLACE_IN_HOT_CODE(mp_obj_int_binary_op)(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
 #endif
+    #if MICROPY_OPT_INT64_FAST_PATH
+    // CIRCUITPY-CHANGE: a small int is 31 bits here, so a 32-bit register
+    // value, a colour, a checksum or a monotonic_ns() reading is a big int,
+    // and each operation on one built digit arrays and one or two results
+    // with separate digit allocations: `big - 1000` 1118 cycles, `big //
+    // 1000000` 1933. Both operands fit a long long nearly always; do it in
+    // machine arithmetic and let the shapes that cannot fall through.
+    {
+        long long a, b;
+        if (int_pair_as_ll(lhs_in, rhs_in, &a, &b)) {
+            mp_obj_t res = int64_binary_op(op, a, b);
+            if (res != MP_OBJ_NULL) {
+                return res;
+            }
+        }
+    }
+    #endif
+
     const mpz_t *zlhs;
     const mpz_t *zrhs;
     mpz_t z_int;
@@ -417,15 +575,23 @@ mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_int)(mp_int_t value) {
 }
 
 mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_int_from_ll)(long long val) {
+    #if MICROPY_OPT_INT64_FAST_PATH
+    return mp_obj_new_int_from_ll_fixed(val, true);
+    #else
     mp_obj_int_t *o = mp_obj_int_new_mpz();
     mpz_set_from_ll(&o->mpz, val, true);
     return MP_OBJ_FROM_PTR(o);
+    #endif
 }
 
 mp_obj_t mp_obj_new_int_from_ull(unsigned long long val) {
+    #if MICROPY_OPT_INT64_FAST_PATH
+    return mp_obj_new_int_from_ll_fixed(val, false);
+    #else
     mp_obj_int_t *o = mp_obj_int_new_mpz();
     mpz_set_from_ll(&o->mpz, val, false);
     return MP_OBJ_FROM_PTR(o);
+    #endif
 }
 
 mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_int_from_uint)(mp_uint_t value) {

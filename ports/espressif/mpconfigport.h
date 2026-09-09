@@ -91,6 +91,12 @@ extern volatile struct background_callback *volatile callback_head;
 // per sensor read. 512 bytes of RAM answer a repeat from the same buffer.
 #define MICROPY_OPT_QSTR_FIND_CACHE         (1)
 
+// A small int is 31 bits, so a 32-bit register value, a checksum or a
+// monotonic_ns() reading is a long int: `big - 1000` costs 1118 cycles and
+// `big // 1000000` 1933, most of it digit arrays and two allocations per
+// result. Both operands fit a long long nearly always.
+#define MICROPY_OPT_INT64_FAST_PATH         (1)
+
 // len(x) costs 422 cycles, most of it reaching the C function at all.
 #define MICROPY_OPT_CALL_BUILTIN_FAST_PATH  (1)
 

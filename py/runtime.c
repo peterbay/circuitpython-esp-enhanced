@@ -538,6 +538,15 @@ mp_obj_t MICROPY_WRAP_MP_BINARY_OP(mp_binary_op)(mp_binary_op_t op, mp_obj_t lhs
                     } else if (rhs_val >= (mp_int_t)(sizeof(lhs_val) * MP_BITS_PER_BYTE)
                                || lhs_val > (MP_SMALL_INT_MAX >> rhs_val)
                                || lhs_val < (MP_SMALL_INT_MIN >> rhs_val)) {
+                        #if MICROPY_OPT_INT64_FAST_PATH
+                        // CIRCUITPY-CHANGE: on a 32-bit machine a small int
+                        // shifted by up to 32 fits a long long, so build that
+                        // result directly rather than a long int operand for
+                        // the general path.
+                        if (sizeof(mp_int_t) <= 4 && rhs_val <= 32) {
+                            return mp_obj_new_int_from_ll((long long)((unsigned long long)(long long)lhs_val << rhs_val));
+                        }
+                        #endif
                         // left-shift will overflow, so use higher precision integer
                         lhs = mp_obj_new_int_from_ll(lhs_val);
                         goto generic_binary_op;
@@ -574,6 +583,15 @@ mp_obj_t MICROPY_WRAP_MP_BINARY_OP(mp_binary_op)(mp_binary_op_t op, mp_obj_t lhs
                 case MP_BINARY_OP_INPLACE_MULTIPLY: {
                     mp_int_t int_res;
                     if (mp_mul_mp_int_t_overflow(lhs_val, rhs_val, &int_res)) {
+                        #if MICROPY_OPT_INT64_FAST_PATH
+                        // CIRCUITPY-CHANGE: on a 32-bit machine the product
+                        // of two small ints fits a long long, and it
+                        // overflowed the machine word, so it is a long int
+                        // either way.
+                        if (sizeof(mp_int_t) <= 4) {
+                            return mp_obj_new_int_from_ll((long long)lhs_val * rhs_val);
+                        }
+                        #endif
                         // use higher precision
                         lhs = mp_obj_new_int_from_ll(lhs_val);
                         goto generic_binary_op;
