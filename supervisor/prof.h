@@ -58,9 +58,10 @@ typedef enum {
 } prof_id_t;
 
 // Each sample is a program counter and the return address of the function it was
-// in, which is what lets a sample in ROM be blamed on its caller. 1024 pairs is
-// 8 KB of RAM and, at two kilohertz, about half a second of wall time.
-#define PROF_MAX_SAMPLES (1024)
+// in, which is what lets a sample in ROM or in a leaf be blamed on its caller.
+// 4096 pairs is 32 KB of RAM and, at eight kilohertz, about half a second of
+// wall time.
+#define PROF_MAX_SAMPLES (4096)
 
 #if CIRCUITPY_PROF
 

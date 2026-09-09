@@ -73,12 +73,15 @@ void prof_reset(void) {
 // A sampler task sits on the same core as CircuitPython at a higher priority. A
 // timer wakes it, which preempts CircuitPython, so the interpreter's context is
 // already saved on its own stack and the program counter can be read out of it.
-// Both saved frame layouts put exit at offset 0 and pc at offset 4, and exit is
-// zero only when the task gave the core up itself, which separates "was running"
-// from "was waiting" without any extra bookkeeping.
+// On Xtensa both saved frame layouts put exit at offset 0 and pc at offset 4,
+// and exit is zero only when the task gave the core up itself, which separates
+// "was running" from "was waiting" without any extra bookkeeping. On RISC-V the
+// saved frame is RvExcFrame (riscv/rvruntime-frames.h): mepc first, then ra;
+// a task that yielded also went through an interrupt, so nothing tells waiting
+// from running and every sample counts as running.
 //
 // The addresses mean nothing on their own; symbolise them on the host against
-// firmware.elf with xtensa-esp32s3-elf-addr2line.
+// firmware.elf with the toolchain's addr2line.
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -115,6 +118,16 @@ static void prof_sampler_task(void *arg) {
             prof_lost_count++;
             continue;
         }
+        #if defined(__riscv)
+        if (prof_sample_count < PROF_MAX_SAMPLES) {
+            // RvExcFrame: mepc at word 0, ra at word 1. In a leaf function ra
+            // is the caller, which is what a sample in a leaf should be
+            // charged to on the host.
+            prof_samples[prof_sample_count * 2] = frame[0];
+            prof_samples[prof_sample_count * 2 + 1] = frame[1];
+            prof_sample_count++;
+        } else {
+        #else
         if (frame[0] == 0) {
             prof_waiting_count++;
         } else if (prof_sample_count < PROF_MAX_SAMPLES) {
@@ -124,6 +137,7 @@ static void prof_sampler_task(void *arg) {
             prof_samples[prof_sample_count * 2 + 1] = frame[3];
             prof_sample_count++;
         } else {
+        #endif
             prof_lost_count++;
         }
     }

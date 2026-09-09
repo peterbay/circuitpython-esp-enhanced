@@ -280,7 +280,7 @@ static void class_lookup_record(const mp_obj_type_t *type, const struct class_lo
     entry->kind = kind;
 }
 
-bool mp_obj_class_lookup_cached(const mp_obj_type_t *type, qstr attr, mp_obj_t *value) {
+bool PLACE_IN_HOT_CODE(mp_obj_class_lookup_cached)(const mp_obj_type_t *type, qstr attr, mp_obj_t *value) {
     const class_lookup_entry_t *entry = class_lookup_find(type, attr, 0);
     if (entry == NULL || entry->kind == CLASS_LOOKUP_SLOT) {
         return false;

@@ -77,7 +77,8 @@ MP_DEFINE_CONST_OBJ_TYPE(
     call, fun_builtin_1_call
     );
 
-static mp_obj_t fun_builtin_2_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+// CIRCUITPY-CHANGE: PLACE_IN_ITCM, like its three siblings
+static mp_obj_t PLACE_IN_ITCM(fun_builtin_2_call)(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     assert(mp_obj_is_type(self_in, &mp_type_fun_builtin_2));
     mp_obj_fun_builtin_fixed_t *self = MP_OBJ_TO_PTR(self_in);
     mp_arg_check_num(n_args, n_kw, 2, 2, false);

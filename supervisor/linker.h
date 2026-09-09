@@ -8,6 +8,12 @@
 
 #pragma once
 
+// CIRCUITPY-CHANGE: the espressif branch below is chosen by a port config
+// macro. Pull the config in here rather than rely on every includer having
+// done so first: py/bc.c had this header before py/bc.h, and its tagged
+// function silently stayed in flash.
+#include "py/mpconfig.h"
+
 #if !defined(__ZEPHYR__) && (defined(IMXRT1XXX) || defined(FOMU) || defined(RASPBERRYPI))
 #define PLACE_IN_DTCM_DATA(name) name __attribute__((section(".dtcm_data." #name)))
 #define PLACE_IN_DTCM_BSS(name) name __attribute__((section(".dtcm_bss." #name)))
