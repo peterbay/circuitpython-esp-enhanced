@@ -215,6 +215,42 @@ extern const qstr_pool_t MICROPY_QSTR_EXTRA_POOL;
 static uint16_t qstr_char_cache[128];
 #endif
 
+#if MICROPY_OPT_QSTR_FIND_CACHE
+// CIRCUITPY-CHANGE: getattr(obj, name), hasattr, setattr and a "{name}" field
+// in str.format intern a str that is not a qstr, and each time that walks the
+// pools: a binary search of the pool in flash and a linear scan of the
+// run-time pool, 1500-4000 cycles. The Adafruit register library does it four
+// times per sensor read (i2c_struct_array.py builds the attribute name with
+// format() once, then hands it to hasattr and getattr on every access), 3.5%
+// of that workload. The bytes come from the same buffer each time, so
+// remember which qstr a buffer held last and take it while the bytes still
+// agree; an entry whose buffer has since been reused for something else fails
+// the comparison and is replaced. Nothing here is a GC root: the pointer is
+// only ever compared, and the bytes are read through the caller's own live
+// argument. 512 bytes.
+typedef struct _qstr_find_cache_entry_t {
+    const char *str;
+    uint16_t len;
+    uint16_t q;
+} qstr_find_cache_entry_t;
+
+#define QSTR_FIND_CACHE_SIZE (64)
+static qstr_find_cache_entry_t qstr_find_cache[QSTR_FIND_CACHE_SIZE];
+
+static inline qstr_find_cache_entry_t *qstr_find_cache_slot(const char *str) {
+    return &qstr_find_cache[((uintptr_t)str * 2654435761u) >> (8 * sizeof(uintptr_t) - 6)];
+}
+
+static inline void qstr_find_cache_remember(const char *str, size_t len, qstr q) {
+    if (len <= 0xffff && q <= 0xffff) {
+        qstr_find_cache_entry_t *entry = qstr_find_cache_slot(str);
+        entry->str = str;
+        entry->len = len;
+        entry->q = q;
+    }
+}
+#endif
+
 // CIRCUITPY-CHANGE: provide separate reset function
 void qstr_reset(void) {
     MP_STATE_VM(last_pool) = (qstr_pool_t *)&CONST_POOL; // we won't modify the const_pool since it has no allocated room left
@@ -222,6 +258,9 @@ void qstr_reset(void) {
     #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
     // The numbers just became meaningless along with the pools.
     memset(qstr_char_cache, 0, sizeof(qstr_char_cache));
+    #endif
+    #if MICROPY_OPT_QSTR_FIND_CACHE
+    memset(qstr_find_cache, 0, sizeof(qstr_find_cache));
     #endif
 }
 
@@ -323,6 +362,18 @@ qstr qstr_find_strn(const char *str, size_t str_len) {
         return MP_QSTR_;
     }
 
+    #if MICROPY_OPT_QSTR_FIND_CACHE
+    qstr_find_cache_entry_t *cached = qstr_find_cache_slot(str);
+    if (cached->str == str && cached->len == str_len
+        && cached->q < MP_STATE_VM(last_pool)->total_prev_len + MP_STATE_VM(last_pool)->len) {
+        size_t q_len;
+        const byte *q_data = qstr_data(cached->q, &q_len);
+        if (q_len == str_len && memcmp(q_data, str, str_len) == 0) {
+            return cached->q;
+        }
+    }
+    #endif
+
     #if MICROPY_QSTR_BYTES_IN_HASH
     // work out hash of str
     size_t str_hash = qstr_compute_hash((const byte *)str, str_len);
@@ -354,6 +405,9 @@ qstr qstr_find_strn(const char *str, size_t str_len) {
                 #endif
                 pool->lengths[at] == str_len
                 && memcmp(pool->qstrs[at], str, str_len) == 0) {
+                #if MICROPY_OPT_QSTR_FIND_CACHE
+                qstr_find_cache_remember(str, str_len, pool->total_prev_len + at);
+                #endif
                 return pool->total_prev_len + at;
             }
         }
@@ -393,6 +447,11 @@ static qstr qstr_from_strn_helper(const char *str, size_t len, bool data_is_stat
     qstr q = qstr_find_strn(str, len);
     if (q == 0) {
         // qstr does not exist in interned pool so need to add it
+        #if MICROPY_OPT_QSTR_FIND_CACHE
+        // str is about to be replaced by the interned copy; the caller's
+        // buffer is what the next lookup will present.
+        const char *given = str;
+        #endif
 
         // check that len is not too big
         if (len >= (1 << (8 * MICROPY_QSTR_BYTES_IN_LEN))) {
@@ -454,6 +513,9 @@ static qstr qstr_from_strn_helper(const char *str, size_t len, bool data_is_stat
 
     add:
         q = qstr_add(len, str);
+        #if MICROPY_OPT_QSTR_FIND_CACHE
+        qstr_find_cache_remember(given, len, q);
+        #endif
     }
     QSTR_EXIT();
     return q;

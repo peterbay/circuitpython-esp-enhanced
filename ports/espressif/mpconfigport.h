@@ -86,6 +86,11 @@ extern volatile struct background_callback *volatile callback_head;
 // sits in the qstr pools. 256 bytes of RAM removes the search entirely.
 #define MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE  (1)
 
+// getattr(obj, name) with a name built at run time interns it on every call,
+// 1500-4000 cycles of pool search; the register library does that four times
+// per sensor read. 512 bytes of RAM answer a repeat from the same buffer.
+#define MICROPY_OPT_QSTR_FIND_CACHE         (1)
+
 // len(x) costs 422 cycles, most of it reaching the C function at all.
 #define MICROPY_OPT_CALL_BUILTIN_FAST_PATH  (1)
 

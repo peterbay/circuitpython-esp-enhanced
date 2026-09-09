@@ -748,6 +748,13 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE (0)
 #endif
 
+// Remember which qstr a buffer was last found to hold, so that a str handed
+// to getattr, setattr, hasattr or a "{name}" format field again and again is
+// interned by one comparison instead of a walk of the pools. 512 bytes.
+#ifndef MICROPY_OPT_QSTR_FIND_CACHE
+#define MICROPY_OPT_QSTR_FIND_CACHE (0)
+#endif
+
 // Call a builtin straight from the VM. The generic path costs a frame, a type
 // lookup, an indirect jump and then the slot function's own argument check.
 #ifndef MICROPY_OPT_CALL_BUILTIN_FAST_PATH
