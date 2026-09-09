@@ -43,6 +43,11 @@ static mp_obj_t code_execute(mp_obj_code_t *self, mp_obj_dict_t *globals, mp_obj
     // set new context
     mp_globals_set(globals);
     mp_locals_set(locals);
+    // CIRCUITPY-CHANGE: a dict becoming a scope, as in mp_parse_compile_execute.
+    if (!globals->map.is_fixed) {
+        globals->map.is_scope = 1;
+    }
+    mp_scope_mutation_bump();
 
     // set exception handler to restore context if an exception is raised
     nlr_push_jump_callback(&ctx.callback, mp_globals_locals_set_from_nlr_jump_callback);

@@ -71,6 +71,15 @@ extern volatile struct background_callback *volatile callback_head;
 #define MICROPY_OPT_VM_MAP_CACHE_PROBE      (1)
 #define MICROPY_OPT_FUN_BC_CALL_INFO        (1)
 
+// A store into an instance of a class with one property costs 1207 cycles
+// against 139 without, an inherited method call 1137 against 462, and 44% of
+// the classes in the library bundle have a property or a descriptor: every
+// one of those walks the class and its bases. See py/objtype.c. 128 sets is
+// 6 KB of RAM; a datetime workload touching a hundred names per iteration hit
+// 79% with 128 and 69% with 64.
+#define MICROPY_OPT_CLASS_LOOKUP_CACHE      (1)
+#define MICROPY_OPT_CLASS_LOOKUP_CACHE_SETS (128)
+
 // d["x"] costs 422 cycles, of which the generic subscript path is most of it.
 #define MICROPY_OPT_DICT_SUBSCR_FAST_PATH   (1)
 

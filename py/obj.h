@@ -515,7 +515,11 @@ typedef struct _mp_map_t {
     size_t all_keys_are_qstrs : 1;
     size_t is_fixed : 1;    // if set, table is fixed/read-only and can't be modified
     size_t is_ordered : 1;  // if set, table is an ordered array, not a hash map
-    size_t used : (8 * sizeof(size_t) - 3);
+    // CIRCUITPY-CHANGE: set on a map that names are resolved through -- a module's
+    // globals, a class's locals -- so that a key added to or removed from it bumps
+    // mp_scope_mutation_count. See mp_load_global and mp_obj_class_lookup.
+    size_t is_scope : 1;
+    size_t used : (8 * sizeof(size_t) - 4);
     size_t alloc;
     mp_map_elem_t *table;
 } mp_map_t;
@@ -544,6 +548,16 @@ void mp_map_dump(mp_map_t *map);
 // cache that recorded "this name was absent from that map" can tell whether it still
 // holds. Replacing the value of an existing key does not bump it. See mp_load_global.
 extern uint32_t mp_map_mutation_count;
+// CIRCUITPY-CHANGE: the same, but only for maps with is_scope set, and for the
+// events listed at mp_scope_mutation_bump(). The builtin-name cache and the class
+// lookup cache are valid while it stands still.
+extern uint32_t mp_scope_mutation_count;
+
+// A new scope or a new class: the address of a dead one may be reused, so every
+// entry keyed by a scope map or a type pointer is retired.
+static inline void mp_scope_mutation_bump(void) {
+    mp_scope_mutation_count++;
+}
 
 // Underlying set implementation (not set object)
 

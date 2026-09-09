@@ -779,6 +779,16 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_OPT_FUN_BC_CALL_INFO (0)
 #endif
 
+// CIRCUITPY-CHANGE: whether mp_obj_class_lookup() keeps a cache of where a
+// name was found in a class and its bases, or that it was not. Valid while
+// mp_scope_mutation_count stands still. Two entries of 24 bytes per set.
+#ifndef MICROPY_OPT_CLASS_LOOKUP_CACHE
+#define MICROPY_OPT_CLASS_LOOKUP_CACHE (0)
+#endif
+#ifndef MICROPY_OPT_CLASS_LOOKUP_CACHE_SETS
+#define MICROPY_OPT_CLASS_LOOKUP_CACHE_SETS (64)
+#endif
+
 #ifndef MICROPY_OPT_ITERNEXT_FAST_PATH
 #define MICROPY_OPT_ITERNEXT_FAST_PATH (0)
 #endif

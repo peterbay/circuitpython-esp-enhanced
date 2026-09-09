@@ -230,7 +230,7 @@ typedef struct {
 extern mp_load_global_cache_t mp_load_global_cache[MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
 
 // The value a name resolved to as a builtin, if that answer is still good:
-// same name, same module, and no map anywhere has gained or lost a key since,
+// same name, same module, and no scope map has gained or lost a key since,
 // which is what could have started shadowing it. MP_OBJ_NULL otherwise. This is
 // the test mp_load_global() makes first, and it is kept in one place.
 static inline mp_obj_t mp_load_global_builtin_hit(qstr qst, const mp_map_t *globals_map) {
@@ -240,7 +240,7 @@ static inline mp_obj_t mp_load_global_builtin_hit(qstr qst, const mp_map_t *glob
     }
     #endif
     const mp_load_global_cache_t *entry = &mp_load_global_cache[qst % MICROPY_OPT_LOAD_GLOBAL_CACHE_SIZE];
-    if (entry->name == qst && entry->globals == globals_map && entry->mutation == mp_map_mutation_count) {
+    if (entry->name == qst && entry->globals == globals_map && entry->mutation == mp_scope_mutation_count) {
         return entry->value;
     }
     return MP_OBJ_NULL;

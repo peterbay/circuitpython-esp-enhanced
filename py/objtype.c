@@ -164,9 +164,158 @@ struct class_lookup_data {
     bool is_type;
 };
 
+// What the walk found, turned into what the caller asked for: a bound method,
+// a class method bound to the type, a static method's function, a property
+// object handed back raw, or a plain value.
+static void class_lookup_apply(struct class_lookup_data *lookup, const mp_obj_type_t *found_type, mp_obj_t value) {
+    if (lookup->is_type) {
+        // If we look up a class method, we need to return original type for which we
+        // do a lookup, not a (base) type in which we found the class method.
+        const mp_obj_type_t *org_type = (const mp_obj_type_t *)lookup->obj;
+        mp_convert_member_lookup(MP_OBJ_NULL, org_type, value, lookup->dest);
+    } else if (mp_obj_is_type(value, &mp_type_property)) {
+        // CIRCUITPY-CHANGE: CircuitPython uses properties on native classes, so we always return them.
+        lookup->dest[0] = value;
+    } else {
+        // CIRCUITPY-CHANGE: Pass object directly. MP passes the native object.
+        // This allows native code to lookup and call functions on Python subclasses.
+        mp_convert_member_lookup(lookup->obj, found_type, value, lookup->dest);
+    }
+}
+
+#if MICROPY_OPT_CLASS_LOOKUP_CACHE
+// CIRCUITPY-CHANGE: a cache in front of the walk below. Every attribute store
+// on an instance of a class with a property, every property read, every
+// inherited method, every __init__, __eq__, __getitem__ and __next__ on a
+// Python class goes through the walk, which is a map lookup per class in the
+// chain and, for a name that is not there, all the way up. Measured on an
+// ESP32-C5: a store on a class with one property 1207 cycles against 139
+// without, an inherited method call 1137 against 462, and 44% of the classes
+// in the library bundle have a property or a descriptor.
+//
+// An entry remembers, for a starting type and a name, where the walk ended:
+// the type whose locals_dict had the name and the slot it sits in, or that a
+// native base answers it through a slot, or that nothing in the chain has it.
+// The value is read from the slot on every hit, so a class attribute rebound
+// through any route is seen, and the conversion to a bound method or a class
+// method is redone, so binding to the actual receiver is untouched.
+//
+// Validity is mp_scope_mutation_count: a class's locals_dict changes only
+// through type_attr (Class.x = ..., del Class.x), which bumps it, a key added
+// to or removed from a class dict bumps it through its is_scope mark, and so
+// does the birth of a type, because a dead type's address could otherwise be
+// matched by a new one. A slot pointer therefore never outlives its table: a
+// table is only replaced by an add, and only freed with its type. A store on
+// an instance, a dict growing, an object being built: none of those move the
+// count.
+//
+// Nothing is remembered when a native base in the chain would be consulted
+// for the object itself (mp_load_method_maybe on subobj[0]): that answer
+// belongs to the instance, not the type. A name found before the walk reaches
+// such a base, or answered by the base's slot table or locals_dict, is safe.
+// Sets of two entries. One entry per set thrashed as soon as two names of one
+// class landed in the same set, which a driver reading seven registers through
+// descriptors did in every iteration; with two, a miss moves the resident
+// entry to the second way and takes the first, so a pair that shares a set
+// stays cached and only a third name evicts. 128 sets hit 79% of the lookups
+// of a datetime workload that touches about a hundred names per iteration,
+// 64 sets 69%; the register driver and the LED animation hit 100% with either.
+#define CLASS_LOOKUP_CACHE_SETS MICROPY_OPT_CLASS_LOOKUP_CACHE_SETS
+
+enum {
+    CLASS_LOOKUP_ABSENT,
+    CLASS_LOOKUP_FOUND,
+    CLASS_LOOKUP_SLOT,
+};
+
+typedef struct _class_lookup_entry_t {
+    const mp_obj_type_t *type;
+    const mp_obj_type_t *found_type;
+    const mp_map_elem_t *elem;
+    uint32_t version;
+    qstr attr;
+    uint16_t slot_offset;
+    uint8_t kind;
+} class_lookup_entry_t;
+
+static class_lookup_entry_t class_lookup_cache[CLASS_LOOKUP_CACHE_SETS][2];
+
+static inline class_lookup_entry_t *class_lookup_set(const mp_obj_type_t *type, qstr attr) {
+    // Names of one class are consecutive qstrs as often as not; folding the
+    // higher bits in keeps such runs from filling one set.
+    uintptr_t t = (uintptr_t)type;
+    size_t h = (attr ^ (attr >> 7) ^ (t >> 4) ^ (t >> 12)) % CLASS_LOOKUP_CACHE_SETS;
+    return class_lookup_cache[h];
+}
+
+static inline bool class_lookup_entry_valid(const class_lookup_entry_t *entry, const mp_obj_type_t *type, qstr attr, size_t slot_offset) {
+    return entry->type == type && entry->attr == attr && entry->slot_offset == slot_offset
+           && entry->version == mp_scope_mutation_count;
+}
+
+static inline const class_lookup_entry_t *class_lookup_find(const mp_obj_type_t *type, qstr attr, size_t slot_offset) {
+    const class_lookup_entry_t *set = class_lookup_set(type, attr);
+    if (class_lookup_entry_valid(&set[0], type, attr, slot_offset)) {
+        return &set[0];
+    }
+    if (class_lookup_entry_valid(&set[1], type, attr, slot_offset)) {
+        return &set[1];
+    }
+    return NULL;
+}
+
+static void class_lookup_record(const mp_obj_type_t *type, const struct class_lookup_data *lookup, uint32_t version,
+    uint8_t kind, const mp_obj_type_t *found_type, const mp_map_elem_t *elem) {
+    class_lookup_entry_t *set = class_lookup_set(type, lookup->attr);
+    set[1] = set[0];
+    class_lookup_entry_t *entry = &set[0];
+    entry->type = type;
+    entry->found_type = found_type;
+    entry->elem = elem;
+    entry->version = version;
+    entry->attr = lookup->attr;
+    entry->slot_offset = lookup->slot_offset;
+    entry->kind = kind;
+}
+
+bool mp_obj_class_lookup_cached(const mp_obj_type_t *type, qstr attr, mp_obj_t *value) {
+    const class_lookup_entry_t *entry = class_lookup_find(type, attr, 0);
+    if (entry == NULL || entry->kind == CLASS_LOOKUP_SLOT) {
+        return false;
+    }
+    *value = entry->kind == CLASS_LOOKUP_FOUND ? entry->elem->value : MP_OBJ_NULL;
+    return true;
+}
+#endif
+
 static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_type_t *type) {
     assert(lookup->dest[0] == MP_OBJ_NULL);
     assert(lookup->dest[1] == MP_OBJ_NULL);
+    #if MICROPY_OPT_CLASS_LOOKUP_CACHE
+    {
+        const class_lookup_entry_t *entry = class_lookup_find(type, lookup->attr, lookup->slot_offset);
+        if (entry != NULL) {
+            if (entry->kind == CLASS_LOOKUP_FOUND) {
+                class_lookup_apply(lookup, entry->found_type, entry->elem->value);
+            } else if (entry->kind == CLASS_LOOKUP_SLOT) {
+                lookup->dest[0] = MP_OBJ_SENTINEL;
+            }
+            return;
+        }
+    }
+    // Read before the walk: if anything moves the count meanwhile, the entry is
+    // born stale rather than wrong.
+    const uint32_t version = mp_scope_mutation_count;
+    const mp_obj_type_t *const start = type;
+    bool cacheable = true;
+    #define CLASS_LOOKUP_RECORD(kind, found_type, elem) do { \
+        if (cacheable) { \
+            class_lookup_record(start, lookup, version, kind, found_type, elem); \
+        } \
+} while (0)
+    #else
+    #define CLASS_LOOKUP_RECORD(kind, found_type, elem) ((void)0)
+    #endif
     for (;;) {
         DEBUG_printf("mp_obj_class_lookup: Looking up %s in %s\n", qstr_str(lookup->attr), qstr_str(type->name));
         // Optimize special method lookup for native types
@@ -181,6 +330,7 @@ static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_t
                 DEBUG_printf("mp_obj_class_lookup: Matched special meth slot (off=%d) for %s\n",
                     lookup->slot_offset, qstr_str(lookup->attr));
                 lookup->dest[0] = MP_OBJ_SENTINEL;
+                CLASS_LOOKUP_RECORD(CLASS_LOOKUP_SLOT, NULL, NULL);
                 return;
             }
         }
@@ -191,21 +341,8 @@ static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_t
             mp_map_t *locals_map = &MP_OBJ_TYPE_GET_SLOT(type, locals_dict)->map;
             mp_map_elem_t *elem = mp_map_lookup(locals_map, MP_OBJ_NEW_QSTR(lookup->attr), MP_MAP_LOOKUP);
             if (elem != NULL) {
-                if (lookup->is_type) {
-                    // If we look up a class method, we need to return original type for which we
-                    // do a lookup, not a (base) type in which we found the class method.
-                    const mp_obj_type_t *org_type = (const mp_obj_type_t *)lookup->obj;
-                    mp_convert_member_lookup(MP_OBJ_NULL, org_type, elem->value, lookup->dest);
-                } else if (mp_obj_is_type(elem->value, &mp_type_property)) {
-                    // CIRCUITPY-CHANGE: CircuitPython uses properties on native classes, so we always return them.
-                    lookup->dest[0] = elem->value;
-                    return;
-                } else {
-                    mp_obj_instance_t *obj = lookup->obj;
-                    // CIRCUITPY-CHANGE: Pass object directly. MP passes the native object.
-                    // This allows native code to lookup and call functions on Python subclasses.
-                    mp_convert_member_lookup(obj, type, elem->value, lookup->dest);
-                }
+                class_lookup_apply(lookup, type, elem->value);
+                CLASS_LOOKUP_RECORD(CLASS_LOOKUP_FOUND, type, elem);
                 #if DEBUG_PRINT
                 DEBUG_printf("mp_obj_class_lookup: Returning: ");
                 mp_obj_print_helper(MICROPY_DEBUG_PRINTER, lookup->dest[0], PRINT_REPR);
@@ -222,10 +359,17 @@ static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_t
         // Previous code block takes care about attributes defined in .locals_dict,
         // but some attributes of native types may be handled using .load_attr method,
         // so make sure we try to lookup those too.
-        if (lookup->obj != NULL && !lookup->is_type && mp_obj_is_native_type(type) && type != &mp_type_object /* object is not a real type */) {
-            mp_load_method_maybe(lookup->obj->subobj[0], lookup->attr, lookup->dest);
-            if (lookup->dest[0] != MP_OBJ_NULL) {
-                return;
+        if (mp_obj_is_native_type(type) && type != &mp_type_object /* object is not a real type */) {
+            // CIRCUITPY-CHANGE: from here on the answer can come from the object
+            // itself, so it is the object's, not the type's; see the cache above.
+            #if MICROPY_OPT_CLASS_LOOKUP_CACHE
+            cacheable = false;
+            #endif
+            if (lookup->obj != NULL && !lookup->is_type) {
+                mp_load_method_maybe(lookup->obj->subobj[0], lookup->attr, lookup->dest);
+                if (lookup->dest[0] != MP_OBJ_NULL) {
+                    return;
+                }
             }
         }
 
@@ -233,9 +377,15 @@ static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_t
 
         if (!MP_OBJ_TYPE_HAS_SLOT(type, parent)) {
             DEBUG_printf("mp_obj_class_lookup: No more parents\n");
+            CLASS_LOOKUP_RECORD(CLASS_LOOKUP_ABSENT, NULL, NULL);
             return;
         #if MICROPY_MULTIPLE_INHERITANCE
         } else if (((mp_obj_base_t *)MP_OBJ_TYPE_GET_SLOT(type, parent))->type == &mp_type_tuple) {
+            // CIRCUITPY-CHANGE: the bases are searched by recursive calls, each of
+            // which keeps its own entry; the combined answer is not kept.
+            #if MICROPY_OPT_CLASS_LOOKUP_CACHE
+            cacheable = false;
+            #endif
             const mp_obj_tuple_t *parent_tuple = MP_OBJ_TYPE_GET_SLOT(type, parent);
             const mp_obj_t *item = parent_tuple->items;
             const mp_obj_t *top = item + parent_tuple->len - 1;
@@ -261,9 +411,11 @@ static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_t
         }
         if (type == &mp_type_object) {
             // Not a "real" type
+            CLASS_LOOKUP_RECORD(CLASS_LOOKUP_ABSENT, NULL, NULL);
             return;
         }
     }
+    #undef CLASS_LOOKUP_RECORD
 }
 
 static void instance_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
@@ -713,8 +865,12 @@ static void mp_obj_instance_load_attr(mp_obj_t self_in, qstr attr, mp_obj_t *des
         }
         #endif
 
-        mp_obj_t dest2[3];
-        mp_load_method_maybe(self_in, MP_QSTR___getattr__, dest2);
+        // CIRCUITPY-CHANGE: looked up on the class directly, as for __setattr__
+        // in mp_obj_instance_store_attr.
+        mp_obj_t dest2[3] = {MP_OBJ_NULL, MP_OBJ_NULL, MP_OBJ_NULL};
+        lookup.attr = MP_QSTR___getattr__;
+        lookup.dest = dest2;
+        mp_obj_class_lookup(&lookup, self->base.type);
         if (dest2[0] != MP_OBJ_NULL) {
             // __getattr__ exists, call it and return its result
             dest2[2] = MP_OBJ_NEW_QSTR(attr);
@@ -816,11 +972,25 @@ static bool mp_obj_instance_store_attr(mp_obj_t self_in, qstr attr, mp_obj_t val
     #endif
 
     #if MICROPY_PY_DELATTR_SETATTR
+    // CIRCUITPY-CHANGE: __setattr__ and __delattr__ are looked up on the class
+    // directly, as CPython does, instead of through mp_load_method_maybe on the
+    // instance, which searched the instance members first (where they cannot
+    // usefully be) and reached the same class walk through three more calls.
+    // The walk itself is cached, see mp_obj_class_lookup.
+    struct class_lookup_data hook_lookup = {
+        .obj = self,
+        .attr = MP_QSTR___setattr__,
+        .slot_offset = 0,
+        .dest = NULL,
+        .is_type = false,
+    };
     if (value == MP_OBJ_NULL) {
         // delete attribute
         // try __delattr__ first
-        mp_obj_t attr_delattr_method[3];
-        mp_load_method_maybe(self_in, MP_QSTR___delattr__, attr_delattr_method);
+        mp_obj_t attr_delattr_method[3] = {MP_OBJ_NULL, MP_OBJ_NULL, MP_OBJ_NULL};
+        hook_lookup.attr = MP_QSTR___delattr__;
+        hook_lookup.dest = attr_delattr_method;
+        mp_obj_class_lookup(&hook_lookup, self->base.type);
         if (attr_delattr_method[0] != MP_OBJ_NULL) {
             // __delattr__ exists, so call it
             attr_delattr_method[2] = MP_OBJ_NEW_QSTR(attr);
@@ -830,8 +1000,9 @@ static bool mp_obj_instance_store_attr(mp_obj_t self_in, qstr attr, mp_obj_t val
     } else {
         // store attribute
         // try __setattr__ first
-        mp_obj_t attr_setattr_method[4];
-        mp_load_method_maybe(self_in, MP_QSTR___setattr__, attr_setattr_method);
+        mp_obj_t attr_setattr_method[4] = {MP_OBJ_NULL, MP_OBJ_NULL, MP_OBJ_NULL, MP_OBJ_NULL};
+        hook_lookup.dest = attr_setattr_method;
+        mp_obj_class_lookup(&hook_lookup, self->base.type);
         if (attr_setattr_method[0] != MP_OBJ_NULL) {
             // __setattr__ exists, so call it
             attr_setattr_method[2] = MP_OBJ_NEW_QSTR(attr);
@@ -1176,6 +1347,10 @@ static void type_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
                 // can't apply delete/store to a fixed map
                 return;
             }
+            // CIRCUITPY-CHANGE: this is the one way a class's attributes change
+            // after it exists, and the class lookup cache holds values as well as
+            // positions, so a replaced value has to retire its entries too.
+            mp_scope_mutation_bump();
             if (dest[1] == MP_OBJ_NULL) {
                 // delete attribute
                 mp_map_elem_t *elem = mp_map_lookup(locals_map, MP_OBJ_NEW_QSTR(attr), MP_MAP_LOOKUP_REMOVE_IF_FOUND);
@@ -1287,6 +1462,13 @@ static mp_obj_t mp_obj_new_type(qstr name, mp_obj_t bases_tuple, mp_obj_t locals
 
     mp_obj_dict_t *locals_ptr = MP_OBJ_TO_PTR(locals_dict);
     MP_OBJ_TYPE_SET_SLOT(o, locals_dict, locals_ptr, 9);
+    // CIRCUITPY-CHANGE: the dict is now a class's attributes, so a key coming or
+    // going in it has to be noticed by the class lookup cache; and the type may
+    // sit where a dead one used to. See mp_obj_class_lookup.
+    if (!locals_ptr->map.is_fixed) {
+        locals_ptr->map.is_scope = 1;
+    }
+    mp_scope_mutation_bump();
 
     if (bases_len > 0) {
         if (bases_len >= 2) {

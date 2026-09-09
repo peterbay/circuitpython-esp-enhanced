@@ -311,9 +311,9 @@ mp_obj_t mp_obj_dict_copy(mp_obj_t self_in) {
     other->map.is_ordered = self->map.is_ordered;
     memcpy(other->map.table, self->map.table, self->map.alloc * sizeof(mp_map_elem_t));
     // CIRCUITPY-CHANGE: the one place a map gets filled without going through
-    // mp_map_lookup, so raise the mutation count by hand. Without this a dict that
-    // happens to land on the address of a dead globals dict could still satisfy a
-    // cached name lookup. See mp_load_global.
+    // mp_map_lookup, so raise the mutation count by hand. The scope count stays:
+    // a copy is never a scope, and a copy of a scope is a new object that has not
+    // been resolved through. See mp_load_global.
     mp_map_mutation_count++;
     return other_out;
 }
@@ -420,6 +420,9 @@ static mp_obj_t dict_popitem(mp_obj_t self_in) {
     self->map.used--;
     // CIRCUITPY-CHANGE: removes a key without going through mp_map_lookup.
     mp_map_mutation_count++;
+    if (self->map.is_scope) {
+        mp_scope_mutation_count++;
+    }
     mp_obj_t items[] = {next->key, next->value};
     next->key = MP_OBJ_SENTINEL; // must mark key as sentinel to indicate that it was deleted
     next->value = MP_OBJ_NULL;

@@ -132,6 +132,9 @@ mp_obj_t mp_obj_new_module(qstr module_name) {
     // CIRCUITPY-CHANGE: Use mp_obj_malloc because it is a Python object
     mp_module_context_t *o = mp_obj_malloc(mp_module_context_t, &mp_type_module);
     o->module.globals = MP_OBJ_TO_PTR(mp_obj_new_dict(MICROPY_MODULE_DICT_SIZE));
+    // CIRCUITPY-CHANGE: a new scope, see mp_load_global.
+    o->module.globals->map.is_scope = 1;
+    mp_scope_mutation_bump();
 
     // store __name__ entry in the module
     mp_obj_dict_store(MP_OBJ_FROM_PTR(o->module.globals), MP_OBJ_NEW_QSTR(MP_QSTR___name__), MP_OBJ_NEW_QSTR(module_name));

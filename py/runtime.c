@@ -132,6 +132,10 @@ void mp_init(void) {
     // initialise the __main__ module
     mp_obj_dict_init(&MP_STATE_VM(dict_main), 1);
     mp_obj_dict_store(MP_OBJ_FROM_PTR(&MP_STATE_VM(dict_main)), MP_OBJ_NEW_QSTR(MP_QSTR___name__), MP_OBJ_NEW_QSTR(MP_QSTR___main__));
+    // CIRCUITPY-CHANGE: a scope, and a fresh interpreter: everything the caches
+    // remember from the last run is about objects that no longer exist.
+    MP_STATE_VM(dict_main).map.is_scope = 1;
+    mp_scope_mutation_bump();
 
     // locals = globals for outer module (see Objects/frameobject.c/PyFrame_New())
     mp_locals_set(&MP_STATE_VM(dict_main));
@@ -259,8 +263,11 @@ mp_obj_t MICROPY_WRAP_MP_LOAD_GLOBAL(mp_load_global)(qstr qst) {
     // module's globals and one that finds it. The miss is the expensive half and
     // nothing about it can be cached by the map lookup cache, which only records
     // where a key was found. Remember the outcome instead, and keep it only while
-    // no map anywhere has gained or lost a key, because that is exactly when a
-    // module could have started shadowing the name.
+    // no scope map has gained or lost a key, because that is exactly when a
+    // module could have started shadowing the name. The globals map is marked as
+    // a scope here, when the first answer that depends on it is recorded; it
+    // used to be every map in the program, and then every object that gained an
+    // attribute threw the whole cache away.
     //
     // Only results from the constant builtins table are stored. Those values live
     // in ROM, so the cache never holds a reference the collector would need to
@@ -291,9 +298,14 @@ mp_obj_t MICROPY_WRAP_MP_LOAD_GLOBAL(mp_load_global)(qstr qst) {
         elem = mp_map_lookup((mp_map_t *)&mp_module_builtins_globals.map, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);
         #if MICROPY_OPT_LOAD_GLOBAL_CACHE
         if (elem != NULL && cacheable) {
+            // A fixed map (a builtin module's dict handed to exec) lives in ROM
+            // and cannot change membership, so it needs no mark.
+            if (!globals_map->is_fixed) {
+                globals_map->is_scope = 1;
+            }
             cache_entry->name = qst;
             cache_entry->globals = globals_map;
-            cache_entry->mutation = mp_map_mutation_count;
+            cache_entry->mutation = mp_scope_mutation_count;
             cache_entry->value = elem->value;
         }
         #endif
@@ -1793,6 +1805,15 @@ mp_obj_t mp_parse_compile_execute(mp_lexer_t *lex, mp_parse_input_kind_t parse_i
     // set new context
     mp_globals_set(globals);
     mp_locals_set(locals);
+    // CIRCUITPY-CHANGE: the dict may be new to this role, and may sit where a
+    // dead scope used to, so nothing recorded against that address may survive.
+    // Marking it now also means the keys it had before it became a scope are the
+    // last ones it can gain unnoticed. See mp_load_global. compile() passes no
+    // globals at all, because nothing runs.
+    if (globals != NULL && !globals->map.is_fixed) {
+        globals->map.is_scope = 1;
+    }
+    mp_scope_mutation_bump();
 
     // set exception handler to restore context if an exception is raised
     nlr_push_jump_callback(&ctx.callback, mp_globals_locals_set_from_nlr_jump_callback);

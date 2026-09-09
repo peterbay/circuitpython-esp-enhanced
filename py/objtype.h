@@ -55,4 +55,12 @@ mp_obj_t mp_obj_instance_getiter(mp_obj_t self_in, mp_obj_iter_buf_t *iter_buf);
 // CIRCUITPY-CHANGE: addition
 void mp_obj_assert_native_inited(mp_obj_t native_object);
 
+#if MICROPY_OPT_CLASS_LOOKUP_CACHE
+// CIRCUITPY-CHANGE: what the class lookup cache already knows about `attr` on
+// `type`, without a walk: true with *value the raw class attribute, or
+// MP_OBJ_NULL when the chain is known not to have it; false when the cache
+// has no answer or the answer is a native slot. For the VM's fast paths.
+bool mp_obj_class_lookup_cached(const mp_obj_type_t *type, qstr attr, mp_obj_t *value);
+#endif
+
 #endif // MICROPY_INCLUDED_PY_OBJTYPE_H

@@ -82,6 +82,21 @@ static inline void vm_absent_set(const mp_map_t *map, qstr name) {
 }
 #endif
 
+#if MICROPY_OPT_CLASS_LOOKUP_CACHE
+// CIRCUITPY-CHANGE: a class attribute an instance reads back as itself: not a
+// function, which binds; not a property or a descriptor, which run; not a
+// class. Small ints, qstrs, floats and immediates are never objects, and of
+// the objects the builtin strings, numbers and containers have no __get__.
+static inline bool vm_is_plain_value(mp_obj_t value) {
+    if (!mp_obj_is_obj(value)) {
+        return true;
+    }
+    const mp_obj_type_t *type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(value))->type;
+    return type == &mp_type_str || type == &mp_type_tuple || type == &mp_type_list
+           || type == &mp_type_dict || type == &mp_type_bytes || type == &mp_type_int;
+}
+#endif
+
 #if 0
 #if MICROPY_PY_THREAD
 #define TRACE_PREFIX mp_printf(&mp_plat_print, "ts=%p sp=%d ", mp_thread_get_state(), (int)(sp - &code_state->state[0] + 1))
@@ -627,7 +642,29 @@ dispatch_loop:
                             mp_map_t *members = &((mp_obj_instance_t *)MP_OBJ_TO_PTR(top))->members;
                             elem = mp_map_cache_hit(members, MP_OBJ_NEW_QSTR(qst));
                             if (elem == NULL) {
-                                elem = mp_map_lookup(members, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);
+                                // CIRCUITPY-CHANGE: a name that is not an instance
+                                // attribute may still be answered here, from the class
+                                // lookup cache, when the class holds a plain value under
+                                // it -- a constant, a table, a default. A method, a
+                                // property or a descriptor needs binding or a call and
+                                // goes through mp_load_attr, which fills that cache.
+                                bool absent = vm_absent_hit(members, qst);
+                                if (!absent) {
+                                    elem = mp_map_lookup(members, MP_OBJ_NEW_QSTR(qst), MP_MAP_LOOKUP);
+                                    if (elem == NULL) {
+                                        absent = true;
+                                        vm_absent_set(members, qst);
+                                    }
+                                }
+                                #if MICROPY_OPT_CLASS_LOOKUP_CACHE
+                                mp_obj_t member;
+                                if (absent && qst != MP_QSTR___dict__ && qst != MP_QSTR___class__
+                                    && mp_obj_class_lookup_cached(top_type, qst, &member)
+                                    && member != MP_OBJ_NULL && vm_is_plain_value(member)) {
+                                    SET_TOP(member);
+                                    DISPATCH();
+                                }
+                                #endif
                             }
                         }
                     }
@@ -663,13 +700,18 @@ dispatch_loop:
                     // leaves staticmethod, classmethod, property and native functions
                     // to the general path. __class__ is left alone too, because
                     // mp_load_method_maybe answers it specially.
+                    //
+                    // CIRCUITPY-CHANGE: a class with a property or a descriptor, and a
+                    // method inherited from a base, used to be left to the general path
+                    // as well. Both are answered from the class lookup cache now: a
+                    // function found anywhere in the chain binds the same way, and a
+                    // property or descriptor of that name would have been found instead.
                     #if MICROPY_OPT_LOAD_METHOD_FAST_PATH
                     {
                         mp_obj_t recv = *sp;
                         if (mp_obj_is_obj(recv)) {
                             const mp_obj_type_t *recv_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(recv))->type;
                             if (mp_obj_is_instance_type(recv_type)
-                                && !(recv_type->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS)
                                 && qst != MP_QSTR___class__
                                 && MP_OBJ_TYPE_HAS_SLOT(recv_type, locals_dict)) {
                                 mp_obj_instance_t *self = MP_OBJ_TO_PTR(recv);
@@ -692,16 +734,30 @@ dispatch_loop:
                                 absent = mp_map_lookup(members, key, MP_MAP_LOOKUP) == NULL;
                                 #endif
                                 if (absent) {
-                                    mp_map_t *locals = &MP_OBJ_TYPE_GET_SLOT(recv_type, locals_dict)->map;
-                                    mp_map_elem_t *found = NULL;
-                                    #if MICROPY_OPT_VM_MAP_CACHE_PROBE
-                                    found = mp_map_cache_hit(locals, key);
-                                    #endif
-                                    if (found == NULL) {
-                                        found = mp_map_lookup(locals, key, MP_MAP_LOOKUP);
+                                    mp_obj_t fun = MP_OBJ_NULL;
+                                    if (!(recv_type->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS)) {
+                                        mp_map_t *locals = &MP_OBJ_TYPE_GET_SLOT(recv_type, locals_dict)->map;
+                                        mp_map_elem_t *found = NULL;
+                                        #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                                        found = mp_map_cache_hit(locals, key);
+                                        #endif
+                                        if (found == NULL) {
+                                            found = mp_map_lookup(locals, key, MP_MAP_LOOKUP);
+                                        }
+                                        if (found != NULL) {
+                                            fun = found->value;
+                                        }
                                     }
-                                    if (found != NULL && mp_obj_is_type(found->value, &mp_type_fun_bc)) {
-                                        sp[0] = found->value;
+                                    #if MICROPY_OPT_CLASS_LOOKUP_CACHE
+                                    if (fun == MP_OBJ_NULL) {
+                                        mp_obj_t member;
+                                        if (mp_obj_class_lookup_cached(recv_type, qst, &member)) {
+                                            fun = member;
+                                        }
+                                    }
+                                    #endif
+                                    if (fun != MP_OBJ_NULL && mp_obj_is_type(fun, &mp_type_fun_bc)) {
+                                        sp[0] = fun;
                                         sp[1] = recv;
                                         sp += 1;
                                         DISPATCH();
@@ -870,13 +926,39 @@ dispatch_loop:
                         // found and fixed for "del x[i]" but not for its sibling here.
                         if (sp[-1] != MP_OBJ_NULL && mp_obj_is_obj(dest_obj)) {
                             const mp_obj_type_t *dest_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(dest_obj))->type;
-                            if (mp_obj_is_instance_type(dest_type)
-                                && !(dest_type->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS)) {
-                                mp_obj_instance_t *self = MP_OBJ_TO_PTR(dest_obj);
-                                mp_map_lookup(&self->members, MP_OBJ_NEW_QSTR(qst),
-                                    MP_MAP_LOOKUP_ADD_IF_NOT_FOUND)->value = sp[-1];
-                                sp -= 2;
-                                DISPATCH();
+                            if (mp_obj_is_instance_type(dest_type)) {
+                                bool plain = !(dest_type->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS);
+                                #if MICROPY_OPT_CLASS_LOOKUP_CACHE
+                                // CIRCUITPY-CHANGE: a class with a property or a
+                                // descriptor somewhere is still a plain store for every
+                                // other name, once the class lookup cache knows that the
+                                // chain has no property, descriptor or __setattr__ for it.
+                                // The first store of each name goes through
+                                // mp_store_attr, which is what fills that cache.
+                                if (!plain) {
+                                    mp_obj_t member, hook;
+                                    plain = mp_obj_class_lookup_cached(dest_type, qst, &member)
+                                        && (member == MP_OBJ_NULL || !mp_obj_is_obj(member))
+                                        && mp_obj_class_lookup_cached(dest_type, MP_QSTR___setattr__, &hook)
+                                        && hook == MP_OBJ_NULL;
+                                }
+                                #endif
+                                if (plain) {
+                                    mp_obj_instance_t *self = MP_OBJ_TO_PTR(dest_obj);
+                                    mp_map_elem_t *elem = NULL;
+                                    #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                                    // CIRCUITPY-CHANGE: the position of an attribute
+                                    // stored before is in the map lookup cache.
+                                    elem = mp_map_cache_hit(&self->members, MP_OBJ_NEW_QSTR(qst));
+                                    #endif
+                                    if (elem == NULL) {
+                                        elem = mp_map_lookup(&self->members, MP_OBJ_NEW_QSTR(qst),
+                                            MP_MAP_LOOKUP_ADD_IF_NOT_FOUND);
+                                    }
+                                    elem->value = sp[-1];
+                                    sp -= 2;
+                                    DISPATCH();
+                                }
                             }
                         }
                     }
