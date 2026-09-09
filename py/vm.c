@@ -86,6 +86,76 @@ static inline void vm_absent_set(const mp_map_t *map, qstr name) {
 }
 #endif
 
+#if MICROPY_OPT_VM_MAP_CACHE_PROBE
+// CIRCUITPY-CHANGE: what mp_load_global would answer from its caches, or
+// MP_OBJ_NULL. First the name as a builtin -- in a real application that is
+// seven loads in ten -- in the same order and with the same validity test
+// mp_load_global uses, then the name in the module's globals through the map
+// lookup cache. Used by LOAD_GLOBAL, and by LOAD_NAME at module level, which is
+// the same lookup under another opcode and is where the example programs run
+// their main loops.
+static inline mp_obj_t vm_load_global_hit(qstr qst, mp_map_t *globals_map) {
+    mp_obj_t found = MP_OBJ_NULL;
+    #if MICROPY_OPT_LOAD_GLOBAL_CACHE
+    found = mp_load_global_builtin_hit(qst, globals_map);
+    #endif
+    if (found == MP_OBJ_NULL) {
+        mp_map_elem_t *elem = mp_map_cache_hit(globals_map, MP_OBJ_NEW_QSTR(qst));
+        if (elem != NULL) {
+            found = elem->value;
+        }
+    }
+    return found;
+}
+
+// CIRCUITPY-CHANGE: the type of a receiver, without mp_obj_get_type's chain of
+// tests, for the two kinds LOAD_METHOD has shortcuts for: heap objects, and the
+// interned strings that method calls on literals start from. NULL otherwise.
+static inline const mp_obj_type_t *vm_receiver_type(mp_obj_t recv) {
+    if (mp_obj_is_obj(recv)) {
+        return ((mp_obj_base_t *)MP_OBJ_TO_PTR(recv))->type;
+    }
+    if (mp_obj_is_qstr(recv)) {
+        return &mp_type_str;
+    }
+    return NULL;
+}
+
+// CIRCUITPY-CHANGE: a method of a builtin type found in the type's locals_dict
+// through the map lookup cache, ready to bind. Exactly the case
+// mp_convert_member_lookup turns into (method, self): a builtin function that
+// binds self, on a native type. Properties, plain values and anything else go
+// the general way, and so does a type with its own attr handler, which
+// mp_load_method_maybe consults before the locals.
+static inline mp_obj_t vm_builtin_method_hit(const mp_obj_type_t *type, qstr qst) {
+    if (MP_OBJ_TYPE_HAS_SLOT(type, attr) || !MP_OBJ_TYPE_HAS_SLOT(type, locals_dict)
+        || qst == MP_QSTR___class__ || qst == MP_QSTR___next__) {
+        return MP_OBJ_NULL;
+    }
+    mp_map_elem_t *elem = mp_map_cache_hit(&MP_OBJ_TYPE_GET_SLOT(type, locals_dict)->map, MP_OBJ_NEW_QSTR(qst));
+    if (elem == NULL || !mp_obj_is_obj(elem->value)) {
+        return MP_OBJ_NULL;
+    }
+    const mp_obj_type_t *m_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(elem->value))->type;
+    if ((m_type->flags & (MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN))
+        != (MP_TYPE_FLAG_BINDS_SELF | MP_TYPE_FLAG_BUILTIN_FUN)) {
+        return MP_OBJ_NULL;
+    }
+    return elem->value;
+}
+
+// CIRCUITPY-CHANGE: an attribute of a module found in its globals through the
+// map lookup cache. A hit is the first thing module_attr answers with; the
+// __dict__, __getattr__ and delegation cases only arise on a miss.
+static inline mp_obj_t vm_module_attr_hit(mp_obj_t module, qstr qst) {
+    if (qst == MP_QSTR___class__) {
+        return MP_OBJ_NULL;
+    }
+    mp_map_elem_t *elem = mp_map_cache_hit(&((mp_obj_module_t *)MP_OBJ_TO_PTR(module))->globals->map, MP_OBJ_NEW_QSTR(qst));
+    return elem != NULL ? elem->value : MP_OBJ_NULL;
+}
+#endif
+
 #if MICROPY_OPT_CLASS_LOOKUP_CACHE
 // CIRCUITPY-CHANGE: a class attribute an instance reads back as itself: not a
 // function, which binds; not a property or a descriptor, which run; not a
@@ -588,6 +658,31 @@ dispatch_loop:
                 ENTRY(MP_BC_LOAD_NAME): {
                     MARK_EXC_IP_SELECTIVE();
                     DECODE_QSTR;
+                    #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                    // CIRCUITPY-CHANGE: at module level locals is globals and this is
+                    // LOAD_GLOBAL under another name, so it gets the same shortcuts;
+                    // 19% of the opcodes in the bundle's example programs are this
+                    // one. In a class body or an exec with its own locals, a name
+                    // found in the locals through the cache is the answer; a miss
+                    // there has to go through mp_load_name, which searches the
+                    // locals in full before falling back to the globals.
+                    {
+                        mp_obj_dict_t *locals = mp_locals_get();
+                        mp_obj_t found = MP_OBJ_NULL;
+                        if (locals == mp_globals_get()) {
+                            found = vm_load_global_hit(qst, &locals->map);
+                        } else {
+                            mp_map_elem_t *elem = mp_map_cache_hit(&locals->map, MP_OBJ_NEW_QSTR(qst));
+                            if (elem != NULL) {
+                                found = elem->value;
+                            }
+                        }
+                        if (found != MP_OBJ_NULL) {
+                            PUSH(found);
+                            DISPATCH();
+                        }
+                    }
+                    #endif
                     PUSH(mp_load_name(qst));
                     DISPATCH();
                 }
@@ -597,24 +692,11 @@ dispatch_loop:
                     DECODE_QSTR;
                     #if MICROPY_OPT_VM_MAP_CACHE_PROBE
                     // CIRCUITPY-CHANGE: both answers mp_load_global can give from a
-                    // cache are settled here without the call. First the name as a
-                    // builtin -- in a real application that is seven loads in ten --
-                    // in the same order and with the same validity test
-                    // mp_load_global uses, then the name in the module's globals
-                    // through the map lookup cache. Anything else goes through
-                    // mp_load_global as before, which is also what fills both caches.
+                    // cache are settled here without the call, see
+                    // vm_load_global_hit. Anything else goes through mp_load_global
+                    // as before, which is also what fills both caches.
                     {
-                        mp_map_t *globals_map = &mp_globals_get()->map;
-                        mp_obj_t found = MP_OBJ_NULL;
-                        #if MICROPY_OPT_LOAD_GLOBAL_CACHE
-                        found = mp_load_global_builtin_hit(qst, globals_map);
-                        #endif
-                        if (found == MP_OBJ_NULL) {
-                            mp_map_elem_t *elem = mp_map_cache_hit(globals_map, MP_OBJ_NEW_QSTR(qst));
-                            if (elem != NULL) {
-                                found = elem->value;
-                            }
-                        }
+                        mp_obj_t found = vm_load_global_hit(qst, &mp_globals_get()->map);
                         if (found != MP_OBJ_NULL) {
                             PUSH(found);
                             DISPATCH();
@@ -673,6 +755,14 @@ dispatch_loop:
                                 }
                                 #endif
                             }
+                        } else if (top_type == &mp_type_module) {
+                            // CIRCUITPY-CHANGE: time.monotonic, board.D5, math.pi: the
+                            // example programs read a module attribute 9200 times.
+                            mp_obj_t found = vm_module_attr_hit(top, qst);
+                            if (found != MP_OBJ_NULL) {
+                                SET_TOP(found);
+                                DISPATCH();
+                            }
                         }
                     }
                     #else
@@ -716,11 +806,36 @@ dispatch_loop:
                     #if MICROPY_OPT_LOAD_METHOD_FAST_PATH
                     {
                         mp_obj_t recv = *sp;
+                        #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                        // CIRCUITPY-CHANGE: the two other shapes the bundle is made of:
+                        // a function of a module (time.sleep, struct.unpack) and a
+                        // method of a builtin type (list.append, str.split, also on a
+                        // string literal). The former is pushed unbound, the latter
+                        // bound to the receiver, exactly as mp_load_method would.
+                        const mp_obj_type_t *recv_type = vm_receiver_type(recv);
+                        if (recv_type == &mp_type_module) {
+                            mp_obj_t found = vm_module_attr_hit(recv, qst);
+                            if (found != MP_OBJ_NULL) {
+                                sp[0] = found;
+                                sp[1] = MP_OBJ_NULL;
+                                sp += 1;
+                                DISPATCH();
+                            }
+                        } else if (recv_type != NULL && !mp_obj_is_instance_type(recv_type)) {
+                            mp_obj_t found = vm_builtin_method_hit(recv_type, qst);
+                            if (found != MP_OBJ_NULL) {
+                                sp[0] = found;
+                                sp[1] = recv;
+                                sp += 1;
+                                DISPATCH();
+                            }
+                        }
+                        #endif
                         if (mp_obj_is_obj(recv)) {
-                            const mp_obj_type_t *recv_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(recv))->type;
-                            if (mp_obj_is_instance_type(recv_type)
+                            const mp_obj_type_t *inst_type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(recv))->type;
+                            if (mp_obj_is_instance_type(inst_type)
                                 && qst != MP_QSTR___class__
-                                && MP_OBJ_TYPE_HAS_SLOT(recv_type, locals_dict)) {
+                                && MP_OBJ_TYPE_HAS_SLOT(inst_type, locals_dict)) {
                                 mp_obj_instance_t *self = MP_OBJ_TO_PTR(recv);
                                 mp_obj_t key = MP_OBJ_NEW_QSTR(qst);
                                 mp_map_t *members = &self->members;
@@ -896,6 +1011,24 @@ dispatch_loop:
                 ENTRY(MP_BC_STORE_NAME): {
                     MARK_EXC_IP_SELECTIVE();
                     DECODE_QSTR;
+                    #if MICROPY_OPT_VM_MAP_CACHE_PROBE
+                    // CIRCUITPY-CHANGE: a name stored before has its slot in the map
+                    // lookup cache, and rebinding it is a store into that slot; 9% of
+                    // the opcodes in the example programs, whose loops live at module
+                    // level. A first binding, and a fixed map -- a builtin module's
+                    // dict handed to exec, which has to raise -- go through
+                    // mp_store_name.
+                    {
+                        mp_map_t *locals_map = &mp_locals_get()->map;
+                        if (!locals_map->is_fixed) {
+                            mp_map_elem_t *elem = mp_map_cache_hit(locals_map, MP_OBJ_NEW_QSTR(qst));
+                            if (elem != NULL) {
+                                elem->value = POP();
+                                DISPATCH();
+                            }
+                        }
+                    }
+                    #endif
                     mp_store_name(qst, POP());
                     DISPATCH();
                 }
