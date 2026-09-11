@@ -225,6 +225,42 @@ typedef enum {
 #define MAX_EXACT_POWER_OF_5 (22)
 #endif
 
+#if MICROPY_FLOAT_FORMAT_IMPL != MICROPY_FLOAT_FORMAT_IMPL_EXACT
+// CIRCUITPY-CHANGE: the pow() below is only ever asked for 5 raised to a small
+// exponent, and by the definition of MAX_EXACT_POWER_OF_5 those values are
+// exactly representable, so they are a short table of constants. On a chip
+// without an FPU pow() is a soft-float routine and formatting one float with
+// '%.2f' called it four times. Values outside the table still go to pow().
+static const mp_float_t PLACE_IN_DTCM_DATA(mp_exact_powers_of_5[]) = {
+    MICROPY_FLOAT_CONST(1.0),
+    MICROPY_FLOAT_CONST(5.0),
+    MICROPY_FLOAT_CONST(25.0),
+    MICROPY_FLOAT_CONST(125.0),
+    MICROPY_FLOAT_CONST(625.0),
+    MICROPY_FLOAT_CONST(3125.0),
+    MICROPY_FLOAT_CONST(15625.0),
+    MICROPY_FLOAT_CONST(78125.0),
+    MICROPY_FLOAT_CONST(390625.0),
+    MICROPY_FLOAT_CONST(1953125.0),
+    MICROPY_FLOAT_CONST(9765625.0),
+    #if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
+    MICROPY_FLOAT_CONST(48828125.0),
+    MICROPY_FLOAT_CONST(244140625.0),
+    MICROPY_FLOAT_CONST(1220703125.0),
+    MICROPY_FLOAT_CONST(6103515625.0),
+    MICROPY_FLOAT_CONST(30517578125.0),
+    MICROPY_FLOAT_CONST(152587890625.0),
+    MICROPY_FLOAT_CONST(762939453125.0),
+    MICROPY_FLOAT_CONST(3814697265625.0),
+    MICROPY_FLOAT_CONST(19073486328125.0),
+    MICROPY_FLOAT_CONST(95367431640625.0),
+    MICROPY_FLOAT_CONST(476837158203125.0),
+    MICROPY_FLOAT_CONST(2384185791015625.0),
+    #endif
+};
+MP_STATIC_ASSERT(MP_ARRAY_SIZE(mp_exact_powers_of_5) == MAX_EXACT_POWER_OF_5 + 1);
+#endif
+
 // Helper to compute `num * (10.0 ** dec_exp)`
 mp_large_float_t PLACE_IN_WARM_CODE(mp_decimal_exp)(mp_large_float_t num, int dec_exp) {
     // CIRCUITPY-CHANGE: ignore float equal warning
@@ -278,7 +314,9 @@ mp_large_float_t PLACE_IN_WARM_CODE(mp_decimal_exp)(mp_large_float_t num, int de
     res.p.exp += dec_exp;
     // Use positive exponents when they are more precise then negative
     if (dec_exp < 0 && dec_exp >= -MAX_EXACT_POWER_OF_5) {
-        res.f /= MICROPY_FLOAT_C_FUN(pow)(5, -dec_exp);
+        res.f /= mp_exact_powers_of_5[-dec_exp];
+    } else if (dec_exp > 0 && dec_exp <= MAX_EXACT_POWER_OF_5) {
+        res.f *= mp_exact_powers_of_5[dec_exp];
     } else {
         res.f *= MICROPY_FLOAT_C_FUN(pow)(5, dec_exp);
     }
