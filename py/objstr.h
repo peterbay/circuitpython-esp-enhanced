@@ -50,6 +50,21 @@ typedef struct _mp_obj_str_t {
 
 #define MP_DEFINE_STR_OBJ(obj_name, str) mp_obj_str_t obj_name = {{&mp_type_str}, 0, sizeof(str) - 1, (const byte *)str}
 
+// CIRCUITPY-CHANGE: a hash is MICROPY_QSTR_BYTES_IN_HASH bytes wide (see
+// Q_HASH_MASK in py/qstr.c), so the rest of the size_t the field takes up is
+// free. The bit above the hash records that every byte of the string is
+// ASCII, which is what makes indexing and len() of it a computation rather
+// than a walk; see str_subscr() in py/objstrunicode.c. It is only ever set
+// together with a hash, so "hash == 0" still means "not computed" and
+// clearing the field clears the flag with it.
+#if MICROPY_QSTR_BYTES_IN_HASH
+#define MP_STR_HASH_BITS (8 * MICROPY_QSTR_BYTES_IN_HASH)
+#else
+#define MP_STR_HASH_BITS (16)
+#endif
+#define MP_STR_HASH_MASK ((size_t)((1u << MP_STR_HASH_BITS) - 1))
+#define MP_STR_FLAG_ASCII ((size_t)1 << MP_STR_HASH_BITS)
+
 // use this macro to extract the string hash
 // warning: the hash can be 0, meaning invalid, and must then be explicitly computed from the data
 #define GET_STR_HASH(str_obj_in, str_hash) \
@@ -57,8 +72,15 @@ typedef struct _mp_obj_str_t {
     if (mp_obj_is_qstr(str_obj_in)) { \
         str_hash = qstr_hash(MP_OBJ_QSTR_VALUE(str_obj_in)); \
     } else { \
-        str_hash = ((mp_obj_str_t *)MP_OBJ_TO_PTR(str_obj_in))->hash; \
+        str_hash = ((mp_obj_str_t *)MP_OBJ_TO_PTR(str_obj_in))->hash & MP_STR_HASH_MASK; \
     }
+
+// CIRCUITPY-CHANGE: true when the string is known to be all ASCII. A qstr
+// says no: it has no object to keep the flag in, and answering no only costs
+// the walk that was there before.
+#define GET_STR_ASCII(str_obj_in, str_ascii) \
+    bool str_ascii = !mp_obj_is_qstr(str_obj_in) \
+        && (((mp_obj_str_t *)MP_OBJ_TO_PTR(str_obj_in))->hash & MP_STR_FLAG_ASCII) != 0
 
 // use this macro to extract the string length
 #define GET_STR_LEN(str_obj_in, str_len) \

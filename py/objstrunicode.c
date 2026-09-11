@@ -111,8 +111,15 @@ static mp_obj_t PLACE_IN_WARM_CODE(uni_unary_op)(mp_unary_op_t op, mp_obj_t self
     switch (op) {
         case MP_UNARY_OP_BOOL:
             return mp_obj_new_bool(str_len != 0);
-        case MP_UNARY_OP_LEN:
+        case MP_UNARY_OP_LEN: {
+            // CIRCUITPY-CHANGE: a string known to be all ASCII has as many
+            // characters as bytes, so len() need not count them.
+            GET_STR_ASCII(self_in, is_ascii);
+            if (is_ascii) {
+                return MP_OBJ_NEW_SMALL_INT(str_len);
+            }
             return MP_OBJ_NEW_SMALL_INT(utf8_charlen(str_data, str_len));
+        }
         default:
             return MP_OBJ_NULL; // op not supported
     }
@@ -192,6 +199,38 @@ static mp_obj_t PLACE_IN_WARM_CODE(str_subscr)(mp_obj_t self_in, mp_obj_t index,
     GET_STR_DATA_LEN(self_in, self_data, self_len);
     if (value == MP_OBJ_SENTINEL) {
         // load
+        // CIRCUITPY-CHANGE: in a string known to be all ASCII the nth
+        // character is the nth byte, so an index or a slice of it is
+        // arithmetic rather than a walk from the start of the string. A
+        // parser that reads a line character by character walked it once per
+        // index: 5.8% of an NMEA workload sat in str_index_to_ptr().
+        // Anything but a plain integer index or a plain integer slice --
+        // an index of another type, a slice with a step or with non-integer
+        // bounds -- keeps the old path, so that its errors read as before.
+        GET_STR_ASCII(self_in, is_ascii);
+        if (is_ascii) {
+            #if MICROPY_PY_BUILTINS_SLICE
+            if (mp_obj_is_type(index, &mp_type_slice)) {
+                mp_obj_slice_t *slice = MP_OBJ_TO_PTR(index);
+                if ((slice->step == mp_const_none || slice->step == MP_OBJ_NEW_SMALL_INT(1))
+                    && (slice->start == mp_const_none || mp_obj_is_small_int(slice->start))
+                    && (slice->stop == mp_const_none || mp_obj_is_small_int(slice->stop))) {
+                    mp_bound_slice_t bounds;
+                    mp_obj_slice_indices(index, self_len, &bounds);
+                    size_t stop = bounds.stop > bounds.start ? (size_t)bounds.stop : (size_t)bounds.start;
+                    return mp_obj_new_str_of_type(type, self_data + bounds.start, stop - bounds.start);
+                }
+            } else
+            #endif
+            if (mp_obj_is_small_int(index)) {
+                size_t index_val = mp_get_index(type, self_len, index, false);
+                #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+                return MP_OBJ_NEW_QSTR(qstr_from_char(self_data[index_val]));
+                #else
+                return mp_obj_new_str_of_type(type, self_data + index_val, 1);
+                #endif
+            }
+        }
         #if MICROPY_PY_BUILTINS_SLICE
         if (mp_obj_is_type(index, &mp_type_slice)) {
             mp_obj_t ostart, ostop, ostep;

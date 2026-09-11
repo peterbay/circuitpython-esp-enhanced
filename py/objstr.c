@@ -53,6 +53,30 @@ static MP_NORETURN void bad_implicit_conversion(mp_obj_t self_in);
 
 static mp_obj_t mp_obj_new_str_type_from_vstr(const mp_obj_type_t *type, vstr_t *vstr);
 
+// CIRCUITPY-CHANGE: MP_STR_FLAG_ASCII if this is a str and every byte of it
+// is ASCII, so that indexing and len() of it need no walk; see objstr.h. Only
+// str asks, because bytes are indexed by byte anyway, and the scan costs
+// about a cycle per byte against the hash the caller computes in the same
+// breath.
+static size_t mp_str_ascii_flag(const mp_obj_type_t *type, const byte *data, size_t len) {
+    #if MICROPY_PY_BUILTINS_STR_UNICODE
+    if (type != &mp_type_str) {
+        return 0;
+    }
+    byte bits = 0;
+    for (const byte *top = data + len; data < top;) {
+        bits |= *data++;
+    }
+    return (bits & 0x80) ? 0 : MP_STR_FLAG_ASCII;
+    #else
+    // without unicode every string is indexed by byte already
+    (void)type;
+    (void)data;
+    (void)len;
+    return 0;
+    #endif
+}
+
 static void str_check_arg_type(const mp_obj_type_t *self_type, const mp_obj_t arg) {
     // String operations generally need the args type to match the object they're called on,
     // e.g. str.find(str), byte.startswith(byte)
@@ -2289,7 +2313,7 @@ mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_str_copy)(const mp_obj_type_t *type, cons
     mp_obj_str_t *o = mp_obj_malloc(mp_obj_str_t, type);
     o->len = len;
     if (data) {
-        o->hash = qstr_compute_hash(data, len);
+        o->hash = qstr_compute_hash(data, len) | mp_str_ascii_flag(type, data, len);
         // CIRCUITPY-CHANGE: the payload holds text, never pointers into the heap, so the
         // collector has no reason to walk it. objarray and qstr already allocate their
         // leaf buffers this way; see the note on m_malloc_without_collect in py/misc.h.
@@ -2375,7 +2399,7 @@ static mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_str_type_from_vstr)(const mp_obj_t
     #endif
     mp_obj_str_t *o = mp_obj_malloc(mp_obj_str_t, type);
     o->len = vstr->len;
-    o->hash = qstr_compute_hash(data, vstr->len);
+    o->hash = qstr_compute_hash(data, vstr->len) | mp_str_ascii_flag(type, data, vstr->len);
     o->data = data;
     return MP_OBJ_FROM_PTR(o);
 }
