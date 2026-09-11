@@ -712,14 +712,26 @@ void mp_obj_exception_add_traceback(mp_obj_t self_in, qstr file, size_t line, qs
             return;
         }
         #endif
-        // be conservative with growing traceback data
+        // CIRCUITPY-CHANGE: grow geometrically. One entry at a time is one
+        // m_renew per frame, and each of those walks the allocation table to
+        // find out how long the block currently is (see gc_realloc). Raising
+        // the same exception instance again appends to its traceback without
+        // bound -- `raise _ERR` in a loop, a shape libraries use -- so that
+        // walk grew with every raise. At most twice the entries are held.
+        size_t new_alloc = self->traceback->alloc * 2;
         size_t *tb_data = m_renew_maybe(size_t, self->traceback->data, self->traceback->alloc,
-            self->traceback->alloc + TRACEBACK_ENTRY_LEN, true);
+            new_alloc, true);
         if (tb_data == NULL) {
-            return;
+            // no room to double, so ask for just this entry
+            new_alloc = self->traceback->alloc + TRACEBACK_ENTRY_LEN;
+            tb_data = m_renew_maybe(size_t, self->traceback->data, self->traceback->alloc,
+                new_alloc, true);
+            if (tb_data == NULL) {
+                return;
+            }
         }
         self->traceback->data = tb_data;
-        self->traceback->alloc += TRACEBACK_ENTRY_LEN;
+        self->traceback->alloc = new_alloc;
     }
 
     size_t *tb_data = &self->traceback->data[self->traceback->len];
