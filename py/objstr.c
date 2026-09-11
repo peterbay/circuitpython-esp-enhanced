@@ -2340,6 +2340,15 @@ static mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_str_type_from_vstr)(const mp_obj_t
             vstr->alloc = 0;
             return MP_OBJ_NEW_QSTR(MP_QSTR_);
         }
+        #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+        // CIRCUITPY-CHANGE: see mp_obj_new_str().
+        if (vstr->len == 1 && (byte)vstr->buf[0] < 128) {
+            qstr q = qstr_from_char((byte)vstr->buf[0]);
+            vstr_clear(vstr);
+            vstr->alloc = 0;
+            return MP_OBJ_NEW_QSTR(q);
+        }
+        #endif
         #else
         qstr q = qstr_find_strn(vstr->buf, vstr->len);
         if (q != MP_QSTRnull) {
@@ -2402,6 +2411,14 @@ mp_obj_t PLACE_IN_WARM_CODE(mp_obj_new_str)(const char *data, size_t len) {
     if (len == 0) {
         return MP_OBJ_NEW_QSTR(MP_QSTR_);
     }
+    #if MICROPY_OPT_SINGLE_CHAR_QSTR_CACHE
+    // CIRCUITPY-CHANGE: one ASCII character is a qstr the cache answers with
+    // in a load, where building a str object costs two allocations. Splitting
+    // a line into single-character tokens went through here for every one.
+    if (len == 1 && (byte)data[0] < 128) {
+        return MP_OBJ_NEW_QSTR(qstr_from_char((byte)data[0]));
+    }
+    #endif
     #else
     qstr q = qstr_find_strn(data, len);
     if (q != MP_QSTRnull) {
