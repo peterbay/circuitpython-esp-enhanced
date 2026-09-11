@@ -265,9 +265,10 @@ mp_code_state_t *mp_obj_fun_bc_prepare_codestate(mp_obj_t self_in, size_t n_args
 // mp_setup_code_state(): the prelude decoded a second time, a memset call for
 // a handful of slots, and the frame of a function large enough to handle every
 // call shape. The shapes that fast path covers -- positional arguments only,
-// as many as there are parameters, no *args, **kwargs, keyword-only
-// parameters or cells -- are decided by the prelude alone, so the answer is
-// computed here on the first call and kept in the function object.
+// no *args, **kwargs, keyword-only parameters or cells, and any number of
+// arguments the parameters and their defaults admit -- are decided by the
+// prelude alone, so the answer is computed here on the first call and kept in
+// the function object.
 static uint32_t fun_bc_compute_call_info(const mp_obj_fun_bc_t *self) {
     const byte *ip = self->bytecode;
     MP_BC_PRELUDE_SIG_DECODE(ip);
@@ -284,7 +285,8 @@ static uint32_t fun_bc_compute_call_info(const mp_obj_fun_bc_t *self) {
         || code_offset > MP_FUN_BC_CALL_INFO_MAX_OFFSET) {
         return MP_FUN_BC_CALL_INFO_NONE;
     }
-    return MP_FUN_BC_CALL_INFO_PACK(n_pos_args, n_state, n_exc_stack, code_offset);
+    return MP_FUN_BC_CALL_INFO_PACK(n_pos_args, n_pos_args - n_def_pos_args,
+        n_state, n_exc_stack, code_offset);
 }
 #endif
 
@@ -307,7 +309,8 @@ mp_obj_t PLACE_IN_ITCM(mp_obj_fun_bc_call)(mp_obj_t self_in, size_t n_args, size
         info = fun_bc_compute_call_info(self);
         self->call_info = info;
     }
-    if (n_kw == 0 && info != MP_FUN_BC_CALL_INFO_NONE && n_args == MP_FUN_BC_CALL_INFO_ARGS(info)) {
+    if (n_kw == 0 && info != MP_FUN_BC_CALL_INFO_NONE
+        && n_args <= MP_FUN_BC_CALL_INFO_ARGS(info) && n_args >= MP_FUN_BC_CALL_INFO_MIN_ARGS(info)) {
         // The same frame mp_setup_code_state() would build for this shape,
         // field for field, without decoding anything.
         n_state = MP_FUN_BC_CALL_INFO_STATE(info);
@@ -333,6 +336,13 @@ mp_obj_t PLACE_IN_ITCM(mp_obj_fun_bc_call)(mp_obj_t self_in, size_t n_args, size
         }
         for (size_t i = 0; i < n_args; i++) {
             state[n_state - 1 - i] = args[i];
+        }
+        // Parameters the call did not reach take their defaults, which are
+        // the first entries of extra_args (there is no keyword default dict
+        // in this shape). Their slots are inside the cleared region above.
+        size_t n_pos_args = MP_FUN_BC_CALL_INFO_ARGS(info);
+        for (size_t i = n_args; i < n_pos_args; i++) {
+            state[n_state - 1 - i] = self->extra_args[i - MP_FUN_BC_CALL_INFO_MIN_ARGS(info)];
         }
         code_state->old_globals = mp_globals_get();
     } else

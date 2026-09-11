@@ -51,18 +51,22 @@ typedef struct _mp_obj_fun_bc_t {
 } mp_obj_fun_bc_t;
 
 #if MICROPY_OPT_FUN_BC_CALL_INFO
-// Packed as: bits 0-7 positional parameters, 8-19 n_state, 20-23 exception
-// stack depth, 24-31 offset of the first opcode from the start of the bytecode.
-// n_state is at least 1, so a real value is never 0 or 1.
+// Packed as: bits 0-4 positional parameters, 5-9 the smallest number of
+// arguments a call may pass (parameters less those with a default), 10-19
+// n_state, 20-23 exception stack depth, 24-31 offset of the first opcode from
+// the start of the bytecode. n_state is at least 1, so a real value never has
+// bits 10-19 clear and is therefore never 0 or 1.
 #define MP_FUN_BC_CALL_INFO_NONE (1u)
-#define MP_FUN_BC_CALL_INFO_MAX_ARGS (0xffu)
-#define MP_FUN_BC_CALL_INFO_MAX_STATE (0xfffu)
+#define MP_FUN_BC_CALL_INFO_MAX_ARGS (0x1fu)
+#define MP_FUN_BC_CALL_INFO_MAX_STATE (0x3ffu)
 #define MP_FUN_BC_CALL_INFO_MAX_EXC (0xfu)
 #define MP_FUN_BC_CALL_INFO_MAX_OFFSET (0xffu)
-#define MP_FUN_BC_CALL_INFO_PACK(args, state, exc, off) \
-    ((uint32_t)(args) | ((uint32_t)(state) << 8) | ((uint32_t)(exc) << 20) | ((uint32_t)(off) << 24))
-#define MP_FUN_BC_CALL_INFO_ARGS(i) ((i) & 0xffu)
-#define MP_FUN_BC_CALL_INFO_STATE(i) (((i) >> 8) & 0xfffu)
+#define MP_FUN_BC_CALL_INFO_PACK(args, min_args, state, exc, off) \
+    ((uint32_t)(args) | ((uint32_t)(min_args) << 5) | ((uint32_t)(state) << 10) \
+    | ((uint32_t)(exc) << 20) | ((uint32_t)(off) << 24))
+#define MP_FUN_BC_CALL_INFO_ARGS(i) ((i) & 0x1fu)
+#define MP_FUN_BC_CALL_INFO_MIN_ARGS(i) (((i) >> 5) & 0x1fu)
+#define MP_FUN_BC_CALL_INFO_STATE(i) (((i) >> 10) & 0x3ffu)
 #define MP_FUN_BC_CALL_INFO_EXC(i) (((i) >> 20) & 0xfu)
 #define MP_FUN_BC_CALL_INFO_OFFSET(i) ((i) >> 24)
 #endif
