@@ -203,6 +203,25 @@ ifeq ($(CIRCUITPY_TINYUSB),1)
 
   endif
 
+  # CIRCUITPY-CHANGE: USB network interface, see shared-module/usb_net/__init__.h.
+  # TinyUSB's two network drivers define the same symbols, so exactly one of
+  # them is built.
+  ifeq ($(CIRCUITPY_USB_NET), 1)
+    SRC_SUPERVISOR += \
+      shared-bindings/usb_net/__init__.c \
+      shared-module/usb_net/__init__.c \
+
+    ifeq ($(CIRCUITPY_USB_NET_RNDIS), 1)
+      SRC_SUPERVISOR += \
+        lib/tinyusb/src/class/net/ecm_rndis_device.c \
+        lib/tinyusb/lib/networking/rndis_reports.c \
+
+      CFLAGS += -isystem $(TOP)/lib/tinyusb/lib/networking
+    else
+      SRC_SUPERVISOR += lib/tinyusb/src/class/net/ncm_device.c
+    endif
+  endif
+
   ifeq ($(CIRCUITPY_TINYUSB_HOST), 1)
     SRC_SUPERVISOR += \
       lib/tinyusb/src/host/hub.c \

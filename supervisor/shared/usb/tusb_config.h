@@ -118,6 +118,23 @@ extern "C" {
 #define CFG_TUD_AUDIO               CIRCUITPY_USB_AUDIO
 #define CFG_TUD_CUSTOM_CLASS        0
 
+// ------------- NETWORK CLASS -------------//
+// The two drivers define the same symbols and cannot both be built, so the
+// protocol is picked here, at build time.
+#if CIRCUITPY_USB_NET && CIRCUITPY_USB_NET_RNDIS
+#define CFG_TUD_ECM_RNDIS           1
+#define CFG_TUD_NCM                 0
+#else
+#define CFG_TUD_ECM_RNDIS           0
+#define CFG_TUD_NCM                 CIRCUITPY_USB_NET
+#endif
+
+#if CFG_TUD_NCM
+// One NTB in each direction, of TinyUSB's default size, 3200 bytes.
+#define CFG_TUD_NCM_OUT_NTB_N 1
+#define CFG_TUD_NCM_IN_NTB_N 1
+#endif
+
 // ------------- AUDIO CLASS (UAC2 microphone) -------------//
 #if CIRCUITPY_USB_AUDIO
 #include "shared-module/usb_audio/usb_audio_descriptors.h"

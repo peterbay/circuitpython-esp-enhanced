@@ -43,6 +43,10 @@
 #include "shared-module/usb_audio/__init__.h"
 #endif
 
+#if CIRCUITPY_USB_NET
+#include "shared-module/usb_net/__init__.h"
+#endif
+
 #endif
 
 #include "tusb.h"
@@ -132,6 +136,13 @@ void usb_init(void) {
 
     // Only init device. Host gets inited by the `usb_host` module common-hal.
     tud_init(TUD_OPT_RHPORT);
+    // CIRCUITPY-CHANGE: bring up the network interface behind the class, now
+    // that the descriptors say whether it is there at all.
+    #if CIRCUITPY_USB_NET
+    if (usb_net_enabled()) {
+        usb_net_port_init();
+    }
+    #endif
     #endif
 
     post_usb_init();

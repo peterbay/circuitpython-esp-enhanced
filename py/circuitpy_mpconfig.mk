@@ -737,6 +737,25 @@ CFLAGS += -DCIRCUITPY_USB_MSC_ENABLED_DEFAULT=$(CIRCUITPY_USB_MSC_ENABLED_DEFAUL
 # setting in their mpconfigport.mk and/or mpconfigboard.mk files yet.
 CIRCUITPY_USB_VENDOR ?= 0
 CFLAGS += -DCIRCUITPY_USB_VENDOR=$(CIRCUITPY_USB_VENDOR)
+
+# CIRCUITPY-CHANGE: a network interface over USB. The board answers on an
+# address of its own, so a browser on the host reaches a server on the board
+# with no network in between. Costs two IN endpoints and one OUT, which is
+# more than a board with five IN endpoints has left once CDC, MSC and HID have
+# taken theirs; off by default for that reason as much as any other.
+CIRCUITPY_USB_NET ?= 0
+CFLAGS += -DCIRCUITPY_USB_NET=$(CIRCUITPY_USB_NET)
+# Compiled in but not presented to the host unless boot.py asks for it, since
+# on most boards something else has to be turned off to make room.
+CIRCUITPY_USB_NET_ENABLED_DEFAULT ?= 0
+CFLAGS += -DCIRCUITPY_USB_NET_ENABLED_DEFAULT=$(CIRCUITPY_USB_NET_ENABLED_DEFAULT)
+# Which protocol carries the frames. NCM is the standard one, and Windows 11,
+# Linux and macOS all take it without a driver; RNDIS is Microsoft's older
+# one, which Windows binds but does not start for this device. TinyUSB's two
+# drivers define the same symbols, so this is a build-time choice rather than
+# one boot.py can make.
+CIRCUITPY_USB_NET_RNDIS ?= 0
+CFLAGS += -DCIRCUITPY_USB_NET_RNDIS=$(CIRCUITPY_USB_NET_RNDIS)
 endif
 
 

@@ -36,6 +36,10 @@
 #include "shared-module/usb_audio/__init__.h"
 #endif
 
+#if CIRCUITPY_USB_NET
+#include "shared-module/usb_net/__init__.h"
+#endif
+
 #include "shared-bindings/microcontroller/Processor.h"
 
 
@@ -180,6 +184,12 @@ static bool usb_build_configuration_descriptor(void) {
     }
     #endif
 
+    #if CIRCUITPY_USB_NET
+    if (usb_net_enabled()) {
+        total_descriptor_length += usb_net_descriptor_length();
+    }
+    #endif
+
     // Now we know how big the configuration descriptor will be, so we can allocate space for it.
     configuration_descriptor =
         (uint8_t *)port_malloc(total_descriptor_length,
@@ -276,6 +286,14 @@ static bool usb_build_configuration_descriptor(void) {
             descriptor_buf_remaining, &descriptor_counts, &current_interface_string);
     }
     #endif
+
+    #if CIRCUITPY_USB_NET
+    if (usb_net_enabled()) {
+        descriptor_buf_remaining += usb_net_add_descriptor(
+            descriptor_buf_remaining, &descriptor_counts, &current_interface_string);
+    }
+    #endif
+
     // Now we know how many interfaces have been used.
     configuration_descriptor[CONFIG_NUM_INTERFACES_INDEX] = descriptor_counts.current_interface;
 

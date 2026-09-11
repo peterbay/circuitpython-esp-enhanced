@@ -478,6 +478,10 @@ endif
 ifeq ($(CIRCUITPY_USB_VENDOR),1)
 SRC_PATTERNS += usb_vendor/%
 endif
+# CIRCUITPY-CHANGE: the USB network interface module
+ifeq ($(CIRCUITPY_USB_NET),1)
+SRC_PATTERNS += usb_net/%
+endif
 ifeq ($(CIRCUITPY_USTACK),1)
 SRC_PATTERNS += ustack/%
 endif

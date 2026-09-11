@@ -678,6 +678,11 @@ SRC_C += \
 	lib/tinyusb/src/portable/synopsys/dwc2/dwc2_common.c
 endif
 
+# CIRCUITPY-CHANGE: the esp_netif end of the USB network class.
+ifeq ($(CIRCUITPY_USB_NET),1)
+SRC_C += supervisor/usb_net_netif.c
+endif
+
 ifneq ($(CIRCUITPY_AUDIOBUSIO),0)
 CHIP_COMPONENTS += esp_driver_i2s
 endif
