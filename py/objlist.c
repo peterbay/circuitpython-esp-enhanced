@@ -527,7 +527,10 @@ static MP_DEFINE_CONST_DICT(PLACE_IN_DTCM_DATA(list_locals_dict), list_locals_di
 MP_DEFINE_CONST_OBJ_TYPE(
     PLACE_IN_DTCM_DATA(mp_type_list),
     MP_QSTR_list,
-    MP_TYPE_FLAG_ITER_IS_GETITER | MP_TYPE_FLAG_PRINT_JSON,
+    // CIRCUITPY-CHANGE: list_subscr only reads the slice, whether it loads,
+    // assigns or deletes, so the VM can keep it on the C stack; see
+    // MP_BC_BUILD_SLICE in py/vm.c.
+    MP_TYPE_FLAG_ITER_IS_GETITER | MP_TYPE_FLAG_PRINT_JSON | MP_TYPE_FLAG_SUBSCR_ALLOWS_STACK_SLICE,
     make_new, mp_obj_list_make_new,
     print, list_print,
     unary_op, list_unary_op,

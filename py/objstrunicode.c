@@ -262,7 +262,9 @@ static mp_obj_t PLACE_IN_WARM_CODE(str_subscr)(mp_obj_t self_in, mp_obj_t index,
 MP_DEFINE_CONST_OBJ_TYPE(
     PLACE_IN_DTCM_DATA(mp_type_str),
     MP_QSTR_str,
-    MP_TYPE_FLAG_ITER_IS_GETITER | MP_TYPE_FLAG_PRINT_JSON,
+    // CIRCUITPY-CHANGE: str_subscr only reads the slice, so the VM can keep it
+    // on the C stack; see MP_BC_BUILD_SLICE in py/vm.c.
+    MP_TYPE_FLAG_ITER_IS_GETITER | MP_TYPE_FLAG_PRINT_JSON | MP_TYPE_FLAG_SUBSCR_ALLOWS_STACK_SLICE,
     make_new, mp_obj_str_make_new,
     print, uni_print,
     unary_op, uni_unary_op,

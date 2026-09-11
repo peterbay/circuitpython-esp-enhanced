@@ -2251,7 +2251,9 @@ static mp_obj_t mp_obj_new_str_iterator(mp_obj_t str, mp_obj_iter_buf_t *iter_bu
 MP_DEFINE_CONST_OBJ_TYPE(
     PLACE_IN_DTCM_DATA(mp_type_str),
     MP_QSTR_str,
-    MP_TYPE_FLAG_PRINT_JSON,
+    // CIRCUITPY-CHANGE: bytes_subscr only reads the slice, so the VM can keep
+    // it on the C stack; see MP_BC_BUILD_SLICE in py/vm.c.
+    MP_TYPE_FLAG_PRINT_JSON | MP_TYPE_FLAG_SUBSCR_ALLOWS_STACK_SLICE,
     make_new, mp_obj_str_make_new,
     print, str_print,
     binary_op, mp_obj_str_binary_op,
@@ -2266,7 +2268,8 @@ MP_DEFINE_CONST_OBJ_TYPE(
 MP_DEFINE_CONST_OBJ_TYPE(
     PLACE_IN_DTCM_DATA(mp_type_bytes),
     MP_QSTR_bytes,
-    MP_TYPE_FLAG_NONE,
+    // CIRCUITPY-CHANGE: see mp_type_str above.
+    MP_TYPE_FLAG_SUBSCR_ALLOWS_STACK_SLICE,
     make_new, bytes_make_new,
     print, str_print,
     binary_op, mp_obj_str_binary_op,
