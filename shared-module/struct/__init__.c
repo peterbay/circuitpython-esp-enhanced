@@ -64,31 +64,16 @@ static mp_uint_t PLACE_IN_WARM_CODE(get_fmt_num)(const char **p) {
     return val;
 }
 
-static mp_uint_t PLACE_IN_WARM_CODE(calcsize_items)(const char *fmt) {
-    mp_uint_t cnt = 0;
-    while (*fmt) {
-        int num = 1;
-        if (unichar_isdigit(*fmt)) {
-            num = get_fmt_num(&fmt);
-            if (*fmt == 's') {
-                num = 1;
-            }
-        }
-        // Pad bytes are skipped and don't get included in the item count.
-        if (*fmt != 'x') {
-            cnt += num;
-        }
-        fmt++;
-    }
-    return cnt;
-}
-
-mp_uint_t PLACE_IN_WARM_CODE(shared_modules_struct_calcsize)(mp_obj_t fmt_in) {
-    const char *fmt = mp_obj_str_get_str(fmt_in);
-    char fmt_type = get_fmt_type(&fmt);
-
-    mp_uint_t size;
-    for (size = 0; *fmt; fmt++) {
+// CIRCUITPY-CHANGE: unpacking used to walk the format three times -- once for
+// the item count, once for the total size (after a second
+// mp_obj_str_get_str and get_fmt_type), and once to unpack -- with a
+// mp_binary_get_size call per code in each of the first two. One walk answers
+// both questions. fmt points past the byte-order character; num_items may be
+// NULL when only the size is wanted.
+static mp_uint_t PLACE_IN_WARM_CODE(struct_size_and_items)(const char *fmt, char fmt_type, mp_uint_t *num_items) {
+    mp_uint_t size = 0;
+    mp_uint_t items = 0;
+    for (; *fmt; fmt++) {
 
         struct_validate_format(*fmt);
 
@@ -99,17 +84,32 @@ mp_uint_t PLACE_IN_WARM_CODE(shared_modules_struct_calcsize)(mp_obj_t fmt_in) {
 
         if (*fmt == 's') {
             size += cnt;
+            // a counted 's' is one item however long it is
+            items += 1;
         } else {
             mp_uint_t align;
             size_t sz = mp_binary_get_size(fmt_type, *fmt, &align);
-            while (cnt--) {
+            for (mp_uint_t i = 0; i < cnt; i++) {
                 // Apply alignment
                 size = (size + align - 1) & ~(align - 1);
                 size += sz;
             }
+            // Pad bytes are skipped and don't get included in the item count.
+            if (*fmt != 'x') {
+                items += cnt;
+            }
         }
     }
+    if (num_items != NULL) {
+        *num_items = items;
+    }
     return size;
+}
+
+mp_uint_t PLACE_IN_WARM_CODE(shared_modules_struct_calcsize)(mp_obj_t fmt_in) {
+    const char *fmt = mp_obj_str_get_str(fmt_in);
+    char fmt_type = get_fmt_type(&fmt);
+    return struct_size_and_items(fmt, fmt_type, NULL);
 }
 
 void shared_modules_struct_pack_into(mp_obj_t fmt_in, byte *p, byte *end_p, size_t n_args, const mp_obj_t *args) {
@@ -166,8 +166,8 @@ mp_obj_tuple_t *PLACE_IN_WARM_CODE(shared_modules_struct_unpack_from)(mp_obj_t f
 
     const char *fmt = mp_obj_str_get_str(fmt_in);
     char fmt_type = get_fmt_type(&fmt);
-    const mp_uint_t num_items = calcsize_items(fmt);
-    const mp_uint_t total_sz = shared_modules_struct_calcsize(fmt_in);
+    mp_uint_t num_items;
+    const mp_uint_t total_sz = struct_size_and_items(fmt, fmt_type, &num_items);
     mp_obj_tuple_t *res = MP_OBJ_TO_PTR(mp_obj_new_tuple(num_items, NULL));
 
     // If exact_size, make sure the buffer is exactly the right size.
