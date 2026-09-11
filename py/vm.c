@@ -291,38 +291,52 @@ static inline bool vm_is_true(mp_obj_t o) {
 // function's own frame and argument count check. All of that is decidable here.
 // Returns false for anything it does not handle, including a wrong argument count,
 // so the general path still reports the error.
-static inline bool vm_call_builtin(mp_obj_t fun, size_t n_args, const mp_obj_t *args, mp_obj_t *res) {
+static inline bool vm_call_builtin(mp_obj_t fun, size_t n_args, size_t n_kw, const mp_obj_t *args, mp_obj_t *res) {
     if (!mp_obj_is_obj(fun)) {
         return false;
     }
     const mp_obj_type_t *type = ((mp_obj_base_t *)MP_OBJ_TO_PTR(fun))->type;
     const mp_obj_fun_builtin_fixed_t *f = MP_OBJ_TO_PTR(fun);
     if (type == &mp_type_fun_builtin_1) {
-        if (n_args == 1) {
+        if (n_args == 1 && n_kw == 0) {
             *res = f->fun._1(args[0]);
             return true;
         }
     } else if (type == &mp_type_fun_builtin_2) {
-        if (n_args == 2) {
+        if (n_args == 2 && n_kw == 0) {
             *res = f->fun._2(args[0], args[1]);
             return true;
         }
     } else if (type == &mp_type_fun_builtin_var) {
         const mp_obj_fun_builtin_var_t *v = MP_OBJ_TO_PTR(fun);
         uint32_t sig = v->sig;
-        // The reverse of MP_OBJ_FUN_MAKE_SIG. Bit 0 says the function wants a
-        // keyword map, and then fun.var is the wrong member to call.
-        if ((sig & 1) == 0 && n_args >= (sig >> 17) && n_args <= ((sig >> 1) & 0xffff)) {
-            *res = v->fun.var(n_args, args);
-            return true;
+        // The reverse of MP_OBJ_FUN_MAKE_SIG: bit 0 says the function wants a
+        // keyword map, bits 1..16 the largest and 17.. the smallest number of
+        // positional arguments it accepts.
+        if (n_args >= (sig >> 17) && n_args <= ((sig >> 1) & 0xffff)) {
+            if (sig & 1) {
+                // CIRCUITPY-CHANGE: a builtin that takes keywords -- min, max,
+                // struct.unpack_from, int.from_bytes and every binding that
+                // parses its arguments with mp_arg_parse_all -- went the whole
+                // general way even when called without any. The map the callee
+                // wants is the keyword pairs the caller already left on the
+                // stack after the positional ones.
+                mp_map_t kw_args;
+                mp_map_init_fixed_table(&kw_args, n_kw, args + n_args);
+                *res = v->fun.kw(n_args, args, &kw_args);
+                return true;
+            } else if (n_kw == 0) {
+                *res = v->fun.var(n_args, args);
+                return true;
+            }
         }
     } else if (type == &mp_type_fun_builtin_3) {
-        if (n_args == 3) {
+        if (n_args == 3 && n_kw == 0) {
             *res = f->fun._3(args[0], args[1], args[2]);
             return true;
         }
     } else if (type == &mp_type_fun_builtin_0) {
-        if (n_args == 0) {
+        if (n_args == 0 && n_kw == 0) {
             *res = f->fun._0();
             return true;
         }
@@ -1672,9 +1686,9 @@ unwind_jump:;
                     }
                     #endif
                     #if MICROPY_OPT_CALL_BUILTIN_FAST_PATH
-                    if (((unum >> 8) & 0xff) == 0) {
+                    {
                         mp_obj_t res;
-                        if (vm_call_builtin(*sp, unum & 0xff, sp + 1, &res)) {
+                        if (vm_call_builtin(*sp, unum & 0xff, (unum >> 8) & 0xff, sp + 1, &res)) {
                             SET_TOP(res);
                             DISPATCH();
                         }
@@ -1775,10 +1789,11 @@ unwind_jump:;
                     }
                     #endif
                     #if MICROPY_OPT_CALL_BUILTIN_FAST_PATH
-                    if (((unum >> 8) & 0xff) == 0) {
+                    {
                         size_t adjust = (sp[1] == MP_OBJ_NULL) ? 0 : 1;
                         mp_obj_t res;
-                        if (vm_call_builtin(*sp, (unum & 0xff) + adjust, sp + 2 - adjust, &res)) {
+                        if (vm_call_builtin(*sp, (unum & 0xff) + adjust, (unum >> 8) & 0xff,
+                            sp + 2 - adjust, &res)) {
                             SET_TOP(res);
                             // CIRCUITPY-CHANGE
                             DISPATCH_WITH_PEND_EXC_CHECK();
