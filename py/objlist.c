@@ -149,6 +149,9 @@ static mp_obj_t list_binary_op(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
             mp_seq_multiply(o->items, sizeof(*o->items), o->len, n, s->items);
             return MP_OBJ_FROM_PTR(s);
         }
+        // CIRCUITPY-CHANGE: `x in l` without an iterator, see py/sequence.c
+        case MP_BINARY_OP_CONTAINS:
+            return mp_obj_new_bool(mp_seq_contains(o->items, o->len, rhs));
         case MP_BINARY_OP_EQUAL:
         case MP_BINARY_OP_LESS:
         case MP_BINARY_OP_LESS_EQUAL:

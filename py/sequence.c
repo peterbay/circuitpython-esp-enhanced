@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "py/runtime.h"
+#include "supervisor/linker.h"
 
 // Helpers for sequence types
 
@@ -211,6 +212,37 @@ mp_obj_t mp_seq_index_obj(const mp_obj_t *items, size_t len, size_t n_args, cons
     }
 
     mp_raise_ValueError(MP_ERROR_TEXT("object not in sequence"));
+}
+
+// CIRCUITPY-CHANGE: `x in seq` for a tuple or a list used to fall through to
+// the generic path in mp_binary_op, which builds an iterator and calls
+// mp_iternext and mp_obj_equal per element: 1088 cycles for `9 in (1,2,3,4)`
+// on an ESP32-C5. A small int and an interned string carry their value in the
+// object word, so for those two elements are equal exactly when they are the
+// same word, and no call is needed either way. Everything else, floats
+// included (a NaN is not equal to itself), still goes to mp_obj_equal.
+static inline bool seq_is_immediate(mp_obj_t o) {
+    return mp_obj_is_small_int(o) || mp_obj_is_qstr(o);
+}
+
+bool PLACE_IN_WARM_CODE(mp_seq_contains)(const mp_obj_t *items, size_t len, mp_obj_t value) {
+    bool value_immediate = seq_is_immediate(value);
+    for (size_t i = 0; i < len; i++) {
+        mp_obj_t item = items[i];
+        if (item == value) {
+            if (value_immediate) {
+                return true;
+            }
+        } else if (value_immediate && seq_is_immediate(item)
+                   && mp_obj_is_small_int(item) == mp_obj_is_small_int(value)) {
+            // two different small ints, or two different interned strings
+            continue;
+        }
+        if (mp_obj_equal(item, value)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 mp_obj_t mp_seq_count_obj(const mp_obj_t *items, size_t len, mp_obj_t value) {
