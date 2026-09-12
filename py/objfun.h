@@ -79,13 +79,14 @@ typedef struct _mp_obj_fun_asm_t {
 } mp_obj_fun_asm_t;
 
 mp_obj_t mp_obj_new_fun_bc(const mp_obj_t *def_args, const byte *code, const mp_module_context_t *cm, struct _mp_raw_code_t *const *raw_code_table);
+qstr mp_obj_fun_bc_get_name(const mp_obj_fun_bc_t *fun);
 void mp_obj_fun_bc_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest);
 
 // CIRCUITPY-CHANGE: exposed so the VM can call it directly, bypassing the
 // type-slot indirection in mp_call_function_n_kw.
 mp_obj_t mp_obj_fun_bc_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const mp_obj_t *args);
 
-#if MICROPY_EMIT_NATIVE
+#if MICROPY_ENABLE_NATIVE_CODE
 
 static inline mp_obj_t mp_obj_new_fun_native(const mp_obj_t *def_args, const void *fun_data, const mp_module_context_t *mc, struct _mp_raw_code_t *const *child_table) {
     mp_obj_fun_bc_t *o = (mp_obj_fun_bc_t *)MP_OBJ_TO_PTR(mp_obj_new_fun_bc(def_args, (const byte *)fun_data, mc, child_table));

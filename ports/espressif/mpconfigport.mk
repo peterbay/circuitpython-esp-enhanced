@@ -11,6 +11,9 @@ CROSS_COMPILE = riscv32-esp-elf-
 else ifeq ($(IDF_TARGET),esp32c3)
 IDF_TARGET_ARCH = riscv
 CROSS_COMPILE = riscv32-esp-elf-
+else ifeq ($(IDF_TARGET),esp32c5)
+IDF_TARGET_ARCH = riscv
+CROSS_COMPILE = riscv32-esp-elf-
 else ifeq ($(IDF_TARGET),esp32p4)
 IDF_TARGET_ARCH = riscv
 CROSS_COMPILE = riscv32-esp-elf-
@@ -220,12 +223,18 @@ CIRCUITPY_ESPULP = 0
 CIRCUITPY_MEMORYMAP = 0
 CIRCUITPY_RGBMATRIX = 0
 
+# TWAI-FD generation, needs a new canio backend
+CIRCUITPY_CANIO = 0
+
 # No capacitive touch peripheral
 CIRCUITPY_ALARM_TOUCH = 0
 CIRCUITPY_TOUCHIO_USE_NATIVE = 0
 
 # No DAC
 CIRCUITPY_AUDIOIO = 0
+
+# No I2S peripheral PDM-to-PCM hardware support
+CIRCUITPY_AUDIOBUSIO_PDMIN = 0
 
 # No I80 support from the IDF
 CIRCUITPY_PARALLELDISPLAYBUS = 0
@@ -241,11 +250,8 @@ CIRCUITPY_ESP_USB_SERIAL_JTAG ?= 1
 
 CIRCUITPY_BLEIO_NATIVE ?= 1
 
-CIRCUITPY_CANIO ?= 1
-
-# RMT, PCNT and I2S with PDM RX are all present, so neopixel_write, pulseio,
-# countio and audiobusio are left enabled. If the image turns out not to fit,
-# those are the first things to drop.
+# RMT and PCNT are present, so neopixel_write, pulseio and countio are left
+# enabled. If the image turns out not to fit, those are the first things to drop.
 
 #### esp32c6 ##########################################################
 else ifeq ($(IDF_TARGET),esp32c6)

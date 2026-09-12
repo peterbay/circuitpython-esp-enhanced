@@ -22,6 +22,7 @@
 
 #if defined(CONFIG_ARCH_POSIX)
 #include <limits.h>
+#include <stdio.h>
 #include <fcntl.h>
 
 #include "cmdline.h"
@@ -64,31 +65,35 @@ static struct k_timer tick_timer;
 // Number of VM runs before exiting.
 // <= 0 means run forever.
 // INT32_MAX means option was not provided.
-static int32_t native_sim_vm_runs = INT32_MAX;
+static int32_t native_sim_port_resets = INT32_MAX;
 static uint32_t native_sim_reset_port_count = 0;
 
 // Path to a file used to preserve retained memory across the execv reboot, or
 // NULL if disabled. Set with --retained-memory=<path> (see
-// cp_saved_word_save/restore()). Currently persists the safe-mode saved word;
-// intended to also preserve sleep RAM in the future.
+// cp_retained_save/restore()).
 static const char *native_sim_retained_memory;
+
+typedef struct {
+    uint32_t saved_word;
+    uint32_t port_reset_count;
+} cp_retained_data_t;
 
 static struct args_struct_t native_sim_port_args[] = {
     {
-        .option = "vm-runs",
+        .option = "port-resets",
         .name = "count",
         .type = 'i',
-        .dest = &native_sim_vm_runs,
-        .descript = "Exit native_sim after this many VM runs. "
-            "Example: --vm-runs=2"
+        .dest = &native_sim_port_resets,
+        .descript = "Exit native_sim after this many port_reset() calls. "
+            "Example: --port-resets=2"
     },
     {
         .option = "retained-memory",
         .name = "path",
         .type = 's',
         .dest = (void *)&native_sim_retained_memory,
-        .descript = "File used to preserve retained memory (e.g. the safe-mode "
-            "saved word) across the process re-exec reboot. "
+        .descript = "File used to preserve some state"
+            " across the process re-exec reboot. "
             "Example: --retained-memory=/tmp/cp_retained.bin"
     },
     ARG_TABLE_ENDMARKER
@@ -163,10 +168,10 @@ uint32_t port_get_saved_word(void) {
     return cp_saved_word;
 }
 
-// Save and restore retained memory across the native_sim/bsim reboot.
-// Opt in with --retained-memory=<path>.
+// Save and restore retained memory across the native_sim/bsim reboot. Opt in
+// with --retained-memory=<path>.
 #if defined(CONFIG_ARCH_POSIX)
-static void cp_saved_word_save(void) {
+static void cp_retained_save(void) {
     const char *path = native_sim_retained_memory;
     if (path == NULL || path[0] == '\0') {
         return;
@@ -175,12 +180,15 @@ static void cp_saved_word_save(void) {
     if (fd < 0) {
         return;
     }
-    uint32_t value = cp_saved_word;
-    (void)nsi_host_write(fd, &value, sizeof(value));
+    cp_retained_data_t data = {
+        .saved_word = cp_saved_word,
+        .port_reset_count = native_sim_reset_port_count,
+    };
+    (void)nsi_host_write(fd, &data, sizeof(data));
     (void)nsi_host_close(fd);
 }
 
-static void cp_saved_word_restore(void) {
+static void cp_retained_restore(void) {
     const char *path = native_sim_retained_memory;
     if (path == NULL || path[0] == '\0') {
         return;
@@ -189,17 +197,17 @@ static void cp_saved_word_restore(void) {
     if (fd < 0) {
         return; // First boot: no save file yet.
     }
-    uint32_t value = 0;
-    (void)nsi_host_read(fd, &value, sizeof(value));
+    cp_retained_data_t data = { 0 };
+    (void)nsi_host_read(fd, &data, sizeof(data));
     (void)nsi_host_close(fd);
-    cp_saved_word = value;
+    cp_saved_word = data.saved_word;
+    native_sim_reset_port_count = data.port_reset_count;
 }
 #endif
 
 safe_mode_t port_init(void) {
     #if defined(CONFIG_ARCH_POSIX)
-    // Restore the saved word (if any) before wait_for_safe_mode_reset reads it.
-    cp_saved_word_restore();
+    cp_retained_restore();
     #endif
 
     // We run CircuitPython at the lowest priority (just higher than idle.)
@@ -213,8 +221,7 @@ safe_mode_t port_init(void) {
 // Reset the microcontroller completely.
 void reset_cpu(void) {
     #if defined(CONFIG_ARCH_POSIX)
-    // Persist the saved word across the process re-exec reboot.
-    cp_saved_word_save();
+    cp_retained_save();
     #endif
 
     // Try a warm reboot first. It won't return if it works but isn't always
@@ -233,10 +240,10 @@ void reset_port(void) {
 
     #if defined(CONFIG_ARCH_POSIX)
     native_sim_reset_port_count++;
-    if (native_sim_vm_runs != INT32_MAX &&
-        native_sim_vm_runs > 0 &&
-        native_sim_reset_port_count >= (uint32_t)(native_sim_vm_runs + 1)) {
-        printk("posix: exiting after %d VM runs\n", native_sim_vm_runs);
+    if (native_sim_port_resets != INT32_MAX &&
+        native_sim_port_resets > 0 &&
+        native_sim_reset_port_count >= (uint32_t)(native_sim_port_resets + 1)) {
+        printk("posix: exiting after %d port resets\n", native_sim_port_resets);
         posix_exit(0);
     }
     #endif
@@ -274,7 +281,39 @@ uint32_t *port_stack_get_limit(void) {
 uint32_t *port_stack_get_top(void) {
     _thread_stack_info_t stack_info = k_current_get()->stack_info;
 
-    return (uint32_t *)(stack_info.start + stack_info.size - stack_info.delta);
+    uint32_t *top = (uint32_t *)(stack_info.start + stack_info.size - stack_info.delta);
+    #if defined(CONFIG_ARCH_POSIX)
+    // On hosted builds the thread stack is a pthread stack. pthread_getattr_np(),
+    // which the POSIX arch uses to fix up stack_info, can report a size larger
+    // than the real mapping (ASan intercepts it and inflates the size). The GC
+    // scans up to the returned top, so clamp it to the end of the mapping that
+    // contains the current stack pointer.
+    //
+    // Only ever clamp *downwards*: /proc/self/maps merges adjacent anonymous
+    // mappings with the same flags, so the line containing our stack pointer
+    // routinely covers several thread stacks at once (e.g. 0xf63c2000-0xf73c4000
+    // for two 8MB stacks). Taking its end as the top made the GC scan megabytes
+    // past this thread's stack, into the neighbouring thread's live stack -- and
+    // segfault whenever the range had an unmapped hole (a guard page, or a stack
+    // that has since been freed).
+    volatile uint32_t stack_probe;
+    uintptr_t sp = (uintptr_t)&stack_probe;
+    FILE *maps = fopen("/proc/self/maps", "r");
+    if (maps != NULL) {
+        char line[256];
+        unsigned long low, high;
+        while (fgets(line, sizeof(line), maps) != NULL) {
+            if (sscanf(line, "%lx-%lx", &low, &high) == 2 && low <= sp && sp < high) {
+                if (high < (uintptr_t)top) {
+                    top = (uint32_t *)high;
+                }
+                break;
+            }
+        }
+        fclose(maps);
+    }
+    #endif
+    return top;
 }
 
 uint64_t port_get_raw_ticks(uint8_t *subticks) {

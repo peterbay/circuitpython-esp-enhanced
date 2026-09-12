@@ -268,9 +268,10 @@ void supervisor_execution_status(void) {
     mp_obj_exception_t *exception = MP_OBJ_TO_PTR(_exec_result.exception);
     if (_current_executing_filename != NULL) {
         serial_write(_current_executing_filename);
-    } else if ((_exec_result.return_code & PYEXEC_EXCEPTION) != 0 &&
-               _exec_result.exception_line > 0 &&
-               exception != NULL) {
+    } else if (
+        (_exec_result.return_code == PYEXEC_UNHANDLED_EXCEPTION) &&
+        (_exec_result.exception_line > 0) &&
+        exception != NULL) {
         mp_printf(&mp_plat_print, "%d@%s %q", _exec_result.exception_line, _exec_result.exception_filename, exception->base.type->name);
     } else {
         serial_write_compressed(MP_ERROR_TEXT("Done"));
@@ -577,7 +578,7 @@ static bool __attribute__((noinline)) run_code_py(safe_mode_t safe_mode, bool *s
         blink_count = 0;
     } else
     #endif
-    if (_exec_result.return_code != PYEXEC_EXCEPTION) {
+    if (_exec_result.return_code != PYEXEC_UNHANDLED_EXCEPTION) {
         if (safe_mode == SAFE_MODE_NONE) {
             color = ALL_DONE;
             blink_count = ALL_DONE_BLINKS;
@@ -647,6 +648,11 @@ static bool __attribute__((noinline)) run_code_py(safe_mode_t safe_mode, bool *s
             print_safe_mode_message(safe_mode);
             serial_write("\r\n");
             serial_write_compressed(MP_ERROR_TEXT("Press any key to enter the REPL. Use CTRL-D to reload.\n"));
+            if (safe_mode != SAFE_MODE_NONE) {
+                // Reset the port again in safe mode. It doesn't usually do much but
+                // the Zephyr native_sim tests use it for tracking test completion.
+                reset_port();
+            }
             printed_press_any_key = true;
         }
         if (!serial_connected()) {

@@ -269,6 +269,7 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
     #endif
 
     const byte *i = data;
+    const byte *end = data + len;
     uint16_t start_y = self->cursor_y;
 
     // CIRCUITPY-CHANGE: the escape parser below looks ahead as far as i[11] with no
@@ -280,22 +281,20 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
     // yields 0, which matches no branch below and ends the digit loops, and every
     // advance saturates at the end so i - data can never exceed len. Malformed and
     // truncated sequences were undefined before, so only they change behaviour.
-    // Not covered here: utf8_get_char/utf8_next_char at the top of the loop take no
-    // length and can still walk continuation bytes past the end. That is a
-    // pre-existing hole needing a cursor both the decoder and the parser share; the
-    // saturation below at least keeps it from reaching the caller.
-    #define TERM_PEEK(offset) ((i) + (offset) < data + len ? (i)[offset] : 0)
+    #define TERM_PEEK(offset) ((i) + (offset) < end ? (i)[offset] : 0)
     #define TERM_ADVANCE(n) do { \
-        size_t _avail = (size_t)(data + len - i); \
+        size_t _avail = (size_t)(end - i); \
         size_t _n = (n); \
         i += (_n < _avail ? _n : _avail); \
 } while (0)
 
-    while (i < data + len) {
+    while (i < end) {
         unichar c = utf8_get_char(i);
-        i = utf8_next_char(i);
-        if (i > data + len) {
-            i = data + len;
+        i++;
+        // utf8_next_char() assumes NUL-terminated data but callers pass
+        // length-delimited buffers, so bound the continuation-byte scan.
+        while (i < end && UTF8_IS_CONT(*i)) {
+            i++;
         }
         if (self->in_osc_command) {
             if (c == 0x1b && TERM_PEEK(0) == '\\') {
@@ -361,7 +360,7 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
                             }
                         }
                     }
-                    if (c == '?') {
+                    if (c == '?' && i + 4 < end) {
                         #if CIRCUITPY_TERMINALIO_VT100
                         if (TERM_PEEK(2) == '2' && TERM_PEEK(3) == '5') {
                             // cursor visibility commands

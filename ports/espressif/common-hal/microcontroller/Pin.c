@@ -140,7 +140,10 @@ static const uint64_t pin_mask_reset_forbidden =
     #if defined(CONFIG_IDF_TARGET_ESP32C5)
     // Never ever reset pins used to communicate with SPI flash and PSRAM. They
     // are ordinary GPIOs on this part, whatever a package pinout may suggest:
-    // IO_MUX_GPIO16_REG is PERIPHS_IO_MUX_U_PAD_SPICS0 and its neighbours follow.
+    // IO_MUX_GPIO16_REG is PERIPHS_IO_MUX_U_PAD_SPICS0 and its neighbours follow
+    // (esp_hal_gpspi/esp32c5/include/soc/spi_pins.h has the MSPI_IOMUX_PIN_NUM_*
+    // names). The PSRAM chip select is kept whether or not PSRAM is configured:
+    // a board without PSRAM has nothing on the pin anyway.
     //
     // Getting this wrong is not a visible failure. Deselecting the flash leaves
     // execution running out of the instruction cache, so the pin loop finishes
@@ -157,7 +160,8 @@ static const uint64_t pin_mask_reset_forbidden =
     GPIO_SEL_22 |         // SPID
     // The USB pins are protected whatever is driving them: CircuitPython's REPL
     // when CIRCUITPY_ESP_USB_SERIAL_JTAG is set, and the ESP-IDF console
-    // otherwise. Resetting them drops the only link the board has.
+    // otherwise. Resetting them drops the only link the board has: on the C5,
+    // gpio_ll_func_sel() on either pin clears USB_SERIAL_JTAG.conf0.usb_pad_enable.
     GPIO_SEL_13 |         // USB D-, USB_INT_PHY0_DM_GPIO_NUM
     GPIO_SEL_14 |         // USB D+, USB_INT_PHY0_DP_GPIO_NUM
     #if defined(CONFIG_ESP_CONSOLE_UART_DEFAULT) && CONFIG_ESP_CONSOLE_UART_DEFAULT && CONFIG_ESP_CONSOLE_UART_NUM == 0

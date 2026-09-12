@@ -63,4 +63,7 @@ void mp_obj_assert_native_inited(mp_obj_t native_object);
 bool mp_obj_class_lookup_cached(const mp_obj_type_t *type, qstr attr, mp_obj_t *value);
 #endif
 
+// upstream v1.28: exposed so py/objexcept.c can reference it directly
+MP_DECLARE_CONST_FUN_OBJ_KW(mp_native_base_init_wrapper_obj);
+
 #endif // MICROPY_INCLUDED_PY_OBJTYPE_H

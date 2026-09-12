@@ -38,17 +38,26 @@
 #define SDCARD_COUNT 0
 #endif
 
+#if CIRCUITPY_EMMC_USB
+#include "shared-module/emmcio/__init__.h"
+
+#define EMMC_COUNT 1
+#define EMMC_LUN (1 + SAVES_COUNT + SDCARD_COUNT)
+#else
+#define EMMC_COUNT 0
+#endif
+
 // CIRCUITPY-CHANGE: a partition exposed by espidf.expose_partition().
 #if CIRCUITPY_PARTITION_DISK
 #include "supervisor/partition_disk.h"
 
 #define PARTITION_DISK_COUNT 1
-#define PARTITION_DISK_LUN (1 + SAVES_COUNT + SDCARD_COUNT)
+#define PARTITION_DISK_LUN (1 + SAVES_COUNT + SDCARD_COUNT + EMMC_COUNT)
 #else
 #define PARTITION_DISK_COUNT 0
 #endif
 
-#define LUN_COUNT (1 + SAVES_COUNT + SDCARD_COUNT + PARTITION_DISK_COUNT)
+#define LUN_COUNT (1 + SAVES_COUNT + SDCARD_COUNT + EMMC_COUNT + PARTITION_DISK_COUNT)
 
 // The ellipsis range in the designated initializer of `ejected` is not standard C,
 // but it works in both gcc and clang.
@@ -179,6 +188,26 @@ static fs_user_mount_t *get_vfs(int lun) {
             // Clear any ejected state so that a re-insert causes it to reappear.
             ejected[SDCARD_LUN] = false;
             locked[SDCARD_LUN] = false;
+        }
+    }
+    #endif
+    #ifdef EMMC_LUN
+    if (lun == EMMC_LUN) {
+        const char *path_under_mount;
+
+        fs_user_mount_t *emmc = filesystem_for_path(CIRCUITPY_EMMC_MOUNT_PATH, &path_under_mount);
+        // Unlike the SD card there is no heap-mount case to allow: the eMMC's
+        // drive exists only when the supervisor mounted it, and
+        // that mount is static. A user mount made by code.py stays a Python
+        // filesystem and never becomes a LUN.
+        if (emmc != root &&
+            ((emmc->blockdev.flags & MP_BLOCKDEV_FLAG_NATIVE) != 0) &&
+            !gc_ptr_on_heap(emmc)) {
+            return emmc;
+        } else {
+            // Clear any ejected state so that a remount causes it to reappear.
+            ejected[EMMC_LUN] = false;
+            locked[EMMC_LUN] = false;
         }
     }
     #endif

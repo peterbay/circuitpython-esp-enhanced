@@ -7,9 +7,23 @@
 #
 # Bluetooth
 #
-# Left out for now: NimBLE fails to link against this part's controller blob,
-# which does not export r_swap_buf or r_swap_in_place. See the esp32c5 block in
-# mpconfigport.mk.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+#
+# NimBLE Options
+#
+CONFIG_BT_NIMBLE_LOG_LEVEL_NONE=y
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+#
+# Memory Settings
+#
+CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=20
+CONFIG_BT_NIMBLE_TRANSPORT_EVT_SIZE=70
+# end of Memory Settings
+
+CONFIG_BT_NIMBLE_EXT_ADV=y
+# end of NimBLE Options
+
 # end of Bluetooth
 
 #

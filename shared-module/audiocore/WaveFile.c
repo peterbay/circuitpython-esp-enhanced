@@ -153,13 +153,8 @@ void common_hal_audioio_wavefile_construct(audioio_wavefile_obj_t *self,
     // Try to allocate two buffers, one will be loaded from file and the other
     // DMAed to DAC.
     if (buffer_size) {
-        // CIRCUITPY-CHANGE: each half has to be a whole number of words, because the
-        // final short read is rounded up to a word boundary in place. Without this a
-        // caller-supplied odd size left no room for that rounding.
-        self->len = (buffer_size / 2) & ~(size_t)(sizeof(uint32_t) - 1);
-        if (self->len == 0) {
-            mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be >= %d"), MP_QSTR_buffer_size, 8);
-        }
+        // buffer_size is a multiple of 8 (checked by the binding) so each half can be padded in place.
+        self->len = buffer_size / 2;
         self->buffer = buffer;
         self->second_buffer = buffer + self->len;
     } else {
@@ -243,7 +238,7 @@ audioio_get_buffer_result_t audioio_wavefile_get_buffer(audioio_wavefile_obj_t *
         // while 1 mod 4 grew by one and stayed misaligned. self->len is now kept a
         // multiple of four, so rounding a short read up can never leave the buffer.
         if (self->bytes_remaining == 0 && length_read % sizeof(uint32_t) != 0) {
-            uint32_t pad = sizeof(uint32_t) - (length_read % sizeof(uint32_t));
+            uint32_t pad = sizeof(uint32_t) - length_read % sizeof(uint32_t);
             length_read += pad;
             if (self->base.bits_per_sample == 8) {
                 for (uint32_t i = 0; i < pad; i++) {

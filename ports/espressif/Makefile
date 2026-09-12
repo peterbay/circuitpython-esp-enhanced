@@ -412,10 +412,10 @@ LDFLAGS += \
 	-Tesp32c5.rom.pp.ld \
 	-Tesp32c5.rom.net80211.ld \
 	-Tesp32c5.rom.libc.ld \
+	-Tesp32c5.rom.version.ld \
 	-Tesp32c5.rom.coexist.ld \
 	-Tesp32c5.rom.heap.ld \
 	-Tesp32c5.rom.systimer.ld \
-	-Tesp32c5.rom.version.ld \
 	-Trom.wdt.ld
 
 CHIP_COMPONENTS = \

@@ -115,7 +115,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
 /******************************************************************************/
 // native generator wrapper
 
-#if MICROPY_EMIT_NATIVE
+#if MICROPY_ENABLE_NATIVE_CODE
 
 // Based on mp_obj_gen_instance_t.
 typedef struct _mp_obj_gen_instance_native_t {
@@ -185,7 +185,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
     );
 #endif
 
-#endif // MICROPY_EMIT_NATIVE
+#endif // MICROPY_ENABLE_NATIVE_CODE
 
 /******************************************************************************/
 /* generator instance                                                         */
@@ -193,7 +193,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
 static void gen_instance_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void)kind;
     mp_obj_gen_instance_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "<generator object '%q' at %p>", mp_obj_fun_get_name(MP_OBJ_FROM_PTR(self->code_state.fun_bc)), self);
+    mp_printf(print, "<generator object '%q' at %p>", mp_obj_fun_bc_get_name(self->code_state.fun_bc), self);
 }
 
 // CIRCUITPY-CHANGE
@@ -201,7 +201,7 @@ static void gen_instance_print(const mp_print_t *print, mp_obj_t self_in, mp_pri
 static void coro_instance_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void)kind;
     mp_obj_gen_instance_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "<coroutine object '%q' at %p>", mp_obj_fun_get_name(MP_OBJ_FROM_PTR(self->code_state.fun_bc)), self);
+    mp_printf(print, "<coroutine object '%q' at %p>", mp_obj_fun_bc_get_name(self->code_state.fun_bc), self);
 }
 #endif
 
@@ -238,7 +238,7 @@ mp_vm_return_kind_t PLACE_IN_WARM_CODE(mp_obj_gen_resume)(mp_obj_t self_in, mp_o
 
     // If the generator is started, allow sending a value.
     void *state_start = self->code_state.state - 1;
-    #if MICROPY_EMIT_NATIVE
+    #if MICROPY_ENABLE_NATIVE_CODE
     if (self->code_state.exc_sp_idx == MP_CODE_STATE_EXC_SP_IDX_SENTINEL) {
         state_start = ((mp_obj_gen_instance_native_t *)self)->code_state.state - 1;
     }
@@ -260,7 +260,7 @@ mp_vm_return_kind_t PLACE_IN_WARM_CODE(mp_obj_gen_resume)(mp_obj_t self_in, mp_o
 
     mp_vm_return_kind_t ret_kind;
 
-    #if MICROPY_EMIT_NATIVE
+    #if MICROPY_ENABLE_NATIVE_CODE
     if (self->code_state.exc_sp_idx == MP_CODE_STATE_EXC_SP_IDX_SENTINEL) {
         // A native generator.
         typedef uintptr_t (*mp_fun_native_gen_t)(void *, mp_obj_t);
@@ -298,7 +298,7 @@ mp_vm_return_kind_t PLACE_IN_WARM_CODE(mp_obj_gen_resume)(mp_obj_t self_in, mp_o
 
         case MP_VM_RETURN_EXCEPTION: {
             self->code_state.ip = 0;
-            #if MICROPY_EMIT_NATIVE
+            #if MICROPY_ENABLE_NATIVE_CODE
             if (self->code_state.exc_sp_idx == MP_CODE_STATE_EXC_SP_IDX_SENTINEL) {
                 *ret_val = ((mp_obj_gen_instance_native_t *)self)->code_state.state[0];
             } else

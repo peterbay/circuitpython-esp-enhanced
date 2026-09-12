@@ -18,6 +18,7 @@
 #include "shared-bindings/wifi/ScannedNetworks.h"
 
 #include "components/esp_wifi/include/esp_wifi.h"
+#include "soc/soc_caps.h"
 
 static void wifi_scannednetworks_done(wifi_scannednetworks_obj_t *self) {
     self->done = true;
@@ -113,10 +114,12 @@ mp_obj_t common_hal_wifi_scannednetworks_next(wifi_scannednetworks_obj_t *self) 
 // We don't do a linear scan so that we look at a variety of spectrum up front.
 static uint8_t scan_pattern[] = {
     6, 1, 11, 3, 9, 13, 2, 4, 8, 12, 5, 7, 10, 14,
-    #ifdef CONFIG_SOC_WIFI_SUPPORT_5G
+    #if defined(SOC_WIFI_SUPPORT_5G) && SOC_WIFI_SUPPORT_5G
     // 5 GHz, spread the same way, and with the non-DFS channels first: those are
     // where most access points sit, and a scan the caller cuts short then still
-    // covers them. Reaching these at all needs stop_channel raised past 14.
+    // covers them. Reaching these at all needs stop_channel raised past 14. The
+    // DFS channels stay in: scanning only listens, and access points do sit on
+    // them; a channel the country setting forbids is skipped below.
     36, 149, 40, 153, 44, 157, 48, 161, 165,
     52, 100, 116, 132, 56, 104, 120, 136,
     60, 108, 124, 140, 64, 112, 128, 144,

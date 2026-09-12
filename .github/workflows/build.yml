@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       docs: ${{ steps.set-matrix.outputs.docs }}
+      zephyr-tests: ${{ steps.set-matrix.outputs.zephyr-tests }}
       ports: ${{ steps.set-matrix.outputs.ports }}
       cp-version: ${{ steps.set-up-submodules.outputs.version }}
     steps:
@@ -100,6 +101,13 @@ jobs:
     with:
       cp-version: ${{ needs.scheduler.outputs.cp-version }}
 
+  zephyr-tests:
+    needs: scheduler
+    if: needs.scheduler.outputs.zephyr-tests == 'True'
+    uses: ./.github/workflows/run-zephyr-tests.yml
+    with:
+      cp-version: ${{ needs.scheduler.outputs.cp-version }}
+
   mpy-cross:
     needs: scheduler
     if: needs.scheduler.outputs.ports != '{}'
@@ -134,7 +142,7 @@ jobs:
         python3 --version
         msgfmt --version
     - name: Build mpy-cross (arm64)
-      run: make -C mpy-cross -j4 -f Makefile.m1 V=2
+      run: make -C mpy-cross -j$(sysctl -n hw.ncpu) -f Makefile.m1 V=2
     - uses: actions/upload-artifact@v7
       with:
         name: mpy-cross-macos-arm64
@@ -178,7 +186,7 @@ jobs:
         sudo apt-get install -y latexmk librsvg2-bin texlive-fonts-recommended texlive-latex-recommended texlive-latex-extra
         pip install -r requirements-doc.txt
     - name: Build and Validate Stubs
-      run: make check-stubs -j4
+      run: make check-stubs -j$(nproc)
     - uses: actions/upload-artifact@v7
       with:
         name: stubs
@@ -225,4 +233,4 @@ jobs:
     with:
       boards: ${{ toJSON(fromJSON(needs.scheduler.outputs.ports)[matrix.port]) }}
       cp-version: ${{ needs.scheduler.outputs.cp-version }}
-      port: ${{ matrix.port }}
+      port: ${{ fromJSON(needs.scheduler.outputs.ports).split_ports[matrix.port] || matrix.port }}
