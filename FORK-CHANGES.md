@@ -3777,3 +3777,139 @@ architecture and the board only loads them. Section 6 found the S3 had no
 executable memory for code the board emits itself; whether the loader path
 solves placement on the S3 (the Turbo project reports 26x on a Metro
 ESP32-S3) is a separate investigation, not part of this merge.
+
+## 18. TrueType glyphs from the outline, 2026-09-12
+
+`ttfrast` renders glyphs straight from a `.ttf` at any size with anti-aliased
+edges, so one font file serves every text size. It is off by default and
+built with `CIRCUITPY_TTFRAST=1`; it adds 6.5 kB on the Cardputer and needs
+`displayio`.
+
+The question it answers is what vector text costs on this hardware, so the
+algorithm is the fastest one known for CPUs: the signed-area accumulation of
+Raph Levien's font-rs (fontdue is a fork of it, stb_truetype v2 does the
+same thing). Every outline segment writes coverage *deltas* -- exact
+trapezoid areas -- into a dense float grid, and one linear pass with a
+running sum turns the grid into 8-bit coverage. There is no edge sorting and
+no active edge list. Quadratic curves are flattened by the deflection of the
+control point and stepped by forward differencing. The parser reads `head`,
+`maxp`, `loca`, `glyf`, `hhea`, `hmtx` and a format 4 `cmap`, composites
+included; CFF outlines are refused.
+
+`Font(data)` keeps a reference to the bytes and copies nothing. `render()`
+gives raw coverage and the glyph geometry, `render_into()` draws with the
+pen on a baseline into any `displayio.Bitmap` up to 8 bits deep, quantizing
+to the bitmap's depth and leaving untouched pixels alone. A font created
+with `size=` follows the `fontio` protocol: glyphs are rendered on first use
+into an atlas bitmap of uniform cells -- the font's bounding box at that
+size, taken from the glyphs present rather than the `head` table, which in a
+subset font still spans the original -- and `get_glyph()` returns a
+`fontio.Glyph` whose tile index addresses the cell, so
+`adafruit_display_text.label` and `displayio.TileGrid` take it like a
+`BuiltinFont`. Slots are reused round robin, so `max_glyphs` must cover the
+distinct characters on screen. `bits_per_pixel=4` gives anti-aliased cells;
+`label` keeps a two-entry palette, so its tile grids get a 16-step ramp
+palette assigned afterwards.
+
+### Measured
+
+Cardputer, Verdana, mean over the glyphs of "Hamburgefonstiv", timed inside
+C (`time_render`) so the interpreter is not in the number:
+
+| size | µs per glyph | of it parse + draw | of it accumulate | µs per pixel |
+| --- | --- | --- | --- | --- |
+| 12 px | 76 | 69 | 8 | 0.99 |
+| 16 px | 85 | 75 | 10 | 0.70 |
+| 24 px | 105 | 88 | 17 | 0.45 |
+| 32 px | 133 | 101 | 31 | 0.35 |
+| 48 px | 195 | 131 | 64 | 0.25 |
+| 64 px | 265 | 151 | 114 | 0.20 |
+
+The cost grows with the outline's perimeter, not the area: 64 px is twice
+16 px for eleven times the pixels. A glyph with no outline costs 1.2 µs, so
+the table lookups are nothing; the fixed part is the segment count (2 to
+3 µs per segment for the scanline setup). Section 5's `vectorio` polygon at
+1.2 + 0.14 µs per edge and pixel, and the 1 bpp blit at 0.54 µs per pixel,
+are both dearer per pixel at 24 px and above, though they also composite to
+the display, which this does not.
+
+The first version was 70 to 80 % slower: `floorf`, `ceilf`, `fminf` and
+`fmaxf` are library calls on this toolchain and the scanline loop ran them
+twice a row. Replacing them with casts and comparisons was the whole gain.
+Forward differencing for the curves, tried afterwards, changed nothing
+measurable, which says where the time is not.
+
+Drawing "Ahoj" into the 240x135 display bitmap: 59 ms at 64 px with the
+coverage copied by a Python loop, 4 ms through `render_into`. A ten-glyph
+`label` builds in 19 ms at 1 bpp and 28 ms at 4 bpp, most of that the
+library's own `TileGrid` work.
+
+The accumulation grid is 4 bytes per pixel, so a 128 px glyph needs 21 kB;
+with the 135 kB heap this board's GC gets (the PSRAM is not in it), the
+ceiling is around 180 px. Fixed point would halve that. The same heap is
+why a full Verdana (243 kB) does not load and the measurements used an
+ASCII subset made with `fontTools.subset`; outlines are unchanged by
+subsetting.
+
+### Second pass, from a review
+
+A written review of the module (`TTFRAST-OPTIMALIZACE.md`) made seven
+proposals; two had weight and were done, the rest were small against the
+measurements or need a profile first.
+
+A `get_glyph` hit used to run the whole rasterizer again just to read the
+advance; the advance is now kept per slot and a hit is the slot search and
+the `Glyph` tuple, 12.5 µs against a full render. The blit into a bitmap
+went through `displayio_bitmap_write_pixel`, which rechecks read-only,
+bounds and format per pixel; it now packs rows directly at the bitmap's
+depth, with the byte held across the pixels it covers, and the atlas cell
+is cleared the same way. That also fixed a quantization slip: a pixel whose
+coverage rounded to 0 was still written, punching holes into whatever was
+under the text at 2 and 4 bpp. A ten-glyph 4 bpp `label` builds in 17 ms
+(was 28), "Ahoj" at 64 px into the display bitmap takes 3.4 ms (was 4.0).
+
+The review also pointed out that `render(..., None)` still draws the
+outline into the grid and skips only the accumulation, which the docstrings
+had called "stopping after the outline"; the wording is fixed here and in
+the bindings, and the table above says "parse + draw".
+
+### `ttfrast.Label`, the label in C
+
+The measurements above left the Python `label` as the biggest item on the
+path -- 17 to 35 ms for ten glyphs against 1 ms of rasterization -- so the
+layout moved into C. `ttfrast.Label(font, text, size=, color=,
+background_color=, line_spacing=, bits_per_pixel=, scale=, x=, y=)` lays
+the string out from the outline metrics, sizes one bitmap to the ink,
+renders every glyph into it through `render_into` and shows it in one
+`TileGrid` behind a palette that ramps from the background colour (or
+black, when transparent) to the text colour. Newlines start a new line at
+`line_spacing` ems. `text` relayouts, keeping the bitmap when the extent
+did not change; `color` and `background_color` only rewrite the palette;
+`bounding_box` gives the ink relative to the origin, which is the pen at
+the start of the first baseline; `anchor_point` and `anchored_position`
+move the group so a chosen point of the box lands where asked.
+
+It is a `displayio.Group`, and by a route worth writing down: displayio
+accepts subclasses of `Group` by casting to the native base the way it
+does for Python subclasses -- reading `subobj[0]` of an
+`mp_obj_instance_t` -- so the object keeps that layout (base, an empty
+members map, `subobj[0]` holding the real Group), pinned by a static
+assert. Group's methods and properties resolve through the type's
+`parent` and act on that inner Group; type slots are not inherited, so
+`len()`, indexing and iteration are forwarded by hand, and attribute
+stores look only in the type's own dict, so Group's settable properties
+(`x`, `y`, `scale`, `hidden`) are listed in the Label's dict again.
+
+Measured on the Cardputer, "Česká věta" at 26 px, 4 bpp: the C label
+builds in 3.9 ms and 9.7 kB of heap; the Python label with the same font
+took 21 to 35 ms across runs. Setting new text costs 3.4 ms whether or not
+the bitmap is reused, which says the time is the rasterization, not the
+allocation.
+
+The label's layout pass used to call `render(..., NULL)` for every
+character, which draws the outline into the grid and skips only the
+accumulation, so each glyph was rasterized 1.7 times. `metrics()` reads
+the box from the glyf header and the advance from hmtx without touching
+the outline; the layout pass calls that, and it is exposed to Python as
+`Font.metrics()` for the same reason. Setting the label's text went from
+3.4 ms to 2.4 ms for ten glyphs at 26 px.

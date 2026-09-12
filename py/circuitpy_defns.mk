@@ -489,6 +489,10 @@ endif
 ifeq ($(CIRCUITPY_USB_TMC),1)
 SRC_PATTERNS += usb_tmc/%
 endif
+# CIRCUITPY-CHANGE: experimental TrueType rasterizer
+ifeq ($(CIRCUITPY_TTFRAST),1)
+SRC_PATTERNS += ttfrast/%
+endif
 ifeq ($(CIRCUITPY_USTACK),1)
 SRC_PATTERNS += ustack/%
 endif
@@ -879,6 +883,8 @@ SRC_SHARED_MODULE_ALL = \
 	tilepalettemapper/TilePaletteMapper.c \
 	time/__init__.c \
 	traceback/__init__.c \
+	ttfrast/__init__.c \
+	ttfrast/Label.c \
 	uheap/__init__.c \
 	usb/__init__.c \
 	usb/core/__init__.c \
