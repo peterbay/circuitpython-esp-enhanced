@@ -3913,3 +3913,45 @@ the box from the glyf header and the advance from hmtx without touching
 the outline; the layout pass calls that, and it is exposed to Python as
 `Font.metrics()` for the same reason. Setting the label's text went from
 3.4 ms to 2.4 ms for ten glyphs at 26 px.
+
+## 19. vectorio fill loop, 2026-09-12
+
+Section 5 measured a `vectorio.Rectangle` at 1.2 µs per pixel for four
+comparisons of shape work, so the cost was the loop around the shape, not
+the shape. `vectorio_vector_shape_fill_area` did, per pixel: a mask bit
+lookup with a division and modulus, the full screen-to-shape transform
+with its mirror and transpose branches, the palette or converter lookup
+through the cache check, and the depth switch. Now the transform is
+applied to two neighbouring pixels at the start of each row and stepped
+by the difference (it is affine, so this holds for every mirror and
+transpose case without a second copy of that logic), the mask bit is
+walked, the colour is looked up only when the shape's index changes --
+which is never for the built-in shapes -- and the depth is decided once.
+Colour caching is skipped when the palette or converter dithers, since
+dithered colour depends on the pixel position.
+
+Measured on the Cardputer, 64x64 shape moved by one pixel per refresh,
+median of nine, whole `refresh()` including the SPI transfer:
+
+| | before | after |
+| --- | --- | --- |
+| Rectangle | 5.04 ms | 3.36 ms |
+| Polygon, 10 edges | 9.98 ms | 8.85 ms |
+| 1 bpp TileGrid of the same area, for the floor | 2.29 ms | 2.41 ms |
+
+Against the TileGrid floor, the rectangle's own fill went from about
+2.7 ms to 1.0 ms, 0.25 µs per pixel. The polygon keeps its per-pixel
+walk over every edge in `get_pixel`, 0.15 µs per edge and pixel, which a
+span-based fill would remove; that is the next step, not this one.
+
+Checked by camera: rectangles, circles and polygons, an overlapping
+stack (the mask), a transparent palette entry showing what is beneath, a
+scale-2 group, and shapes through a `ColorConverter` with and without
+dithering. The converter case turned up a bug older than this change:
+`color_index` was a `uint16_t` in every shape, so a 24-bit colour given
+to a shape drawn through a `ColorConverter` lost its red byte -- 0xFFFF00
+came out green, 0xFF0000 black. The index is 32 bits now, validated to
+0..0xFFFFFF at the Python boundary, and the setters no longer take
+`abs()` of an unsigned value. Palettes are unaffected. (An earlier note
+here claimed the converter's colour was also off by one in blue; it was
+not -- the shape stores the index plus one and the loop takes it back.)

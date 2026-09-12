@@ -52,7 +52,7 @@ static mp_obj_t vectorio_rectangle_make_new(const mp_obj_type_t *type, size_t n_
     mp_arg_validate_int_min(height, 1, MP_QSTR_height);
 
     vectorio_rectangle_t *self = mp_obj_malloc(vectorio_rectangle_t, &vectorio_rectangle_type);
-    uint16_t color_index = args[ARG_color_index].u_int;
+    uint32_t color_index = mp_arg_validate_int_range(args[ARG_color_index].u_int, 0, 0xFFFFFF, MP_QSTR_color_index);
     common_hal_vectorio_rectangle_construct(self, width, height, color_index);
 
     // VectorShape parts
@@ -119,7 +119,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(vectorio_rectangle_get_color_index_obj, vectorio_recta
 
 static mp_obj_t vectorio_rectangle_obj_set_color_index(mp_obj_t self_in, mp_obj_t color_index) {
     vectorio_rectangle_t *self = MP_OBJ_TO_PTR(self_in);
-    common_hal_vectorio_rectangle_set_color_index(self, mp_obj_get_int(color_index));
+    common_hal_vectorio_rectangle_set_color_index(self, mp_arg_validate_int_range(mp_obj_get_int(color_index), 0, 0xFFFFFF, MP_QSTR_color_index));
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(vectorio_rectangle_set_color_index_obj, vectorio_rectangle_obj_set_color_index);

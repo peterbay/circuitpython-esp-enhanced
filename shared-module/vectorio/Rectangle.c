@@ -12,7 +12,7 @@
 #include "stdlib.h"
 
 
-void common_hal_vectorio_rectangle_construct(vectorio_rectangle_t *self, uint32_t width, uint32_t height, uint16_t color_index) {
+void common_hal_vectorio_rectangle_construct(vectorio_rectangle_t *self, uint32_t width, uint32_t height, uint32_t color_index) {
     self->width = width;
     self->height = height;
     self->color_index = color_index + 1;
@@ -74,14 +74,14 @@ void common_hal_vectorio_rectangle_set_height(void *obj, int16_t height) {
     }
 }
 
-uint16_t common_hal_vectorio_rectangle_get_color_index(void *obj) {
+uint32_t common_hal_vectorio_rectangle_get_color_index(void *obj) {
     vectorio_rectangle_t *self = obj;
     return self->color_index - 1;
 }
 
-void common_hal_vectorio_rectangle_set_color_index(void *obj, uint16_t color_index) {
+void common_hal_vectorio_rectangle_set_color_index(void *obj, uint32_t color_index) {
     vectorio_rectangle_t *self = obj;
-    self->color_index = abs(color_index + 1);
+    self->color_index = color_index + 1;
     if (self->on_dirty.obj != NULL) {
         self->on_dirty.event(self->on_dirty.obj);
     }

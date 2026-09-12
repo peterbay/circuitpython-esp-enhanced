@@ -48,7 +48,7 @@ static mp_obj_t vectorio_circle_make_new(const mp_obj_type_t *type, size_t n_arg
     mp_arg_validate_int_min(radius, 1, MP_QSTR_radius);
 
     vectorio_circle_t *self = mp_obj_malloc(vectorio_circle_t, &vectorio_circle_type);
-    uint16_t color_index = args[ARG_color_index].u_int;
+    uint32_t color_index = mp_arg_validate_int_range(args[ARG_color_index].u_int, 0, 0xFFFFFF, MP_QSTR_color_index);
     common_hal_vectorio_circle_construct(self, radius, color_index);
 
     // VectorShape parts
@@ -97,7 +97,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(vectorio_circle_get_color_index_obj, vectorio_circle_o
 
 static mp_obj_t vectorio_circle_obj_set_color_index(mp_obj_t self_in, mp_obj_t color_index) {
     vectorio_circle_t *self = MP_OBJ_TO_PTR(self_in);
-    common_hal_vectorio_circle_set_color_index(self, mp_obj_get_int(color_index));
+    common_hal_vectorio_circle_set_color_index(self, mp_arg_validate_int_range(mp_obj_get_int(color_index), 0, 0xFFFFFF, MP_QSTR_color_index));
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(vectorio_circle_set_color_index_obj, vectorio_circle_obj_set_color_index);

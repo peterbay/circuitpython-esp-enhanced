@@ -12,7 +12,7 @@
 #include "stdlib.h"
 
 
-void common_hal_vectorio_circle_construct(vectorio_circle_t *self, uint16_t radius, uint16_t color_index) {
+void common_hal_vectorio_circle_construct(vectorio_circle_t *self, uint16_t radius, uint32_t color_index) {
     self->radius = radius;
     self->on_dirty.obj = NULL;
     self->color_index = color_index + 1;
@@ -66,14 +66,14 @@ void common_hal_vectorio_circle_set_radius(void *obj, int16_t radius) {
     }
 }
 
-uint16_t common_hal_vectorio_circle_get_color_index(void *obj) {
+uint32_t common_hal_vectorio_circle_get_color_index(void *obj) {
     vectorio_circle_t *self = obj;
     return self->color_index - 1;
 }
 
-void common_hal_vectorio_circle_set_color_index(void *obj, uint16_t color_index) {
+void common_hal_vectorio_circle_set_color_index(void *obj, uint32_t color_index) {
     vectorio_circle_t *self = obj;
-    self->color_index = abs(color_index + 1);
+    self->color_index = color_index + 1;
     if (self->on_dirty.obj != NULL) {
         self->on_dirty.event(self->on_dirty.obj);
     }
