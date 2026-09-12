@@ -40,6 +40,10 @@
 #include "shared-module/usb_net/__init__.h"
 #endif
 
+#if CIRCUITPY_USB_TMC
+#include "shared-module/usb_tmc/__init__.h"
+#endif
+
 #include "shared-bindings/microcontroller/Processor.h"
 
 
@@ -190,6 +194,12 @@ static bool usb_build_configuration_descriptor(void) {
     }
     #endif
 
+    #if CIRCUITPY_USB_TMC
+    if (usb_tmc_enabled()) {
+        total_descriptor_length += usb_tmc_descriptor_length();
+    }
+    #endif
+
     // Now we know how big the configuration descriptor will be, so we can allocate space for it.
     configuration_descriptor =
         (uint8_t *)port_malloc(total_descriptor_length,
@@ -290,6 +300,13 @@ static bool usb_build_configuration_descriptor(void) {
     #if CIRCUITPY_USB_NET
     if (usb_net_enabled()) {
         descriptor_buf_remaining += usb_net_add_descriptor(
+            descriptor_buf_remaining, &descriptor_counts, &current_interface_string);
+    }
+    #endif
+
+    #if CIRCUITPY_USB_TMC
+    if (usb_tmc_enabled()) {
+        descriptor_buf_remaining += usb_tmc_add_descriptor(
             descriptor_buf_remaining, &descriptor_counts, &current_interface_string);
     }
     #endif

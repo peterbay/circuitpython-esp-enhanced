@@ -135,6 +135,10 @@ extern "C" {
 #define CFG_TUD_NCM_IN_NTB_N 1
 #endif
 
+// ------------- USBTMC (USB488 instrument) -------------//
+#define CFG_TUD_USBTMC              CIRCUITPY_USB_TMC
+#define CFG_TUD_USBTMC_ENABLE_488   1
+
 // ------------- AUDIO CLASS (UAC2 microphone) -------------//
 #if CIRCUITPY_USB_AUDIO
 #include "shared-module/usb_audio/usb_audio_descriptors.h"

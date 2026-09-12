@@ -482,6 +482,10 @@ endif
 ifeq ($(CIRCUITPY_USB_NET),1)
 SRC_PATTERNS += usb_net/%
 endif
+# CIRCUITPY-CHANGE: the USBTMC instrument module
+ifeq ($(CIRCUITPY_USB_TMC),1)
+SRC_PATTERNS += usb_tmc/%
+endif
 ifeq ($(CIRCUITPY_USTACK),1)
 SRC_PATTERNS += ustack/%
 endif

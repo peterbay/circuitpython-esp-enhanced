@@ -222,6 +222,15 @@ ifeq ($(CIRCUITPY_TINYUSB),1)
     endif
   endif
 
+  # CIRCUITPY-CHANGE: USBTMC instrument, see shared-module/usb_tmc/__init__.h.
+  ifeq ($(CIRCUITPY_USB_TMC), 1)
+    SRC_SUPERVISOR += \
+      shared-bindings/usb_tmc/__init__.c \
+      shared-module/usb_tmc/__init__.c \
+      lib/tinyusb/src/class/usbtmc/usbtmc_device.c \
+
+  endif
+
   ifeq ($(CIRCUITPY_TINYUSB_HOST), 1)
     SRC_SUPERVISOR += \
       lib/tinyusb/src/host/hub.c \
