@@ -3683,3 +3683,97 @@ message is delivered, before Python on the board has run it, so a status
 byte read straight after sees the old state; `*OPC?` first, as instruments
 expect, and the status is current (0x24 after an unknown command with the
 event enable mask set). Fifty queries take 0.13 s.
+
+## 17. Upstream merge, 2026-09-12
+
+`adafruit/main` at `42af95d52e` merged, moving the base from `10.3.0-rc.0`
+to `10.4.0-alpha.1`. 1,581 commits since the last merge, 1,484 of them not
+merges, the bulk being **MicroPython v1.28** (t-strings, `weakref`, the
+list and tuple helpers moved into `objlist.h`/`objtuple.h` as inlines,
+`mp_handle_pending` taking an enum, `mp_obj_fun_get_name` renamed), plus
+the loader-only native code support behind `CIRCUITPY_LOAD_NATIVE` that
+section 6 could not reach (the emitter stays off; see the note on Turbo
+below), an `emmcio` module, and Adafruit's own ESP32-C5 port and 5 GHz
+scanning, which ran into this fork's from section 11. ESP-IDF stays at
+`v6.0.1-7-g2b900d1222`; the TinyUSB submodule is untouched, so the fork's
+`peterbay/tinyusb` pointer with the NCM divisor fix survives.
+
+### Conflicts, 17 files
+
+Small ones: `objfun.h` and `objtype.h` keep both sides; `objtuple.c` loses
+the fork's `mp_obj_tuple_get` (now an inline in the header) and
+`mp_obj_tuple_del` (removed upstream, `objzip.c` adjusted with it);
+`usb_audio` keeps ours, since upstream made the same ADAPTIVE change and
+only a comment differed; `usb_msc_flash.c` numbers the LUNs for both the
+`emmcio` disk and section 3's partition disk; `Processor.c`, the C5 pin
+tables, `build_memory_info.py` and the Makefile differed in comments and
+ordering only.
+
+The ones that took a decision: the ESP32-C5 pin-reset list keeps ours,
+which protects the PSRAM chip select and the USB pins unconditionally
+(section 11 shows what dropping the flash chip select does), with
+upstream's finding that `gpio_ll_func_sel()` on the USB pins clears
+`usb_pad_enable` folded into the comment. The scan pattern keeps ours --
+DFS channels included, non-DFS first, a channel the country setting refuses
+skipped rather than ending the scan -- under upstream's `SOC_WIFI_SUPPORT_5G`
+guard. `sdkconfig-esp32c5.defaults` takes upstream's NimBLE block, since the
+fork's note claiming the blob could not be linked was already known wrong
+(section 11), and keeps `CONFIG_ESP_PHY_ENABLE_USB`. The C5 block of
+`mpconfigport.mk` takes `CIRCUITPY_CANIO = 0` (TWAI-FD needs a new backend,
+which section 11 lists as open) and `CIRCUITPY_AUDIOBUSIO_PDMIN = 0` from
+upstream and keeps `CIRCUITPY_BLEIO_NATIVE ?= 1`. `Terminal.c` had both
+sides fixing the same escape-parser overrun differently; the fork's
+`TERM_PEEK`/`TERM_ADVANCE` version stays, and upstream's bound on the
+UTF-8 continuation-byte scan closes the hole the fork's comment had
+admitted to. `WaveFile.c` takes upstream's simpler buffer length now that
+the binding checks for a multiple of 8.
+
+### Three things that were not conflicts
+
+An untracked copy of `main.c` was sitting in `ports/espressif/` (dated
+2026-09-08, identical to the pre-merge top-level file), and the port's
+build takes `main.c` from its own directory first, so the first build
+after the merge failed on `PYEXEC_EXCEPTION`, a name upstream had just
+removed -- in a file git said it had merged cleanly. It is moved out of the
+tree (`~/zbwork/stray_ports_espressif_main.c`).
+
+With the `custom` module's `.mk` hunks stashed for the merge, the build
+directories still held that module's `genhdr` registration split files, so
+the link failed on `custom_module`. Deleting the stale `genhdr` artefacts
+and the module's objects from the build directory is enough; a fresh build
+directory is not needed.
+
+`ports/unix` no longer builds its `standard` variant: `py/objringio.c`
+(MicroPython's `micropython.RingIO`) is now compiled in and wants
+MicroPython's `ringbuf` API, which CircuitPython's `py/ringbuf.h` does not
+have. The trees do not differ there, so it is upstream's breakage; their
+`coverage` variant -- now the Makefile's default -- turns `RINGIO` off and
+builds. Section 9's numbers were from `standard`; the suite below is
+`coverage`. `run-tests.py` also lost `--pyboard-device`; it is
+`-t unix` with `MICROPY_MICROPYTHON` pointing at the binary.
+
+### Verification
+
+| | |
+| --- | --- |
+| Cardputer, `CIRCUITPY_USB_NET=1 CIRCUITPY_USB_TMC=1` | builds, 3,957,760 B UF2 |
+| Seeed XIAO ESP32-C5 | builds, 268,848 B of 384 kB HP SRAM used |
+| MicroPython's suite against `ports/unix` (`coverage`) | 972 tests, 30,721 cases, none failed (section 9: 934 / 27,609, the growth being v1.28's tests) |
+| Regression tests on the Cardputer, merged firmware | 220 cases across six files, no failures: `delattr_test` 24, `negidx_test` 53, `subprop_test` 20, `digitalio_test` 25, `readline_test` 48, `gcstress_test` 50 |
+| USB on the Cardputer | console, drive and the USBTMC instrument enumerate; section 16's VISA client runs through, 50 queries in 0.12 s |
+
+Not run on hardware: the XIAO ESP32-C5 (built only), the USB network and
+audio configurations (unchanged by the merge apart from the resolved
+comment), and the `custom` module, whose `.mk` hunks were stashed for the
+merge. That module calls `mp_obj_list_get()`, which is now an inline in
+`py/objlist.h` with the `obj.h` declaration gone, so its source gets that
+include with the stash.
+
+### Turbo, for the record
+
+The loader that arrived here is what the "CircuitPython Turbo" guide
+builds on: `mpy-cross` on the host emits native `.mpy` for the board's
+architecture and the board only loads them. Section 6 found the S3 had no
+executable memory for code the board emits itself; whether the loader path
+solves placement on the S3 (the Turbo project reports 26x on a Metro
+ESP32-S3) is a separate investigation, not part of this merge.
