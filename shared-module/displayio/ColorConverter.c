@@ -384,7 +384,10 @@ void displayio_colorconverter_convert(displayio_colorconverter_t *self, const _d
         return;
     }
 
-    if (!self->dither && self->cached_colorspace == colorspace && self->cached_input_pixel == input_pixel->pixel) {
+    if (!self->dither && self->cached_colorspace == colorspace &&
+        self->cached_colorspace_grayscale == colorspace->grayscale &&
+        self->cached_colorspace_grayscale_bit == colorspace->grayscale_bit &&
+        self->cached_input_pixel == input_pixel->pixel) {
         output_color->pixel = self->cached_output_color;
         return;
     }
@@ -395,6 +398,8 @@ void displayio_colorconverter_convert(displayio_colorconverter_t *self, const _d
 
     if (!self->dither) {
         self->cached_colorspace = colorspace;
+        self->cached_colorspace_grayscale = colorspace->grayscale;
+        self->cached_colorspace_grayscale_bit = colorspace->grayscale_bit;
         self->cached_input_pixel = input_pixel->pixel;
         self->cached_output_color = output_color->pixel;
     }

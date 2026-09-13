@@ -21,6 +21,11 @@ typedef struct displayio_colorconverter {
 
     // Cache the last computed color in case the are the same.
     const _displayio_colorspace_t *cached_colorspace;
+    // CIRCUITPY-CHANGE: EPaperDisplay changes grayscale and grayscale_bit on the
+    // colorspace it already handed out, so the pointer alone does not identify
+    // what the cached colour was converted for. Palette already keeps these.
+    bool cached_colorspace_grayscale;
+    uint8_t cached_colorspace_grayscale_bit;
     uint32_t cached_input_pixel;
     uint32_t cached_output_color;
 } displayio_colorconverter_t;
