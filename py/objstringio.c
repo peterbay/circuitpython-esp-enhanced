@@ -61,7 +61,10 @@ static void stringio_print(const mp_print_t *print, mp_obj_t self_in, mp_print_k
     (void)kind;
     // CIRCUITPY-CHANGE
     mp_obj_stringio_t *self = native_obj(self_in);
-    mp_printf(print, self->base.type == &mp_type_stringio ? "<io.StringIO 0x%x>" : "<io.BytesIO 0x%x>", self);
+    // CIRCUITPY-CHANGE: %x takes an unsigned int, so a pointer wider than that
+    // was truncated and passed through varargs as the wrong type. %p is the one
+    // that takes a pointer, and it supplies its own "0x".
+    mp_printf(print, self->base.type == &mp_type_stringio ? "<io.StringIO %p>" : "<io.BytesIO %p>", self);
 }
 
 static mp_uint_t stringio_read(mp_obj_t o_in, void *buf, mp_uint_t size, int *errcode) {
