@@ -307,6 +307,13 @@ audioio_get_buffer_result_t audiofreeverb_freeverb_get_buffer(audiofreeverb_free
 
         int16_t *sample_src = (int16_t *)self->sample_remaining_buffer;
 
+        // CIRCUITPY-CHANGE: these were declared inside the loop below, so they
+        // were zero again at the top of every sample and the switch at the
+        // bottom of it had no effect. Both channels of a stereo signal went
+        // through the left bank of comb and allpass filters, which is not a
+        // stereo reverb at all.
+        uint32_t channel_comb_offset = 0, channel_allpass_offset = 0;
+
         for (uint32_t i = 0; i < n; i++) {
             int32_t sample_word = 0;
             if (self->sample != NULL) {
@@ -315,7 +322,6 @@ audioio_get_buffer_result_t audiofreeverb_freeverb_get_buffer(audiofreeverb_free
 
             int32_t word, sum;
             int16_t input, bufout, output;
-            uint32_t channel_comb_offset = 0, channel_allpass_offset = 0;
 
             // Apply filters as Pre-EQ
             input = (int16_t)audiofilters_process_filter_chain(&self->pre_filter, self->base.channel_count, n % self->base.channel_count, sample_word);
