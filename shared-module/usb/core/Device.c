@@ -241,7 +241,14 @@ static size_t _handle_timed_transfer_callback(tuh_xfer_t *xfer, mp_int_t timeout
 }
 
 static mp_obj_t _get_string(const uint16_t *temp_buf) {
-    size_t utf16_len = ((temp_buf[0] & 0xff) - 2) / sizeof(uint16_t);
+    // CIRCUITPY-CHANGE: bLength comes from the device. Anything below two made
+    // this subtraction, which is unsigned, wrap to a huge length and the
+    // conversion below then read far past the buffer and into the Python heap.
+    size_t desc_len = temp_buf[0] & 0xff;
+    if (desc_len < 2) {
+        return mp_const_none;
+    }
+    size_t utf16_len = (desc_len - 2) / sizeof(uint16_t);
     if (utf16_len == 0) {
         return mp_const_none;
     }
