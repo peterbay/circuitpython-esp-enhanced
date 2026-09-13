@@ -108,8 +108,14 @@ void *PLACE_IN_WARM_CODE(m_malloc_helper)(size_t num_bytes, uint8_t flags) {
     #else
     ptr = malloc(num_bytes);
     #endif
-    if (ptr == NULL && num_bytes != 0 && (flags & M_MALLOC_RAISE_ERROR)) {
-        m_malloc_fail(num_bytes);
+    if (ptr == NULL && num_bytes != 0) {
+        if (flags & M_MALLOC_RAISE_ERROR) {
+            m_malloc_fail(num_bytes);
+        }
+        // CIRCUITPY-CHANGE: the non-raising variants used to fall through from
+        // here, counting the bytes they did not get as allocated and, had the
+        // caller also asked for zeroed memory, running memset through NULL.
+        return NULL;
     }
     #if MICROPY_MEM_STATS
     MP_STATE_MEM(total_bytes_allocated) += num_bytes;
