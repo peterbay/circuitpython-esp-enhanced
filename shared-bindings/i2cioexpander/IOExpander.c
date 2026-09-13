@@ -175,7 +175,7 @@ static mp_obj_t i2cioexpander_ioexpander_obj_set_output_value(mp_obj_t self_in, 
     i2cioexpander_ioexpander_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_negative_errno_t result = common_hal_i2cioexpander_ioexpander_set_output_value(self, mp_obj_get_int(value));
     if (result != 0) {
-        mp_raise_OSError(result);
+        mp_raise_OSError(-result);
     }
     return mp_const_none;
 }
@@ -204,7 +204,7 @@ static mp_obj_t i2cioexpander_ioexpander_obj_set_output_mask(mp_obj_t self_in, m
     i2cioexpander_ioexpander_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_negative_errno_t result = common_hal_i2cioexpander_ioexpander_set_output_mask(self, mp_obj_get_int(value));
     if (result != 0) {
-        mp_raise_OSError(result);
+        mp_raise_OSError(-result);
     }
     return mp_const_none;
 }
