@@ -128,6 +128,13 @@ static bool load_font_header(lvfontio_ondiskfont_t *self, FIL *file, size_t *max
             self->header.glyph_bbox_xy_bits = head_buf[30];
             self->header.glyph_bbox_wh_bits = head_buf[31];
             self->header.glyph_advance_bits = head_buf[32];
+            // CIRCUITPY-CHANGE: the bbox origin is read as a signed field of this
+            // width, which means "1 << (bits - 1)" and "1 << bits". Zero makes the
+            // first shift negative and anything from 32 up makes both undefined,
+            // and the width comes straight out of the file.
+            if (self->header.glyph_bbox_xy_bits < 1 || self->header.glyph_bbox_xy_bits > 31) {
+                return false;
+            }
 
             // Calculate derived values
             self->header.glyph_header_bits = self->header.glyph_advance_bits +
