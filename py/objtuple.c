@@ -150,6 +150,12 @@ mp_obj_t mp_obj_tuple_binary_op(mp_binary_op_t op, mp_obj_t lhs, mp_obj_t rhs) {
             if (!mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(mp_obj_get_type(rhs)), MP_OBJ_FROM_PTR(&mp_type_tuple))) {
                 return MP_OBJ_NULL; // op not supported
             }
+            // CIRCUITPY-CHANGE: the test above admits subclasses, whose instance
+            // is not a mp_obj_tuple_t, so the native base has to be taken first.
+            rhs = mp_obj_cast_to_native_base(rhs, MP_OBJ_FROM_PTR(&mp_type_tuple));
+            if (rhs == MP_OBJ_NULL) {
+                return MP_OBJ_NULL; // op not supported
+            }
             mp_obj_tuple_t *p = MP_OBJ_TO_PTR(rhs);
             mp_obj_tuple_t *s = MP_OBJ_TO_PTR(mp_obj_new_tuple(o->len + p->len, NULL));
             mp_seq_cat(s->items, o->items, o->len, p->items, p->len, mp_obj_t);
