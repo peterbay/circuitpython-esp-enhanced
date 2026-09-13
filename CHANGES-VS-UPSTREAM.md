@@ -349,6 +349,26 @@ cost about 1.5 ms per frame, so shipping firmware is built without them.
   ordinary request with a 65 byte buffer sent 55 bytes past an 8 byte report —
   Python heap contents leaving the board over USB.
   [`40ede587be`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/40ede587be)
+- **`usb_cdc` cut every timed read and write short.** Both loops compared
+  the length still wanted against the amount already moved, so they stopped
+  as soon as the two met: a `read(100)` that got 50 bytes immediately
+  returned those 50 instead of waiting for the rest.
+  [`f5b4309bba`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/f5b4309bba)
+- **`usb.core` built a string from an unchecked descriptor length.** A
+  `bLength` below two wrapped the unsigned subtraction and the conversion
+  read far past the buffer, into the Python heap.
+  [`cab4c02ace`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/cab4c02ace)
+- **`usb.core` stored one past the end of its endpoint table** when all
+  eight slots were in use, over the field that follows it in the object.
+  [`8b23a3baa0`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/8b23a3baa0)
+- **`usb_video`'s busy guard was dead**: nothing ever set the flag, so the
+  next frame could be converted into the buffer while the isochronous
+  transfer was still reading it.
+  [`8b5002a2d9`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/8b5002a2d9)
+- **`usb_hid.Device` sized three stack arrays from the report id count**
+  before anything checked its maximum, which was only validated later
+  inside the HAL.
+  [`65fd95655a`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/65fd95655a)
 
 ---
 
@@ -423,6 +443,53 @@ cost about 1.5 ms per frame, so shipping firmware is built without them.
   resetting the panel — which put a full-screen pixel stream into the wrong
   window.
   [`e372702035`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/e372702035)
+- **`alphablend` desynchronised its source pointers.** In the 8-bit path the
+  reads sat inside the branches, so a pixel matching a skip index left that
+  source where it was and every pixel after it in the row came from the
+  wrong place.
+  [`270291d72c`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/270291d72c)
+- **The `ColorConverter` cache ignored the grayscale settings.**
+  `EPaperDisplay` changes them on the colorspace it has already handed out,
+  so a cached colour could be returned for a conversion it was not made
+  for. `Palette` already kept them.
+  [`70dd90422b`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/70dd90422b)
+- **`Group(scale=256)` divided by zero.** A group's scale is a `uint16_t` and
+  its constructor accepts up to 32767, but the transform stored it in a
+  byte and the step in an `int8_t`; the scale arrived as 0 and the tilegrid
+  fill loop divided by it. The setter also had no upper bound.
+  [`84932219b5`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/84932219b5)
+- **An atlas of more than 255 tiles drew the wrong tiles** in the general
+  fill path, which assigned a `uint16_t` tile index into a byte.
+  [`f6f72b8a3e`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/f6f72b8a3e)
+- **`lvfontio` took the bbox field width straight from the font file**, where
+  zero makes `1 << (bits - 1)` negative and anything from 32 up makes the
+  shifts undefined.
+  [`4432850617`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/4432850617)
+- **`jpegio` reported a full skip at end of stream**, so the decoder believed
+  it had passed over data it had not.
+  [`4362303d10`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/4362303d10)
+- **`aurora_epaper` freed its buffers twice** when `deinit()` from Python was
+  followed by the one `FramebufferDisplay` does on release.
+  [`92cf48049c`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/92cf48049c)
+- **`rgbmatrix` read its framebuffer field before assigning it** — three
+  times, on an object that is zeroed at allocation, so every one of them
+  ran on a null object.
+  [`330619c987`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/330619c987)
+- **`ttfrast` checked a table's offset but not its length**, so a table
+  declaring more bytes than the file holds was accepted and read out of
+  bounds.
+  [`967d45d765`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/967d45d765)
+- **`_stage` indexed a fixed 2048-byte graphic with an unvalidated frame**,
+  which `layer.frame(200, 0)` took about 32 kB past the buffer.
+  [`7d3b1618ca`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/7d3b1618ca)
+- **`picogame.project()` bounded only one of its buffers.** The y output and
+  the point array, read three values per point, were taken on trust, as was
+  the camera.
+  [`ae965b22f5`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/ae965b22f5)
+- **`vectorio`'s winding test overflowed.** Each difference reaches 65535 and
+  the products were computed as `int`, which flips the winding for
+  coordinates near the ends of `int16_t`.
+  [`8e1d243e5a`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/8e1d243e5a)
 
 ### Speed (display path, not the interpreter)
 
@@ -512,6 +579,37 @@ partial redraws improved more.
   times a second per voice, inside a callback with a deadline. It mixes in
   integers now.
   [`5099505f16`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/5099505f16)
+- **`audiofreeverb` cleared half of each delay line**, counting entries as
+  bytes, so the reverb started from whatever was on the heap.
+  [`445fa69c58`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/445fa69c58)
+- **`audiofreeverb` was not a stereo reverb.** The channel offsets were
+  declared inside the per-sample loop, so they were zero again at the top of
+  every sample and both channels went through the left bank of filters.
+  [`08038a4f86`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/08038a4f86)
+- **`Chorus` never clamped its delay to the buffer it allocated**, which
+  `Chorus(max_delay_ms=10, delay_ms=50)` wrote 800 bytes into a 160-byte
+  buffer through. `Echo` and `MultiTapDelay` both limited it.
+  [`694ca023eb`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/694ca023eb)
+- **`Echo` applied its floor after its ceiling**, so raising the length to
+  the audio buffer size could put it back above the maximum and the
+  following `memset` took an unsigned underflow as its length.
+  [`59502dbcc5`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/59502dbcc5)
+- **`MultiTapDelay` had the same order**, with the same result.
+  [`d5c09ef00e`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/d5c09ef00e)
+- **`PitchShift(window=1)` allocated one byte** and the playback loop wrote a
+  16-bit sample into it; the window is given in bytes and nothing checked
+  it held a sample per channel.
+  [`64d124340a`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/64d124340a)
+- **`synthio.from_file` freed the track it had just handed over.**
+  `MidiTrack` does not copy the buffer, it parses it as the track plays, so
+  playback decoded memory that had been returned to the allocator.
+  [`562a3baf27`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/562a3baf27)
+- **`MidiTrack(tempo=0)` divided by zero on its first event**; only the
+  setter checked the value, not the constructor.
+  [`2a5adc15b6`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/2a5adc15b6)
+- **`Synthesizer(sample_rate=0)`** reached the same class of divisor
+  unchecked.
+  [`2bc18abcf9`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/2bc18abcf9)
 
 ---
 
@@ -586,6 +684,36 @@ partial redraws improved more.
   `Warning` produced a native exception struct stamped with a Python class —
   four lines of Python took the board down.
   [`96db8127d5`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/96db8127d5)
+- **`_eve.cmd()` looped forever and overran its stack buffer.** An unknown
+  format character left the index where it was, nothing bounded the word
+  count against the sixteen-word buffer it fills, and the argument tuple was
+  neither type-checked nor length-checked before being walked.
+  [`4f2ffcaf91`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/4f2ffcaf91)
+- **`aesio`'s counter and `analogbufio`'s buffer came through the wrong
+  accessor.** The counter was declared as an object and read as an int out
+  of the same union, passing the low word of a pointer —
+  [`ba9efd86f6`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/ba9efd86f6)
+  — while `readinto` asked for a read-only buffer it then wrote into, which
+  let a `bytes` through.
+  [`544f32e7a2`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/544f32e7a2)
+- **`ipaddress` let `mp_obj_get_int_maybe` write eight bytes into a
+  `uint32_t`** on a 64-bit build.
+  [`f4e8088782`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/f4e8088782)
+- **`zlib.decompress` reinterpreted `wbits` instead of converting it**, so a
+  long int, a float, a string or `None` became a nonsense window size and
+  selected the wrong header format.
+  [`b6f02884b5`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/b6f02884b5)
+- **`msgpack` wrote half a float.** Type 0xca is a 32-bit float, but the
+  union paired `uint32_t` with `mp_float_t`, which is a double on some
+  ports.
+  [`932efdb07f`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/932efdb07f)
+- **`floppyio.mfm_readinto` asked for a read-only validity buffer** it then
+  wrote into, and `clear_validity` cleared a local array rather than the
+  caller's buffer, so it did nothing at all.
+  [`d915d501fd`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/d915d501fd)
+- **`memorymonitor` wrote past its bucket array** for any allocation of
+  65536 blocks or more, into the fields that follow it in the object.
+  [`2017d3d973`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/2017d3d973)
 
 ---
 
@@ -672,6 +800,30 @@ partial redraws improved more.
   [`cf437f0eae`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/cf437f0eae)
 - **Board configuration**: channel state information enabled on the Cardputer
   ([`143666c60e`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/143666c60e)).
+- **`sdcardio` read a short capacity from CSD version 1.0 cards**, masking
+  `C_SIZE`'s low bits with `0xC` where the shift needs `0xC0`.
+  [`a0f277766e`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/a0f277766e)
+- **`i2cioexpander.input_value` had its error test inverted**, raising
+  `OSError` on every successful read and returning an uninitialised value on
+  every failed one.
+  [`2ba4304969`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/2ba4304969)
+- **`i2cioexpander` passed a negative errno to `mp_raise_OSError`**, which
+  takes a positive one.
+  [`9e9b73be06`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/9e9b73be06)
+- **`I2SOut.left_justified` was declared as an object and read as a bool**,
+  so the flag was whatever the object pointer aliased to.
+  [`effd874f1f`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/effd874f1f)
+- **`keypad`'s range checks admitted one past the last index**, in both
+  `KeyMatrix` and `DemuxKeyMatrix`; `mp_arg_validate_int_range` is inclusive
+  at both ends and was given the count.
+  [`712d31e528`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/712d31e528)
+- **`is31fl3741` read past both buffers on a partial RGB triplet** —
+  [`6b6e45d32e`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/6b6e45d32e)
+  — and never compared the mapping's length with the pixel buffer's, so a
+  short mapping read past the end of the tuple.
+  [`7b7183d3d9`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/7b7183d3d9)
+- **`_pixelmap` read `items[0]` of an empty nested tuple.**
+  [`a167ce8a13`](https://github.com/peterbay/circuitpython-esp-enhanced/commit/a167ce8a13)
 
 ---
 

@@ -4068,3 +4068,82 @@ gains least there; it wants a shift-and-merge. `blit` with a skip index could
 look for runs of non-skipped pixels instead of deciding per pixel. `read_span`
 below a byte has to unpack each pixel whatever happens, which is what holds
 `replace_color` back at 1 bpp.
+
+## 21. An outside audit, 2026-09-13
+
+DeepSeek V4.1 Flash was pointed at `py/`, `shared-module/` and `shared-bindings/`
+and asked for defects. It came back with about a hundred findings across the
+three. They were not taken at face value: every one was read against the code
+before anything was changed, and the ones that survived are the commits of
+2026-09-13.
+
+The hit rate is worth recording, because it says how such a report should be
+used. Of the findings checked, a little over half were either already fixed in
+this tree -- it had been audited before, and the report was written against an
+older state of it -- or did not hold at all. Two were confidently wrong about
+things a grep settles: it claimed the generated MULTI dispatch tables are not
+wired in, when `py/vmentrytable.h` includes them and
+`ports/espressif/mpconfigport.h` turns them on; and it claimed
+`shared-module/usb_net` does not build, which it does and which has run on the
+board. File and line references were off throughout, because the tree had moved
+under it.
+
+What it was good for is the other half: real defects, several of them memory
+safety, that a reader who already knows the code would not have looked for
+again. That is the useful shape of an outside audit -- it does not know what has
+already been fixed, so it costs a verification pass, and it does not share the
+blind spots that let a bug survive the first review.
+
+Sixty-two fixes came out of it, one commit each. Twenty are in `py/` and are not
+listed in `CHANGES-VS-UPSTREAM.md`, per that file's own rule; the rest are.
+
+**The interpreter.** `list.reverse()`, `tuple.count()`, `tuple.index()` and
+`tuple + subclass` all read a subclass instance as its native base, because a
+native method in this fork is handed the instance and not `subobj[0]`; every
+other method in those files already went through `native_list()` or a cast.
+`__cause__` and `__context__` had their type test inverted and exact, so they
+took any non-exception and refused a plain `BaseException`. `pow(0, 0, m)`
+returned 0 where CPython returns 1, because the zero-base test came before the
+zero-exponent one. `bit_length()` was one too many for the smallest small int,
+and the long long build compared that edge against `MP_SMALL_INT_MIN` rather
+than `LLONG_MIN`, leaving the real edge to reach a negation that does not fit.
+`to_bytes` with a zero width shifted by -1. `str.startswith` formed a pointer
+outside the string before testing the length that would have rejected it.
+`print(..., flush=True)` to an `io.BufferedWriter` called through a null ioctl.
+`gc_free` dereferenced a null area in a release build, where the assert that
+used to catch it is compiled out.
+
+**Memory safety outside the interpreter.** `memorymonitor` indexed sixteen
+buckets with a value that runs to the width of a `size_t`, writing into the
+fields that follow the array. `usb.core` stored one past the end of its endpoint
+table when every slot was taken, and built a string from a descriptor whose
+declared length it never checked was at least two. `usb_hid` sized three stack
+arrays from a count it validated only afterwards. `_eve.cmd()` looped forever on
+an unknown format character while counting words into a fixed stack buffer it
+never bounded. `_stage` indexed a 2048-byte graphic with an unvalidated frame.
+`rgbmatrix` read its own framebuffer field three times before assigning it, on
+an object that is zeroed at allocation.
+
+**Wrong answers rather than crashes.** `sdcardio` masked `C_SIZE` with `0xC`
+where it needed `0xC0`, so the shift always produced zero. `i2cioexpander`
+inverted its error test, raising on every successful read and returning an
+uninitialised value on every failed one. `Group(scale=256)` arrived at the
+transform as zero, because the transform stored a `uint16_t` scale in a byte,
+and the tilegrid fill loop then divided by it. A tile index above 255 truncated
+in the same way. `usb_cdc` compared the length still wanted against the amount
+already moved, so a read of 100 that got 50 immediately returned those 50.
+`alphablend` left a source pointer where it was whenever a pixel matched a skip
+index, and read the rest of the row from the wrong place.
+
+Two findings were deliberately left alone. The report claims
+`picogame_fb_to_native_copy` does unaligned 32-bit writes; the function
+documents alignment as its contract and names the caller that satisfies it, and
+without a guarantee about the stride that cannot be confirmed either way. It
+also wants end-pointer checks through `ttfrast`'s glyph and composite paths;
+`find_table` now verifies a table's declared length as well as its offset, but
+the rest is a rewrite of the rasteriser rather than a fix.
+
+Checked by rebuilding for the Cardputer after each group and running
+`tests/circuitpython/bitmaptools_spans.py`, whose 55 checks cover the drawing
+paths these changes touch -- `alphablend`, `TileGrid`, `Group`, `ColorConverter`
+and `Palette` -- at 1, 2, 4, 8 and 16 bits per pixel.
