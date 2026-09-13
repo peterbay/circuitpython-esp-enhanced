@@ -964,8 +964,15 @@ void common_hal_bitmaptools_alphablend(displayio_bitmap_t *dest, displayio_bitma
             uint8_t *mptr = mask ? (uint8_t *)(mask->data + y * mask->stride) : NULL;
             int pixel;
             for (int x = 0; x < dest->width; x++) {
-                blend_source1 = skip_source1_index_none || *sptr1 != (uint8_t)skip_source1_index;
-                blend_source2 = skip_source2_index_none || *sptr2 != (uint8_t)skip_source2_index;
+                // CIRCUITPY-CHANGE: the two source reads used to sit inside the
+                // branches below, so a pixel matching a skip index left that
+                // source's pointer where it was and every pixel after it in the
+                // row came from the wrong place. The RGB565 branch further down
+                // always advanced both, which is what this does now.
+                uint8_t spix1 = *sptr1++;
+                uint8_t spix2 = *sptr2++;
+                blend_source1 = skip_source1_index_none || spix1 != (uint8_t)skip_source1_index;
+                blend_source2 = skip_source2_index_none || spix2 != (uint8_t)skip_source2_index;
                 if (mptr) {
                     uint8_t m = *mptr;
                     // Scale source2's contribution by the mask (0..255)
@@ -977,8 +984,8 @@ void common_hal_bitmaptools_alphablend(displayio_bitmap_t *dest, displayio_bitma
                 }
                 if (blend_source1 && blend_source2) {
                     // Premultiply by the alpha factor
-                    int sda = *sptr1++ *ifactor1;
-                    int sca = *sptr2++ *ifactor2;
+                    int sda = spix1 * ifactor1;
+                    int sca = spix2 * ifactor2;
                     // Blend
                     int blend;
                     if (blendmode == BITMAPTOOLS_BLENDMODE_SCREEN) {
@@ -991,10 +998,10 @@ void common_hal_bitmaptools_alphablend(displayio_bitmap_t *dest, displayio_bitma
                     pixel = (denom > 0) ? (blend / denom) : 0;
                 } else if (blend_source1) {
                     // Apply iFactor1 to source1 only
-                    pixel = *sptr1++ *ifactor1 / 256;
+                    pixel = spix1 * ifactor1 / 256;
                 } else if (blend_source2) {
                     // Apply iFactor2 to source1 only
-                    pixel = *sptr2++ *ifactor2 / 256;
+                    pixel = spix2 * ifactor2 / 256;
                 } else {
                     // Use the destination value
                     pixel = *dptr;
