@@ -71,11 +71,17 @@ mp_obj_t mp_obj_int_from_bytes_impl(bool big_endian, size_t len, const byte *buf
         delta = -1;
     }
 
-    mp_longint_impl_t value = 0;
+    // CIRCUITPY-CHANGE: more bytes than a long long holds used to shift the top
+    // ones out, signed and undefined, and hand back a silently wrong number.
+    // The accumulation is unsigned so that a full-width value is well defined.
+    if (len > sizeof(mp_longint_impl_t)) {
+        raise_long_long_overflow();
+    }
+    unsigned long long value = 0;
     for (; len--; buf += delta) {
         value = (value << 8) | *buf;
     }
-    return mp_obj_new_int_from_ll(value);
+    return mp_obj_new_int_from_ll((long long)value);
 }
 
 bool mp_obj_int_to_bytes_impl(mp_obj_t self_in, bool big_endian, size_t len, byte *buf) {
