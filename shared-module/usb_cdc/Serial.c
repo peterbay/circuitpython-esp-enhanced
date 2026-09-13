@@ -32,7 +32,12 @@ size_t common_hal_usb_cdc_serial_read(usb_cdc_serial_obj_t *self, uint8_t *data,
         uint64_t start_ticks = supervisor_ticks_ms64();
 
         uint32_t num_read = 0;
-        while (total_num_read < len &&
+        // CIRCUITPY-CHANGE: len is how much room is left and total_num_read is
+        // how much has been taken, and the two were compared against each other.
+        // The loop therefore stopped as soon as the amount read reached the
+        // amount still wanted -- a read of 100 that got 50 straight away
+        // returned those 50 instead of waiting for the rest.
+        while (len > 0 &&
                (wait_forever || supervisor_ticks_ms64() - start_ticks <= timeout_ms)) {
 
             // Wait for a bit, and check for ctrl-C.
@@ -74,7 +79,9 @@ size_t common_hal_usb_cdc_serial_write(usb_cdc_serial_obj_t *self, const uint8_t
         uint64_t start_ticks = supervisor_ticks_ms64();
 
         uint32_t num_written = 0;
-        while (total_num_written < len &&
+        // CIRCUITPY-CHANGE: same comparison of remaining length against total
+        // written as in the read above, cutting the transfer short.
+        while (len > 0 &&
                (wait_forever || supervisor_ticks_ms64() - start_ticks <= timeout_ms)) {
 
             // Wait for a bit, and check for ctrl-C.
