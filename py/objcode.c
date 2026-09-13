@@ -48,7 +48,7 @@ static void code_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t k
     const mp_raw_code_t *rc = o->rc;
     const mp_bytecode_prelude_t *prelude = &rc->prelude;
     mp_printf(print,
-        "<code object %q at 0x%p, file \"%q\", line %d>",
+        "<code object %q at %p, file \"%q\", line %d>",
         MP_CODE_QSTR_MAP(o->context, prelude->qstr_block_name_idx),
         o,
         MP_CODE_QSTR_MAP(o->context, 0),

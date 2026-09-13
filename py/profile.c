@@ -77,7 +77,7 @@ static void frame_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t 
     const mp_raw_code_t *rc = code->rc;
     const mp_bytecode_prelude_t *prelude = &rc->prelude;
     mp_printf(print,
-        "<frame at 0x%p, file '%q', line %d, code %q>",
+        "<frame at %p, file '%q', line %d, code %q>",
         frame,
         MP_CODE_QSTR_MAP(code->context, 0),
         (int)frame->lineno,
@@ -813,7 +813,7 @@ void mp_prof_print_instr(const byte *ip, mp_code_state_t *code_state) {
 
     /* long path */ if (1) {
         mp_printf(&mp_plat_print,
-            "@0x%p:%q:%q+0x%04x:%d",
+            "@%p:%q:%q+0x%04x:%d",
             ip,
             prelude->qstr_source_file,
             prelude->qstr_block_name,

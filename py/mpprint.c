@@ -603,7 +603,11 @@ int mp_vprintf(const mp_print_t *print, const char *fmt, va_list args) {
                     #if SUPPORT_INT_BASE_PREFIX
                     chrs += mp_print_int(print, va_arg(args, unsigned long int), 0, 16, 'a', flags | PF_FLAG_SHOW_PREFIX, fill, width);
                     #else
-                    chrs += mp_print_strn(print, "0x", 2, flags, fill, width);
+                    // CIRCUITPY-CHANGE: the prefix used to be padded to the
+                    // full field width as well, and then the number was padded
+                    // to it again. It is written plain; nothing here formats a
+                    // pointer with a width.
+                    chrs += mp_print_strn(print, "0x", 2, 0, ' ', 0);
                     #endif
                 }
                 chrs += mp_print_int(print, val, fmt_chr == 'd', base, fmt_c, flags, fill, width);
