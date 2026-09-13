@@ -89,7 +89,9 @@ static size_t file_input(JDEC *jd, uint8_t *dest, size_t len) {
             read = file_input(jd, buf, to_discard);
             total += read;
         } while (read != 0 && total != len);
-        return len;
+        // CIRCUITPY-CHANGE: this reported the full length even when the stream
+        // ended early, so the decoder believed it had skipped data it had not.
+        return total;
     }
 
     int errcode = 0;
