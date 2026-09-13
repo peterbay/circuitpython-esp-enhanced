@@ -150,8 +150,12 @@ void common_hal_vectorio_polygon_get_area(void *polygon, displayio_area_t *area)
 //  0 if the point is on the line
 // >0 if the point is to the right of the line vector
 __attribute__((always_inline)) static inline int line_side(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t px, int16_t py) {
-    return (px - x1) * (y2 - y1)
-           - (py - y1) * (x2 - x1);
+    // CIRCUITPY-CHANGE: each difference reaches 65535 and the two products were
+    // computed as int, which overflows for coordinates near the ends of int16_t
+    // and flips the winding. Only the sign is used, so it is produced directly.
+    int64_t side = (int64_t)(px - x1) * (y2 - y1)
+        - (int64_t)(py - y1) * (x2 - x1);
+    return (side > 0) - (side < 0);
 }
 
 
