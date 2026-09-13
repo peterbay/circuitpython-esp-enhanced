@@ -96,7 +96,9 @@ void common_hal_audiofreeverb_freeverb_construct(audiofreeverb_freeverb_obj_t *s
             common_hal_audiofreeverb_freeverb_deinit(self);
             m_malloc_fail(self->combbuffersizes[i]);
         }
-        memset(self->combbuffers[i], 0, self->combbuffersizes[i]);
+        // CIRCUITPY-CHANGE: the buffer holds uint16_t, so clearing size bytes
+        // left its upper half uninitialised and the reverb started from noise.
+        memset(self->combbuffers[i], 0, self->combbuffersizes[i] * sizeof(uint16_t));
 
         self->combbufferindex[i] = 0;
         self->combfitlers[i] = 0;
@@ -114,7 +116,8 @@ void common_hal_audiofreeverb_freeverb_construct(audiofreeverb_freeverb_obj_t *s
             common_hal_audiofreeverb_freeverb_deinit(self);
             m_malloc_fail(self->allpassbuffersizes[i]);
         }
-        memset(self->allpassbuffers[i], 0, self->allpassbuffersizes[i]);
+        // CIRCUITPY-CHANGE: as above, these are uint16_t entries.
+        memset(self->allpassbuffers[i], 0, self->allpassbuffersizes[i] * sizeof(uint16_t));
 
         self->allpassbufferindex[i] = 0;
     }
