@@ -321,7 +321,10 @@ static mp_rom_error_text_t init_card(sdcardio_sdcard_obj_t *self) {
             self->sectors = (((csd[7] & 0x3F) << 16 | csd[8] << 8 | csd[9]) + 1) * 1024;
         } else {
             uint32_t block_length = 1 << (csd[5] & 0xF);
-            uint32_t c_size = ((csd[6] & 0x3) << 10) | (csd[7] << 2) | ((csd[8] & 0xC) >> 6);
+            // CIRCUITPY-CHANGE: C_SIZE's low two bits are the top two bits of
+            // csd[8], so the mask has to be 0xC0. With 0xC the shift by six
+            // always produced zero and the capacity came out a little short.
+            uint32_t c_size = ((csd[6] & 0x3) << 10) | (csd[7] << 2) | ((csd[8] & 0xC0) >> 6);
             uint32_t mult = 1 << (((csd[9] & 0x3) << 1 | (csd[10] & 0x80) >> 7) + 2);
             self->sectors = block_length / 512 * mult * (c_size + 1);
         }
