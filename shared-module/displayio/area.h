@@ -23,9 +23,13 @@ struct _displayio_area_t {
 typedef struct {
     uint16_t x;
     uint16_t y;
-    int8_t dx;
-    int8_t dy;
-    uint8_t scale;
+    // CIRCUITPY-CHANGE: a Group's own scale is a uint16_t and its binding accepts
+    // up to 32767, but these were a byte, so a scale of 256 arrived here as 0 and
+    // the tilegrid fill loop divided by it. Anything over 127 also overflowed the
+    // step. Both are as wide as the scale they are derived from now.
+    int16_t dx;
+    int16_t dy;
+    uint16_t scale;
     uint16_t width;
     uint16_t height;
     bool mirror_x;
