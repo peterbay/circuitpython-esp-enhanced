@@ -175,7 +175,13 @@ static void usb_video_cb_fun(void *unused) {
 
     convert_framebuffer_maybe();
     bool result = tud_video_n_frame_xfer(0, 0, (void *)frame_buffer_yuyv, usb_video_frame_width * usb_video_frame_height * 16 / 8);
-    (void)result;
+    // CIRCUITPY-CHANGE: nothing ever set this, so the guard above was dead and
+    // the next frame could be converted into frame_buffer_yuyv while the
+    // isochronous transfer was still reading it. The completion callback is
+    // what clears it again.
+    if (result) {
+        tx_busy = 1;
+    }
 }
 
 
