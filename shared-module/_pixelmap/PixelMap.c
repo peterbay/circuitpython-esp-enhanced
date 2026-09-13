@@ -149,6 +149,11 @@ mp_obj_t shared_module_pixelmap_pixelmap_getitem(pixelmap_pixelmap_obj_t *self, 
         size_t len;
         mp_obj_t *items;
         mp_obj_tuple_get(item, &len, &items);
+        // CIRCUITPY-CHANGE: an empty nested tuple left items[0] reading past the
+        // end of the tuple's storage.
+        if (len == 0) {
+            mp_raise_IndexError(MP_ERROR_TEXT("index out of range"));
+        }
         return common_hal_adafruit_pixelbuf_pixelbuf_get_pixel(self->pixelbuf, MP_OBJ_SMALL_INT_VALUE(items[0]));
     }
 }
