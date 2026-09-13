@@ -1366,8 +1366,13 @@ void PLACE_IN_WARM_CODE(gc_free)(void *ptr) {
     mp_state_mem_area_t *area;
     #if MICROPY_GC_SPLIT_HEAP
     area = gc_get_ptr_area(ptr);
-    // CIRCUITPY-CHANGE: don't just assert.
-    // assert(area);
+    // CIRCUITPY-CHANGE: don't just assert. gc_get_ptr_area() returns NULL for a
+    // pointer that is in none of the areas, and the assert that used to catch
+    // that is compiled out of a release build, which left the dereference below
+    // to run on NULL. The non-split branch beside this one already bails out.
+    if (area == NULL) {
+        reset_into_safe_mode(SAFE_MODE_GC_ALLOC_OUTSIDE_VM);
+    }
     #else
     // CIRCUITPY-CHANGE: extra checking
     if (MP_STATE_MEM(area).gc_pool_start == 0) {
