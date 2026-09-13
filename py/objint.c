@@ -494,7 +494,11 @@ static mp_obj_t int_bit_length(mp_obj_t self_in) {
         mp_int_t int_val = MP_OBJ_SMALL_INT_VALUE(self_in);
         mp_uint_t value =
             (int_val == 0) ? 0 :
-            (int_val == MP_SMALL_INT_MIN) ? 8 * sizeof(mp_int_t) :
+            // CIRCUITPY-CHANGE: a small int is not a whole machine word. The most
+            // negative one is -2**(MP_SMALL_INT_BITS-1), whose bit_length is
+            // MP_SMALL_INT_BITS-1 -- this returned the width of mp_int_t, one too
+            // many, and could not use -int_val because that does not fit.
+            (int_val == MP_SMALL_INT_MIN) ? MP_SMALL_INT_BITS :
             (int_val < 0) ? 8 * sizeof(long) - __builtin_clzl(-int_val) :
             8 * sizeof(long) - __builtin_clzl(int_val);
         return mp_obj_new_int_from_uint(value);
