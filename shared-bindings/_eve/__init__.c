@@ -1175,26 +1175,43 @@ static mp_obj_t _cmd(size_t n_args, const mp_obj_t *args) {
     mp_get_buffer_raise(args[2], &fmt, MP_BUFFER_READ);
     size_t len;
     mp_obj_t *items;
+    // CIRCUITPY-CHANGE: this took whatever was passed as a tuple without saying so.
+    mp_arg_validate_type(args[3], &mp_type_tuple, MP_QSTR_args);
     mp_obj_tuple_get(args[3], &len, &items);
 
     // Count how many 32-bit words required
+    // CIRCUITPY-CHANGE: a format character other than I/i/H/h left i where it
+    // was, so the loop never ended and n counted up forever. Anything else is
+    // rejected rather than skipped.
     size_t n = 0;
+    size_t args_needed = 0;
     for (size_t i = 0; i < fmt.len; n++) {
         switch (((char *)fmt.buf)[i]) {
             case 'I':
             case 'i':
                 i += 1;
+                args_needed += 1;
                 break;
             case 'H':
             case 'h':
                 i += 2;
+                args_needed += 2;
                 break;
             default:
-                break;
+                mp_arg_error_invalid(MP_QSTR_fmt);
         }
     }
 
+    // CIRCUITPY-CHANGE: buf is on the stack and nothing bounded n, so a long
+    // enough format string wrote straight off the end of it; and the second loop
+    // walked items without regard for how many the tuple actually holds.
     uint32_t buf[16];
+    if (1 + n > MP_ARRAY_SIZE(buf)) {
+        mp_arg_error_invalid(MP_QSTR_fmt);
+    }
+    if (args_needed > len) {
+        mp_arg_error_invalid(MP_QSTR_args);
+    }
     uint32_t *p = buf;
     *p++ = 0xffffff00 | mp_obj_get_int_truncated(num);
     mp_obj_t *a = items;
@@ -1214,6 +1231,7 @@ static mp_obj_t _cmd(size_t n_args, const mp_obj_t *args) {
                 i += 2;
                 break;
             default:
+                // Rejected by the counting pass above.
                 break;
         }
     }
