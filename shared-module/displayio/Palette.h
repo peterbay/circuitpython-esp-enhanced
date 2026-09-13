@@ -41,7 +41,10 @@ typedef struct {
     uint32_t pixel;
     uint16_t x;
     uint16_t y;
-    uint8_t tile;
+    // CIRCUITPY-CHANGE: a tile index is a uint16_t once the atlas holds more than
+    // 255 tiles, and the general fill path assigns one straight into this. As a
+    // byte it truncated, so those grids drew the wrong tiles.
+    uint16_t tile;
     uint16_t tile_x;
     uint16_t tile_y;
 } displayio_input_pixel_t;
