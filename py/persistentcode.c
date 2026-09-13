@@ -794,7 +794,9 @@ typedef struct _bit_vector_t {
 static void bit_vector_init(bit_vector_t *self) {
     self->max_bit_set = 0;
     self->alloc = 1;
-    self->bits = m_new(uintptr_t, self->alloc);
+    // CIRCUITPY-CHANGE: m_new does not clear, and every word here is read before
+    // it is written, so the vector started out holding whatever was on the heap.
+    self->bits = m_new0(uintptr_t, self->alloc);
 }
 
 static void bit_vector_clear(bit_vector_t *self) {
@@ -811,8 +813,15 @@ static void bit_vector_set(bit_vector_t *self, size_t index) {
     const size_t bits_size = sizeof(*self->bits) * MP_BITS_PER_BYTE;
     self->max_bit_set = MAX(self->max_bit_set, index);
     if (index / bits_size >= self->alloc) {
-        size_t new_alloc = self->alloc * 2;
+        // CIRCUITPY-CHANGE: a single doubling does not necessarily reach the
+        // index, and anything past it was then written outside the allocation.
+        // The words the growth adds have to start clear, as above.
+        size_t new_alloc = self->alloc;
+        do {
+            new_alloc *= 2;
+        } while (index / bits_size >= new_alloc);
         self->bits = m_renew(uintptr_t, self->bits, self->alloc, new_alloc);
+        memset(self->bits + self->alloc, 0, (new_alloc - self->alloc) * sizeof(*self->bits));
         self->alloc = new_alloc;
     }
     self->bits[index / bits_size] |= (uintptr_t)1 << (index % bits_size);
