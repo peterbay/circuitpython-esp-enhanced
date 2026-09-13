@@ -106,6 +106,11 @@ static mp_obj_t usb_hid_device_make_new(const mp_obj_type_t *type, size_t n_args
 
     size_t report_ids_count =
         mp_arg_validate_length_min((size_t)MP_OBJ_SMALL_INT_VALUE(mp_obj_len(report_ids)), 1, MP_QSTR_report_ids);
+    // CIRCUITPY-CHANGE: the three arrays below are stack allocated from this
+    // count, and the maximum was only checked afterwards, inside the HAL. A long
+    // enough sequence overflowed the stack before it ever got there.
+    mp_arg_validate_length_max(report_ids_count,
+        CIRCUITPY_USB_HID_MAX_REPORT_IDS_PER_DESCRIPTOR, MP_QSTR_report_ids);
 
     if ((size_t)MP_OBJ_SMALL_INT_VALUE(mp_obj_len(in_report_lengths)) != report_ids_count ||
         (size_t)MP_OBJ_SMALL_INT_VALUE(mp_obj_len(out_report_lengths)) != report_ids_count) {
