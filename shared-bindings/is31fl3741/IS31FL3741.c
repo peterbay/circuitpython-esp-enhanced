@@ -142,6 +142,11 @@ static mp_obj_t is31fl3741_IS31FL3741_write(mp_obj_t self_in, mp_obj_t mapping, 
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(buffer, &bufinfo, MP_BUFFER_READ);
 
+    // CIRCUITPY-CHANGE: the HAL walks the mapping in step with the pixel buffer
+    // and the two lengths were never compared, so a mapping shorter than the
+    // buffer read past the end of the tuple.
+    mp_arg_validate_length_min(map_len, bufinfo.len, MP_QSTR_mapping);
+
     common_hal_is31fl3741_write(self, map_items, (uint8_t *)bufinfo.buf, bufinfo.len);
     return mp_const_none;
 }
