@@ -895,8 +895,14 @@ static mp_obj_t str_startendswith(size_t n_args, const mp_obj_t *args, bool ends
     size_t prefix_len;
     for (size_t i = 0; i < n_prefixes; i++) {
         const char *prefix = mp_obj_str_get_data(prefixes[i], &prefix_len);
+        // CIRCUITPY-CHANGE: the length test used to come after this subtraction,
+        // which is unsigned, so a prefix longer than the string formed a pointer
+        // far outside it before anything rejected it.
+        if (prefix_len > str_len) {
+            continue;
+        }
         const byte *s = str + (ends_with ? str_len - prefix_len : 0);
-        if (prefix_len <= str_len && memcmp(s, prefix, prefix_len) == 0) {
+        if (memcmp(s, prefix, prefix_len) == 0) {
             return mp_const_true;
         }
     }
