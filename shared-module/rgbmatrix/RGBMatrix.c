@@ -51,14 +51,17 @@ void common_hal_rgbmatrix_rgbmatrix_construct(rgbmatrix_rgbmatrix_obj_t *self, i
 
 static void common_hal_rgbmatrix_rgbmatrix_construct1(rgbmatrix_rgbmatrix_obj_t *self, mp_obj_t framebuffer) {
     if (framebuffer != mp_const_none) {
-        mp_get_buffer_raise(self->framebuffer, &self->bufinfo, MP_BUFFER_READ);
-        if (mp_get_buffer(self->framebuffer, &self->bufinfo, MP_BUFFER_RW)) {
+        // CIRCUITPY-CHANGE: these three used self->framebuffer, which is only
+        // assigned at the end of this function. The object is zeroed when it is
+        // allocated, so every one of them ran on a null object.
+        mp_get_buffer_raise(framebuffer, &self->bufinfo, MP_BUFFER_READ);
+        if (mp_get_buffer(framebuffer, &self->bufinfo, MP_BUFFER_RW)) {
             self->bufinfo.typecode = 'H' | MP_OBJ_ARRAY_TYPECODE_FLAG_RW;
         } else {
             self->bufinfo.typecode = 'H';
         }
         // verify that the matrix is big enough
-        mp_get_index(mp_obj_get_type(self->framebuffer), self->bufinfo.len, MP_OBJ_NEW_SMALL_INT(self->bufsize - 1), false);
+        mp_get_index(mp_obj_get_type(framebuffer), self->bufinfo.len, MP_OBJ_NEW_SMALL_INT(self->bufsize - 1), false);
     } else {
         self->bufinfo.buf = port_malloc(self->bufsize, false);
         if (self->bufinfo.buf == NULL) {
