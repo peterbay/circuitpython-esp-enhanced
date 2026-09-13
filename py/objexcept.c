@@ -293,27 +293,33 @@ void mp_obj_exception_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
                 self->traceback = (mp_obj_traceback_t *)&mp_const_empty_traceback_obj;
             } else {
                 if (!mp_obj_is_type(dest[1], &mp_type_traceback)) {
-                    mp_raise_TypeError_varg(MP_ERROR_TEXT("%q must be of type %q or %q, not %q"), MP_QSTR___context__, MP_QSTR_traceback, MP_QSTR_None, mp_obj_get_type(dest[1])->name);
+                    // CIRCUITPY-CHANGE: this named __context__, the attribute
+                    // handled further down, whatever was actually assigned to.
+                    mp_raise_TypeError_varg(MP_ERROR_TEXT("%q must be of type %q or %q, not %q"), attr, MP_QSTR_traceback, MP_QSTR_None, mp_obj_get_type(dest[1])->name);
                 }
                 self->traceback = MP_OBJ_TO_PTR(dest[1]);
             }
             dest[0] = MP_OBJ_NULL; // indicate success
         #if MICROPY_CPYTHON_EXCEPTION_CHAIN
         } else if (attr == MP_QSTR___cause__) {
+            // CIRCUITPY-CHANGE: the test was inverted and exact, so it took any
+            // non-exception and refused a plain BaseException. Every exception
+            // instance is accepted here, whatever its class.
             if (dest[1] == mp_const_none) {
                 self->cause = NULL;
-            } else if (!mp_obj_is_type(dest[1], &mp_type_BaseException)) {
-                self->cause = dest[1];
+            } else if (mp_obj_is_exception_instance(dest[1])) {
+                self->cause = MP_OBJ_TO_PTR(dest[1]);
             } else {
                 mp_raise_TypeError_varg(MP_ERROR_TEXT("%q must be of type %q or %q, not %q"), attr, MP_QSTR_BaseException, MP_QSTR_None, mp_obj_get_type(dest[1])->name);
             }
             self->suppress_context = true;
             dest[0] = MP_OBJ_NULL; // indicate success
         } else if (attr == MP_QSTR___context__) {
+            // CIRCUITPY-CHANGE: same inverted test as __cause__ above.
             if (dest[1] == mp_const_none) {
                 self->context = NULL;
-            } else if (!mp_obj_is_type(dest[1], &mp_type_BaseException)) {
-                self->context = dest[1];
+            } else if (mp_obj_is_exception_instance(dest[1])) {
+                self->context = MP_OBJ_TO_PTR(dest[1]);
             } else {
                 mp_raise_TypeError_varg(MP_ERROR_TEXT("%q must be of type %q or %q, not %q"), attr, MP_QSTR_BaseException, MP_QSTR_None, mp_obj_get_type(dest[1])->name);
             }
