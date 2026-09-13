@@ -41,7 +41,10 @@ void common_hal_is31fl3741_IS31FL3741_deinit(is31fl3741_IS31FL3741_obj_t *self) 
 void common_hal_is31fl3741_write(is31fl3741_IS31FL3741_obj_t *is31, const mp_obj_t *mapping, const uint8_t *pixels, size_t numBytes) {
     common_hal_is31fl3741_begin_transaction(is31);
 
-    for (size_t i = 0; i < numBytes; i += 3) {
+    // CIRCUITPY-CHANGE: each pass reads three entries, so a buffer whose length
+    // is not a multiple of three made the last one read past the end of both the
+    // pixel buffer and the mapping tuple. Only whole triplets are walked.
+    for (size_t i = 0; i + 2 < numBytes; i += 3) {
         uint16_t ridx = mp_obj_get_int(mapping[i]);
         if (ridx != 65535) {
             common_hal_is31fl3741_set_led(is31, ridx, IS31GammaTable[pixels[i]], 0); // red
