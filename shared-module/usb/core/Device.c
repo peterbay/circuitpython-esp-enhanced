@@ -460,6 +460,13 @@ static bool _open_endpoint(usb_core_device_obj_t *self, mp_int_t endpoint) {
     }
     tusb_desc_endpoint_t const *desc_ep = (tusb_desc_endpoint_t const *)p_desc;
 
+    // CIRCUITPY-CHANGE: first_free stays at open_size when every slot is taken,
+    // and the store below then went one past the end of open_endpoints, over the
+    // field that follows it in the object.
+    if (first_free >= open_size) {
+        return false;
+    }
+
     bool open = tuh_edpt_open(self->device_address, desc_ep);
     if (open) {
         self->open_endpoints[first_free] = endpoint;
