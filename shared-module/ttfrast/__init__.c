@@ -48,7 +48,15 @@ static uint32_t find_table(const uint8_t *data, size_t len, const char tag[4]) {
         }
         if (memcmp(entry, tag, 4) == 0) {
             uint32_t offset = rd32(entry + 8);
-            return offset < len ? offset : 0;
+            uint32_t table_len = rd32(entry + 12);
+            // CIRCUITPY-CHANGE: only the offset was tested, so a table that
+            // starts inside the file but whose declared length runs past its end
+            // was accepted, and everything reading that table walked out of the
+            // buffer. The directory carries the length, so it can be checked.
+            if (offset == 0 || offset > len || table_len > len - offset) {
+                return 0;
+            }
+            return offset;
         }
     }
     return 0;
