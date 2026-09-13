@@ -630,9 +630,20 @@ static mp_obj_t picogame_project(size_t n_args, const mp_obj_t *args) {
     mp_get_buffer_raise(args[4], &yi, MP_BUFFER_WRITE);
     int16_t *osx = xi.buf;
     int16_t *osy = yi.buf;
+    // CIRCUITPY-CHANGE: only the x output was bounded. The y output, and the
+    // point array that is read three values per point, were taken on trust, so
+    // a short buffer for either was walked off the end.
     if (n > (int)(xi.len >> 1)) {
         n = (int)(xi.len >> 1);
     }
+    if (n > (int)(yi.len >> 1)) {
+        n = (int)(yi.len >> 1);
+    }
+    if (n > (int)(pi.len / (3 * sizeof(uint32_t)))) {
+        n = (int)(pi.len / (3 * sizeof(uint32_t)));
+    }
+    // cam[0] through cam[14] are read below.
+    mp_arg_validate_length_min(ci.len, 15 * sizeof(uint32_t), MP_QSTR_cam);
     #if CIRCUITPY_PICOGAME_FPU
     const float *cam = ci.buf;
     const float *pts = pi.buf;
