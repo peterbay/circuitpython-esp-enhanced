@@ -72,7 +72,10 @@ static mp_obj_t synthio_miditrack_make_new(const mp_obj_type_t *type, size_t n_a
     synthio_miditrack_obj_t *self = mp_obj_malloc(synthio_miditrack_obj_t, &synthio_miditrack_type);
     common_hal_synthio_miditrack_construct(self,
         (uint8_t *)bufinfo.buf, bufinfo.len,
-        args[ARG_tempo].u_int,
+        // CIRCUITPY-CHANGE: decode_duration divides by the tempo, and only the
+        // setter checked it, so a track constructed with tempo=0 divided by zero
+        // on its first event.
+        mp_arg_validate_int_min(args[ARG_tempo].u_int, 1, MP_QSTR_tempo),
         args[ARG_sample_rate].u_int,
         args[ARG_waveform].u_obj,
         mp_const_none,
