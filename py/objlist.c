@@ -485,7 +485,11 @@ mp_obj_t mp_obj_list_remove(mp_obj_t self_in, mp_obj_t value) {
 
 static mp_obj_t list_reverse(mp_obj_t self_in) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_list));
-    mp_obj_list_t *self = MP_OBJ_TO_PTR(self_in);
+    // CIRCUITPY-CHANGE: a native method is handed the subclass instance rather
+    // than its native base, so this has to go through native_list like every
+    // other method here does. It was the one that kept MP_OBJ_TO_PTR, which on
+    // a list subclass read the members map as a list.
+    mp_obj_list_t *self = native_list(self_in);
 
     mp_int_t len = self->len;
     for (mp_int_t i = 0; i < len / 2; i++) {
