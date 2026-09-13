@@ -3955,3 +3955,116 @@ came out green, 0xFF0000 black. The index is 32 bits now, validated to
 `abs()` of an unsigned value. Palettes are unaffected. (An earlier note
 here claimed the converter's colour was also off by one in blue; it was
 not -- the shape stores the index plus one and the loop takes it back.)
+
+## 20. Drawing by runs, 2026-09-13
+
+Section 19 ended by saying a span-based fill was the next step. This is that
+step, for `bitmaptools` rather than `vectorio`.
+
+Every drawing primitive went through `displayio_bitmap_write_pixel` and
+`common_hal_displayio_bitmap_get_pixel`, one call per pixel. Each of those
+re-derives the row address from `y * stride`, re-reads `bits_per_value`,
+`x_shift`, `x_mask` and `bitmask` out of the bitmap, re-checks four bounds and
+re-tests `read_only`; and since they sit in another translation unit and the
+build has no LTO, none of it can be hoisted or inlined away. That is about
+0.5 µs per pixel, which is why every operation in the table below used to take
+the same 7 to 10 ms over the same 14400 pixels no matter what it did.
+
+Two layers replace it, neither of which adds a field to `displayio_bitmap_t`.
+`values_per_byte` and the bit position both fall out of `x_mask`, which the
+constructor already computed, so the one genuine division in the old path
+disappears as well.
+
+**Spans**, in `shared-module/displayio/Bitmap.c`. `displayio_bitmap_fill_span`,
+`displayio_bitmap_read_span` and `displayio_bitmap_copy_span` resolve the format
+once and then walk a single row. At 8 bits a fill is a `memset` and a copy a
+`memmove`; 16 and 32 bits are a plain loop over a row pointer; below a byte the
+two ends of the run are written pixel by pixel and the whole bytes between them
+go out as a `memset` of a repeated pattern, or a `memmove` when source and
+destination happen to sit at the same offset inside their bytes. Runs are clipped
+once on entry, and `read_span` reports anything past an edge as 0, which is what
+`common_hal_displayio_bitmap_get_pixel` returns there, so a caller's indexing
+still lines up with the run it asked for.
+
+**Rows**, in `shared-module/displayio/Bitmap.h`. `displayio_bitmap_row`,
+`displayio_bitmap_row_get` and `displayio_bitmap_row_put` are the same unpacking
+for one pixel of a row the caller already holds. A primitive that walks a row
+takes the row once and pays neither the call, nor the bounds test, nor the row
+lookup afterwards. One whose pixels are genuinely scattered -- a circle, a
+slanted line -- keeps a bounds test, but inline and without the call.
+
+`fill_region`, `boundary_fill`, horizontal lines, `blit` and `replace_color` went
+onto spans. `rotozoom`, `arrayblit`, `readinto`, `blit` with skip indices and the
+scans inside `boundary_fill` went onto rows, and in `blit` the horizontal clip is
+now computed once instead of per pixel. `draw_circle` and the vertical and
+slanted cases of `draw_line` got a local `draw_pixel` that is `write_pixel`
+inline. `blit` also had its loops the wrong way round, `x` outside and `y`
+inside, so every step of the inner loop jumped a whole row; it is row-major now,
+and the reverse flags that protect an overlapping blit into the same bitmap only
+decide the order of the rows, because an overlap inside a row is already
+`memmove`'s problem.
+
+`read_only` had been checked once per pixel inside `write_pixel` and nowhere
+else, so it moved to the top of `arrayblit` and `draw_line`. That matters for
+`draw_polygon`, which draws before it sets the dirty area and would otherwise
+have had nothing standing between it and a read-only bitmap.
+
+Measured on the Cardputer, 240x60 so 14400 pixels, display released so its
+refresh task cannot interfere, best of three runs of each, milliseconds per call:
+
+| | 1 bpp | 8 bpp | 16 bpp |
+| --- | --- | --- | --- |
+| `fill_region` | 4.631 -> 0.066 | 3.360 -> 0.060 | 3.627 -> 0.162 |
+| `blit` | 9.641 -> 0.165 | 7.510 -> 0.861 | 7.928 -> 1.631 |
+| horizontal line | 5.359 -> 0.598 | 4.016 -> 0.549 | 4.150 -> 0.708 |
+| `blit` with a skip index | 9.637 -> 4.590 | 7.465 -> 2.612 | 7.904 -> 2.655 |
+| `arrayblit` | 5.035 -> 3.244 | 3.775 -> 2.029 | 4.037 -> 2.036 |
+| `rotozoom` | 6.622 -> 4.242 | 5.835 -> 3.137 | 5.988 -> 3.113 |
+| `replace_color` | 4.480 -> 3.125 | 3.607 -> 1.483 | 3.815 -> 1.727 |
+| vertical line, 240 calls | 6.531 -> 4.224 | 5.145 -> 3.064 | 5.420 -> 3.082 |
+| slanted line, 60 calls | 6.787 -> 4.706 | 5.341 -> 3.607 | 5.640 -> 3.729 |
+| circle, 60 calls | 3.912 -> 3.326 | 2.936 -> 2.185 | 3.131 -> 2.203 |
+
+The split is the point. Where the pixels come in runs the saving is per run and
+the factor is tens; where they are scattered only the call, the bounds test and
+the `read_only` test go away and the factor is between 1.2 and 1.8. The bottom
+three rows also carry the cost of 240 or 60 calls out of Python, which dilutes
+what they show: a circle of radius 29 works out at roughly 40 cycles per pixel
+before and 27 after, but that is five percent of the measured time.
+
+Two rows that were left alone confirm the measurement rather than the change.
+Before the second half of this work, `blit` with a skip index and the vertical
+line were still on the old path and came out within one percent of their old
+numbers on the new firmware.
+
+The cost is 4 kB of flash, from 3 970 048 to 3 978 240 bytes of `.uf2`.
+
+`common_hal_bitmaptools_replace_color` never marked anything dirty, neither in
+the function nor in its binding, so a display went on showing the colour that had
+just been replaced until something else happened to touch the same area. It now
+keeps the bounding box of the runs it fills -- it has them anyway -- and sets it
+once at the end, and returns early when the two colours are equal. Checked from
+the camera: a bitmap whose left half is red and right half white, `replace_color`
+turning red into green and nothing else touching the bitmap afterwards. The left
+half stays red on the old firmware ten seconds later and turns green on the new
+one.
+
+`tests/circuitpython/bitmaptools_spans.py` compares every converted operation
+against a plain Python reference at 1, 2, 4, 8 and 16 bits, for every start
+offset within a byte and run lengths 1 to 9, with a width of 23 that is a
+multiple of neither 8 nor 32. Because a write that used to be dropped silently by
+`write_pixel` now goes straight into memory, the clipping gets most of the
+attention: lines whose endpoints lie well outside all four edges, checked against
+the same Bresenham transcribed into Python; circles centred in a corner and with
+a radius larger than the bitmap; `blit` overhanging the right edge with both skip
+indices; and `rotozoom`, where the check is that nothing outside the destination
+clip window changed at all. 32 bits per pixel is not covered because
+`displayio.Bitmap` caps `value_count` at 65536 and there is no way to build one
+from Python.
+
+What is left: a sub-byte `blit` whose source and destination sit at different
+offsets inside their bytes still falls back to the pixel loop, which is why 1 bpp
+gains least there; it wants a shift-and-merge. `blit` with a skip index could
+look for runs of non-skipped pixels instead of deciding per pixel. `read_span`
+below a byte has to unpack each pixel whatever happens, which is what holds
+`replace_color` back at 1 bpp.

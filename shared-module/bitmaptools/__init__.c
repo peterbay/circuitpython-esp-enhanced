@@ -23,6 +23,17 @@
 #define BITMAP_DEBUG(...) (void)0
 // #define BITMAP_DEBUG(...) mp_printf(&mp_plat_print, __VA_ARGS__)
 
+// CIRCUITPY-CHANGE: what displayio_bitmap_write_pixel does for one scattered
+// pixel, minus the call into another translation unit and minus the read-only
+// test, which the callers below have already had done for them by the time they
+// get here. For pixels that come in runs use the span operations instead.
+static inline void draw_pixel(displayio_bitmap_t *bitmap, int16_t x, int16_t y, uint32_t value) {
+    if (x < 0 || x >= bitmap->width || y < 0 || y >= bitmap->height) {
+        return;
+    }
+    displayio_bitmap_row_put(bitmap, displayio_bitmap_row(bitmap, y), (uint32_t)x, value);
+}
+
 void common_hal_bitmaptools_rotozoom(displayio_bitmap_t *self, int16_t ox, int16_t oy,
     int16_t dest_clip0_x, int16_t dest_clip0_y,
     int16_t dest_clip1_x, int16_t dest_clip1_y,
@@ -186,14 +197,20 @@ void common_hal_bitmaptools_rotozoom(displayio_bitmap_t *self, int16_t ox, int16
     displayio_area_t dirty_area = {minx, miny, maxx + 1, maxy + 1, NULL};
     displayio_bitmap_set_dirty_area(self, &dirty_area);
 
+    // CIRCUITPY-CHANGE: both clip windows were constrained to their bitmap by
+    // validate_clip_region, and the loop bounds and the test below keep every
+    // access inside them, so the row accessors can be used and the per-pixel
+    // call, bounds test and row lookup on the destination all go away.
     for (y = miny; y <= maxy; y++) {
         mp_float_t u = rowu + minx * duRow;
         mp_float_t v = rowv + minx * dvRow;
+        uint32_t *dest_row = displayio_bitmap_row(self, y);
         for (x = minx; x <= maxx; x++) {
             if (u >= source_clip0_x && u < source_clip1_x && v >= source_clip0_y && v < source_clip1_y) {
-                uint32_t c = common_hal_displayio_bitmap_get_pixel(source, (int)u, (int)v);
+                const uint32_t *source_row = displayio_bitmap_row(source, (int16_t)(int)v);
+                uint32_t c = displayio_bitmap_row_get(source, source_row, (uint32_t)(int)u);
                 if ((skip_index_none) || (c != skip_index)) {
-                    displayio_bitmap_write_pixel(self, x, y, c);
+                    displayio_bitmap_row_put(self, dest_row, (uint32_t)x, c);
                 }
             }
             u += duRow;
@@ -204,18 +221,68 @@ void common_hal_bitmaptools_rotozoom(displayio_bitmap_t *self, int16_t ox, int16
     }
 }
 
+// Pixels examined per pass of replace_color. Whole rows would be better still,
+// but they would have to go on the stack, and a bitmap is as wide as it likes.
+#define REPLACE_COLOR_CHUNK (64)
+
 void common_hal_bitmaptools_replace_color(displayio_bitmap_t *destination,
     uint32_t old_color,
     uint32_t new_color) {
 
-    int16_t x, y;
-    for (x = 0; x < destination->width; x++) {
-        for (y = 0; y < destination->height; y++) {
-            uint32_t pixel_val = common_hal_displayio_bitmap_get_pixel(destination, x, y);
-            if (pixel_val == old_color) {
-                displayio_bitmap_write_pixel(destination, x, y, new_color);
+    if (old_color == new_color) {
+        // There is nothing to do
+        return;
+    }
+
+    // CIRCUITPY-CHANGE: this never marked anything dirty, neither here nor in
+    // the binding, so a display kept showing the colour that had just been
+    // replaced until something else happened to touch the same area. The runs
+    // are already known here, so their bounding box costs nothing to keep.
+    int16_t minx = (int16_t)destination->width;
+    int16_t miny = (int16_t)destination->height;
+    int16_t maxx = -1;
+    int16_t maxy = -1;
+
+    uint32_t values[REPLACE_COLOR_CHUNK];
+    for (int16_t y = 0; y < destination->height; y++) {
+        for (int16_t x = 0; x < destination->width; x += REPLACE_COLOR_CHUNK) {
+            uint16_t length = MIN(REPLACE_COLOR_CHUNK, destination->width - x);
+            displayio_bitmap_read_span(destination, x, y, length, values);
+            uint16_t i = 0;
+            while (i < length) {
+                if (values[i] != old_color) {
+                    i++;
+                    continue;
+                }
+                uint16_t run = 1;
+                while (i + run < length && values[i + run] == old_color) {
+                    run++;
+                }
+                int16_t run_x = (int16_t)(x + i);
+                displayio_bitmap_fill_span(destination, run_x, y, run, new_color);
+                if (run_x < minx) {
+                    minx = run_x;
+                }
+                if (run_x + run - 1 > maxx) {
+                    maxx = (int16_t)(run_x + run - 1);
+                }
+                if (y < miny) {
+                    miny = y;
+                }
+                if (y > maxy) {
+                    maxy = y;
+                }
+                i += run;
             }
         }
+    }
+
+    // Nothing matched, so nothing changed and nothing needs redrawing. Leaving
+    // it alone also keeps a read-only bitmap raising only when it is written to,
+    // which is what the pixel by pixel version did.
+    if (maxx >= 0) {
+        displayio_area_t area = { minx, miny, maxx + 1, maxy + 1, NULL };
+        displayio_bitmap_set_dirty_area(destination, &area);
     }
 }
 
@@ -236,10 +303,9 @@ void common_hal_bitmaptools_fill_region(displayio_bitmap_t *destination,
     // update the dirty rectangle
     displayio_bitmap_set_dirty_area(destination, &area);
 
-    int16_t x, y;
-    for (x = area.x1; x < area.x2; x++) {
-        for (y = area.y1; y < area.y2; y++) {
-            displayio_bitmap_write_pixel(destination, x, y, value);
+    if (area.x2 > area.x1) {
+        for (int16_t y = area.y1; y < area.y2; y++) {
+            displayio_bitmap_fill_span(destination, area.x1, y, (uint16_t)(area.x2 - area.x1), value);
         }
     }
 }
@@ -293,25 +359,28 @@ void common_hal_bitmaptools_boundary_fill(displayio_bitmap_t *destination,
         int16_t sx = (int16_t)(packed >> 16);
         int16_t sy = (int16_t)(packed & 0xffff);
 
+        // CIRCUITPY-CHANGE: a seed is only ever pushed for a position inside the
+        // bitmap, and the two scans stop at its edges, so the whole run is read
+        // through the row rather than through the checked accessor.
+        const uint32_t *seed_row = displayio_bitmap_row(destination, sy);
+
         // the run may already have been filled by way of another seed
-        if (common_hal_displayio_bitmap_get_pixel(destination, sx, sy) != replaced_color_value) {
+        if (displayio_bitmap_row_get(destination, seed_row, (uint32_t)sx) != replaced_color_value) {
             continue;
         }
 
         int16_t left = sx;
         while (left > 0 &&
-               common_hal_displayio_bitmap_get_pixel(destination, left - 1, sy) == replaced_color_value) {
+               displayio_bitmap_row_get(destination, seed_row, (uint32_t)(left - 1)) == replaced_color_value) {
             left--;
         }
         int16_t right = sx;
         while (right + 1 < w &&
-               common_hal_displayio_bitmap_get_pixel(destination, right + 1, sy) == replaced_color_value) {
+               displayio_bitmap_row_get(destination, seed_row, (uint32_t)(right + 1)) == replaced_color_value) {
             right++;
         }
 
-        for (int16_t i = left; i <= right; i++) {
-            displayio_bitmap_write_pixel(destination, i, sy, fill_color_value);
-        }
+        displayio_bitmap_fill_span(destination, left, sy, (uint16_t)(right - left + 1), fill_color_value);
 
         if (left < minx) {
             minx = left;
@@ -331,9 +400,10 @@ void common_hal_bitmaptools_boundary_fill(displayio_bitmap_t *destination,
             if (ny < 0 || ny >= h) {
                 continue;
             }
+            const uint32_t *scan_row = displayio_bitmap_row(destination, ny);
             bool in_run = false;
             for (int16_t i = left; i <= right; i++) {
-                bool match = common_hal_displayio_bitmap_get_pixel(destination, i, ny) == replaced_color_value;
+                bool match = displayio_bitmap_row_get(destination, scan_row, (uint32_t)i) == replaced_color_value;
                 if (match && !in_run) {
                     if (sp == cap) {
                         stack = m_renew(uint32_t, stack, cap, cap * 2);
@@ -370,6 +440,13 @@ static void draw_line(displayio_bitmap_t *destination,
 
     int16_t temp, x, y;
 
+    // CIRCUITPY-CHANGE: displayio_bitmap_write_pixel used to do this once per
+    // pixel, and draw_polygon reaches here before it sets the dirty area, so
+    // the rejection has to stay somewhere ahead of the first write.
+    if (destination->read_only) {
+        mp_raise_RuntimeError(MP_ERROR_TEXT("Read-only"));
+    }
+
     if (x0 == x1) { // vertical line
         if (y0 > y1) { // ensure y1 > y0
             temp = y0;
@@ -378,8 +455,12 @@ static void draw_line(displayio_bitmap_t *destination,
         }
         y0 = MAX(0, y0); // only draw inside bitmap
         y1 = MIN(y1, destination->height - 1);
-        for (y = y0; y < (y1 + 1); y++) { // write a horizontal line
-            displayio_bitmap_write_pixel(destination, x0, y, value);
+        // The column was never clipped, write_pixel simply dropped it.
+        if (x0 >= 0 && x0 < destination->width) {
+            for (y = y0; y < (y1 + 1); y++) {
+                displayio_bitmap_row_put(destination, displayio_bitmap_row(destination, y),
+                    (uint32_t)x0, value);
+            }
         }
     } else if (y0 == y1) { // horizontal line
         if (x0 > x1) { // ensure y1 > y0
@@ -389,8 +470,8 @@ static void draw_line(displayio_bitmap_t *destination,
         }
         x0 = MAX(0, x0); // only draw inside bitmap
         x1 = MIN(x1, destination->width - 1);
-        for (x = x0; x < (x1 + 1); x++) { // write a horizontal line
-            displayio_bitmap_write_pixel(destination, x, y0, value);
+        if (x0 <= x1) {
+            displayio_bitmap_fill_span(destination, x0, y0, (uint16_t)(x1 - x0 + 1), value);
         }
     } else {
         bool steep;
@@ -426,11 +507,13 @@ static void draw_line(displayio_bitmap_t *destination,
             ystep = -1;
         }
 
+        // A slanted line is not clipped up front, so the test stays, but it is
+        // inline here rather than behind a call into another translation unit.
         for (x = x0; x < (x1 + 1); x++) {
             if (steep) {
-                displayio_bitmap_write_pixel(destination, y0, x, value);
+                draw_pixel(destination, y0, x, value);
             } else {
-                displayio_bitmap_write_pixel(destination, x, y0, value);
+                draw_pixel(destination, x, y0, value);
             }
             err -= dy;
             if (err < 0) {
@@ -520,9 +603,18 @@ void common_hal_bitmaptools_draw_polygon(displayio_bitmap_t *destination, void *
 }
 
 void common_hal_bitmaptools_arrayblit(displayio_bitmap_t *self, void *data, int element_size, int x1, int y1, int x2, int y2, bool skip_specified, uint32_t skip_value) {
+    // CIRCUITPY-CHANGE: this used to come out of displayio_bitmap_write_pixel,
+    // which is also where a read-only bitmap was rejected. The rectangle was
+    // validated against the bitmap by the binding, so the row is taken once per
+    // row and written without a per-pixel bounds test, and the rejection moves
+    // here to keep happening before anything is written.
+    if (self->read_only) {
+        mp_raise_RuntimeError(MP_ERROR_TEXT("Read-only"));
+    }
     uint32_t mask = (1 << common_hal_displayio_bitmap_get_bits_per_value(self)) - 1;
 
     for (int y = y1; y < y2; y++) {
+        uint32_t *row = displayio_bitmap_row(self, (int16_t)y);
         for (int x = x1; x < x2; x++) {
             uint32_t value;
             switch (element_size) {
@@ -541,7 +633,7 @@ void common_hal_bitmaptools_arrayblit(displayio_bitmap_t *self, void *data, int 
                     break;
             }
             if (!skip_specified || value != skip_value) {
-                displayio_bitmap_write_pixel(self, x, y, value & mask);
+                displayio_bitmap_row_put(self, row, (uint32_t)x, value & mask);
             }
         }
     }
@@ -594,6 +686,10 @@ void common_hal_bitmaptools_readinto(displayio_bitmap_t *self, mp_obj_t *file, i
             }
         }
 
+        // CIRCUITPY-CHANGE: x and y_draw are both inside the bitmap by
+        // construction, and set_dirty_area above already rejected a read-only
+        // bitmap, so the row is taken once and written directly.
+        uint32_t *row = displayio_bitmap_row(self, (int16_t)y_draw);
         for (int x = 0; x < self->width; x++) {
             int value = 0;
             switch (bits_per_pixel) {
@@ -634,7 +730,7 @@ void common_hal_bitmaptools_readinto(displayio_bitmap_t *self, mp_obj_t *file, i
                     value = rowdata32[x];
                     break;
             }
-            displayio_bitmap_write_pixel(self, x, y_draw, value & mask);
+            displayio_bitmap_row_put(self, row, (uint32_t)x, value & mask);
         }
     }
 }
@@ -1032,14 +1128,14 @@ static void draw_circle(displayio_bitmap_t *destination,
 
     // Bresenham's circle algorithm
     for (int xb = 0; xb <= yb; xb++) {
-        displayio_bitmap_write_pixel(destination, xb + x, yb + y, value);
-        displayio_bitmap_write_pixel(destination, -xb + x, -yb + y, value);
-        displayio_bitmap_write_pixel(destination, -xb + x, yb + y, value);
-        displayio_bitmap_write_pixel(destination, xb + x, -yb + y, value);
-        displayio_bitmap_write_pixel(destination, yb + x, xb + y, value);
-        displayio_bitmap_write_pixel(destination, -yb + x, xb + y, value);
-        displayio_bitmap_write_pixel(destination, -yb + x, -xb + y, value);
-        displayio_bitmap_write_pixel(destination, yb + x, -xb + y, value);
+        draw_pixel(destination, xb + x, yb + y, value);
+        draw_pixel(destination, -xb + x, -yb + y, value);
+        draw_pixel(destination, -xb + x, yb + y, value);
+        draw_pixel(destination, xb + x, -yb + y, value);
+        draw_pixel(destination, yb + x, xb + y, value);
+        draw_pixel(destination, -yb + x, xb + y, value);
+        draw_pixel(destination, -yb + x, -xb + y, value);
+        draw_pixel(destination, yb + x, -xb + y, value);
         if (d <= 0) {
             d = d + (4 * xb) + 6;
         } else {
@@ -1097,45 +1193,60 @@ void common_hal_bitmaptools_blit(displayio_bitmap_t *destination, displayio_bitm
     displayio_area_t a = { x, y, dirty_x_max, dirty_y_max, NULL};
     displayio_bitmap_set_dirty_area(destination, &a);
 
-    bool x_reverse = false;
-    bool y_reverse = false;
+    const int16_t width = x2 - x1;
+    const int16_t height = y2 - y1;
 
-    // Add reverse direction option to protect blitting of destination bitmap back into destination bitmap
-    if (x > x1) {
-        x_reverse = true;
+    // Blitting a bitmap into itself can have the two rectangles overlap, in
+    // which case a pixel must be read before the copy reaches it. Running the
+    // walk backwards along whichever axis moves forwards keeps that true.
+    const bool x_reverse = x > x1;
+    const bool y_reverse = y > y1;
+
+    // Nothing is skipped, so whole rows move at once. An overlap within a row
+    // is already the memmove's problem, so only the order of the rows is left
+    // to decide here.
+    if (skip_source_index_none && skip_dest_index_none) {
+        for (int16_t j = 0; j < height; j++) {
+            const int16_t row = y_reverse ? (int16_t)(height - 1 - j) : j;
+            displayio_bitmap_copy_span(destination, x, (int16_t)(y + row),
+                source, x1, (int16_t)(y1 + row), (uint16_t)width);
+        }
+        return;
     }
-    if (y > y1) {
-        y_reverse = true;
+
+    // Which columns land inside the destination does not depend on the row, so
+    // the horizontal clip is done once here instead of once per pixel. The
+    // source rectangle was validated against the source bitmap by the binding.
+    int16_t first_column = 0;
+    int16_t last_column = width;
+    if (-x > first_column) {
+        first_column = (int16_t)-x;
+    }
+    if ((int)destination->width - x < last_column) {
+        last_column = (int16_t)((int)destination->width - x);
     }
 
-    // simplest version - use internal functions for get/set pixels
-    for (int16_t i = 0; i < (x2 - x1); i++) {
-
-        const int xs_index = x_reverse ? ((x2) - i - 1) : x1 + i; // x-index into the source bitmap
-        const int xd_index = x_reverse ? ((x + (x2 - x1)) - i - 1) : x + i; // x-index into the destination bitmap
-
-        if ((xd_index >= 0) && (xd_index < destination->width)) {
-            for (int16_t j = 0; j < (y2 - y1); j++) {
-
-                const int ys_index = y_reverse ? ((y2) - j - 1) : y1 + j;  // y-index into the source bitmap
-                const int yd_index = y_reverse ? ((y + (y2 - y1)) - j - 1) : y + j; // y-index into the destination bitmap
-
-                if ((yd_index >= 0) && (yd_index < destination->height)) {
-                    uint32_t value = common_hal_displayio_bitmap_get_pixel(source, xs_index, ys_index);
-                    if (skip_dest_index_none) { // if skip_dest_index is none, then only check source skip
-                        if ((skip_source_index_none) || (value != skip_source_index)) {   // write if skip_value_none is True
-                            displayio_bitmap_write_pixel(destination, xd_index, yd_index, value);
-                        }
-                    } else { // check dest_value index against skip_dest_index and skip if they match
-                        uint32_t dest_value = common_hal_displayio_bitmap_get_pixel(destination, xd_index, yd_index);
-                        if (dest_value != skip_dest_index) {
-                            if ((skip_source_index_none) || (value != skip_source_index)) {   // write if skip_value_none is True
-                                displayio_bitmap_write_pixel(destination, xd_index, yd_index, value);
-                            }
-                        }
-                    }
-                }
+    for (int16_t j = 0; j < height; j++) {
+        const int16_t row = y_reverse ? (int16_t)(height - 1 - j) : j;
+        const int16_t yd_index = (int16_t)(y + row);
+        if (yd_index < 0 || yd_index >= destination->height) {
+            continue;
+        }
+        const uint32_t *source_row = displayio_bitmap_row(source, (int16_t)(y1 + row));
+        uint32_t *dest_row = displayio_bitmap_row(destination, yd_index);
+        for (int16_t i = first_column; i < last_column; i++) {
+            const int16_t column = x_reverse ? (int16_t)(last_column - 1 - (i - first_column)) : i;
+            const uint32_t xs_index = (uint32_t)(x1 + column);
+            const uint32_t xd_index = (uint32_t)(x + column);
+            uint32_t value = displayio_bitmap_row_get(source, source_row, xs_index);
+            if (!skip_source_index_none && value == skip_source_index) {
+                continue;
             }
+            if (!skip_dest_index_none &&
+                displayio_bitmap_row_get(destination, dest_row, xd_index) == skip_dest_index) {
+                continue;
+            }
+            displayio_bitmap_row_put(destination, dest_row, xd_index, value);
         }
     }
 }
