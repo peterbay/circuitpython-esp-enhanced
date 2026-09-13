@@ -61,6 +61,11 @@ void common_hal_audiodelays_pitch_shift_construct(audiodelays_pitch_shift_obj_t 
     self->freeze = false;
 
     // Allocate the window buffer
+    // CIRCUITPY-CHANGE: the window is given in bytes but holds one int16_t per
+    // channel, and nothing checked it. window=1 allocated a single byte and the
+    // playback loop then wrote a 16 bit sample into it, and window_size came out
+    // zero besides.
+    mp_arg_validate_int_min(window, sizeof(uint16_t) * channel_count, MP_QSTR_window);
     self->window_len = window; // bytes
     self->window_buffer = m_malloc_without_collect(self->window_len);
     if (self->window_buffer == NULL) {
