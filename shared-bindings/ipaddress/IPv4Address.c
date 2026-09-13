@@ -38,8 +38,12 @@ static mp_obj_t ipaddress_ipv4address_make_new(const mp_obj_type_t *type, size_t
 
     uint32_t value;
     uint8_t *buf = NULL;
-    if (mp_obj_get_int_maybe(address, (mp_int_t *)&value)) {
+    // CIRCUITPY-CHANGE: mp_obj_get_int_maybe writes an mp_int_t, which is eight
+    // bytes on a 64 bit build, and it was given the address of a uint32_t.
+    mp_int_t int_value;
+    if (mp_obj_get_int_maybe(address, &int_value)) {
         // We're done.
+        value = (uint32_t)int_value;
         buf = (uint8_t *)&value;
     } else if (mp_obj_is_str(address)) {
         GET_STR_DATA_LEN(address, str_data, str_len);
