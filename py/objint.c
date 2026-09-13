@@ -314,6 +314,13 @@ char *PLACE_IN_WARM_CODE(mp_obj_int_formatted)(char **buf, size_t *buf_size, siz
 #if MICROPY_LONGINT_IMPL != MICROPY_LONGINT_IMPL_NONE
 
 void mp_obj_int_buffer_overflow_check(mp_obj_t self_in, size_t nbytes, bool is_signed) {
+    // CIRCUITPY-CHANGE: nbytes is unsigned, so "nbytes * 8 - 1" below wrapped to
+    // SIZE_MAX for a zero width and the shift then raised ValueError("negative
+    // shift count") instead of the OverflowError this is here to raise. Zero
+    // itself never reaches this function.
+    if (nbytes == 0) {
+        mp_raise_OverflowError_varg(MP_ERROR_TEXT("value must fit in %d byte(s)"), nbytes);
+    }
     if (is_signed) {
         // self must be < 2**(bits - 1)
         mp_obj_t edge = mp_binary_op(MP_BINARY_OP_LSHIFT,
@@ -350,6 +357,13 @@ void mp_small_int_buffer_overflow_check(mp_int_t val, size_t nbytes, bool is_sig
     // Fast path for zero.
     if (val == 0) {
         return;
+    }
+
+    // CIRCUITPY-CHANGE: a zero width made the signed shift below "1 << -1",
+    // which is undefined. Zero already returned above, so nothing else fits in
+    // no bytes at all and this falls through to the OverflowError.
+    if (nbytes == 0) {
+        mp_raise_OverflowError_varg(MP_ERROR_TEXT("value must fit in %d byte(s)"), nbytes);
     }
 
     // Trying to store negative values in unsigned bytes falls through to failure.
