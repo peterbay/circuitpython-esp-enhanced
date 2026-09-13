@@ -94,7 +94,10 @@ static MP_DEFINE_CONST_FUN_OBJ_3(layer_move_obj, layer_move);
 static mp_obj_t layer_frame(mp_obj_t self_in, mp_obj_t frame_in,
     mp_obj_t rotation_in) {
     layer_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    self->frame = mp_obj_get_int(frame_in);
+    // CIRCUITPY-CHANGE: the graphic is validated to be exactly 2048 bytes, which
+    // is sixteen 128 byte frames, and get_layer_pixel indexes it as frame << 7.
+    // Nothing bounded the frame, so a larger one read past the buffer.
+    self->frame = mp_arg_validate_int_range(mp_obj_get_int(frame_in), 0, 15, MP_QSTR_frame);
     self->rotation = mp_obj_get_int(rotation_in);
     return mp_const_none;
 }
