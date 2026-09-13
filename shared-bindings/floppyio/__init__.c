@@ -147,10 +147,14 @@ static mp_obj_t floppyio_mfm_readinto(size_t n_args, const mp_obj_t *pos_args, m
     mp_buffer_info_t bufinfo_validity;
     uint8_t validity_buf[n_sectors];
     if (args[ARG_validity].u_obj) {
-        mp_get_buffer_raise(args[ARG_validity].u_obj, &bufinfo_validity, MP_BUFFER_READ);
+        // CIRCUITPY-CHANGE: the decoder writes into this buffer, so asking only
+        // for read access let a bytes or a read-only memoryview through and it
+        // was written to anyway. And clear_validity cleared the local array
+        // below rather than the caller's buffer, so it did nothing at all here.
+        mp_get_buffer_raise(args[ARG_validity].u_obj, &bufinfo_validity, MP_BUFFER_WRITE);
         mp_arg_validate_length_min(bufinfo_validity.len, n_sectors, MP_QSTR_validity);
         if (args[ARG_clear_validity].u_bool) {
-            memset(validity_buf, 0, sizeof(validity_buf));
+            memset(bufinfo_validity.buf, 0, n_sectors);
         }
     } else {
         bufinfo_validity.buf = &validity_buf;
