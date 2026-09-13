@@ -142,8 +142,12 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(i2cioexpander_ioexpander___exit___obj
 static mp_obj_t i2cioexpander_ioexpander_obj_get_input_value(mp_obj_t self_in) {
     i2cioexpander_ioexpander_obj_t *self = MP_OBJ_TO_PTR(self_in);
     size_t value;
-    if (!common_hal_i2cioexpander_ioexpander_get_input_value(self, &value)) {
-        mp_raise_OSError(MP_EIO);
+    // CIRCUITPY-CHANGE: this returns an mp_negative_errno_t, where zero is
+    // success, and the test was inverted. Every successful read raised OSError
+    // and every failed one returned the uninitialised value instead.
+    mp_negative_errno_t result = common_hal_i2cioexpander_ioexpander_get_input_value(self, &value);
+    if (result != 0) {
+        mp_raise_OSError(-result);
     }
     return MP_OBJ_NEW_SMALL_INT(value);
 }
