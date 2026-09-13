@@ -98,9 +98,16 @@ static mp_obj_t aesio_aes_make_new(const mp_obj_type_t *type, size_t n_args,
         iv = bufinfo.buf;
     }
 
+    // CIRCUITPY-CHANGE: counter is declared as an object but was read as .u_int
+    // out of the same union, so the low word of the object pointer was passed as
+    // the counter.
+    int counter = 0;
+    if (args[ARG_counter].u_obj != MP_OBJ_NULL) {
+        counter = mp_obj_get_int_truncated(args[ARG_counter].u_obj);
+    }
+
     aesio_aes_obj_t *self = mp_obj_malloc(aesio_aes_obj_t, &aesio_aes_type);
-    common_hal_aesio_aes_construct(self, key, key_length, iv, mode,
-        args[ARG_counter].u_int);
+    common_hal_aesio_aes_construct(self, key, key_length, iv, mode, counter);
 
     return MP_OBJ_FROM_PTR(self);
 }
