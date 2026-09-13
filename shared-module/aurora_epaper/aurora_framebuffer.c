@@ -543,8 +543,16 @@ void common_hal_aurora_epaper_framebuffer_deinit(aurora_epaper_framebuffer_obj_t
         common_hal_reset_pin(self->power.pin);
     }
 
+    // CIRCUITPY-CHANGE: nothing marked the object as gone, so deinit() from
+    // Python followed by the one FramebufferDisplay does on release freed both
+    // buffers twice. Clearing the pointers makes the second call a no-op, the
+    // way sharpdisplay already guards itself.
     port_free(self->bufinfo.buf);
+    self->bufinfo.buf = NULL;
+    self->bufinfo.len = 0;
     port_free(self->pframe.buf);
+    self->pframe.buf = NULL;
+    self->pframe.len = 0;
 }
 
 void common_hal_aurora_epaper_framebuffer_collect_ptrs(aurora_epaper_framebuffer_obj_t *self) {
