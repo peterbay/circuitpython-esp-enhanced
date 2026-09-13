@@ -25,6 +25,7 @@
  * THE SOFTWARE.
  */
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -52,9 +53,13 @@ mp_obj_t mp_obj_int_bit_length_impl(mp_obj_t self_in) {
     assert(mp_obj_is_type(self_in, &mp_type_int));
     mp_obj_int_t *self = self_in;
     long long val = self->val;
+    // CIRCUITPY-CHANGE: the guard compared against MP_SMALL_INT_MIN, which is the
+    // smallest *small* int and not the smallest long long. It therefore reported
+    // the width of a long long for that one ordinary value, and left the real
+    // edge, LLONG_MIN, to reach the negation below, where -val does not fit.
     return MP_OBJ_NEW_SMALL_INT(
         (val == 0) ? 0 :
-        (val == MP_SMALL_INT_MIN) ? 8 * sizeof(long long) :
+        (val == LLONG_MIN) ? 8 * sizeof(long long) :
         (val < 0) ? 8 * sizeof(long long) - __builtin_clzll(-val) :
         8 * sizeof(long long) - __builtin_clzll(val));
 }
