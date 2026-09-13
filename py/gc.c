@@ -908,7 +908,13 @@ static void gc_sweep_free_blocks(void) {
     #endif
 
     for (mp_state_mem_area_t *area = &MP_STATE_MEM(area); area != NULL; area = NEXT_AREA(area)) {
-        size_t last_used_block = 0;
+        // CIRCUITPY-CHANGE: zero meant both "nothing in this area is in use" and
+        // "the last block in use is block 0". An area is filled from block 0, so
+        // one holding a single live object at its start looked empty and, with
+        // SPLIT_HEAP_AUTO, was handed back to the system underneath it. The two
+        // answers need to be distinguishable.
+        const size_t no_block_used = (size_t)-1;
+        size_t last_used_block = no_block_used;
         assert(area->gc_last_used_block <= area->gc_alloc_table_byte_len * BLOCKS_PER_ATB);
 
         for (size_t block = 0; block <= area->gc_last_used_block; block++) {
@@ -942,11 +948,11 @@ static void gc_sweep_free_blocks(void) {
             }
         }
 
-        area->gc_last_used_block = last_used_block;
+        area->gc_last_used_block = (last_used_block == no_block_used) ? 0 : last_used_block;
 
         #if MICROPY_GC_SPLIT_HEAP_AUTO
         // Free any empty area, aside from the first one
-        if (last_used_block == 0 && prev_area != NULL) {
+        if (last_used_block == no_block_used && prev_area != NULL) {
             DEBUG_printf("gc_sweep_free_blocks free empty area %p\n", area);
             NEXT_AREA(prev_area) = NEXT_AREA(area);
             MP_PLAT_FREE_HEAP(area);
