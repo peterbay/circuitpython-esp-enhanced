@@ -588,7 +588,11 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_stream_tell_obj, stream_tell);
 
 // CIRCUITPY-CHANGE: make public
 mp_obj_t mp_stream_flush(mp_obj_t self) {
-    const mp_stream_p_t *stream_p = mp_get_stream(self);
+    // CIRCUITPY-CHANGE: this took the protocol without asking whether it has an
+    // ioctl and then called it. print(..., flush=True) only checks that the file
+    // can be written to, and io.BufferedWriter's protocol is write-only, so that
+    // call went through a NULL pointer.
+    const mp_stream_p_t *stream_p = mp_get_stream_raise(self, MP_STREAM_OP_IOCTL);
     int error;
     mp_uint_t res = stream_p->ioctl(self, MP_STREAM_FLUSH, 0, &error);
     if (res == MP_STREAM_ERROR) {
