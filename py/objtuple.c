@@ -219,16 +219,23 @@ mp_obj_t mp_obj_tuple_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     }
 }
 
+// CIRCUITPY-CHANGE: a native method is handed the subclass instance rather than
+// its native base, so both of these read the members map as a tuple when called
+// on a tuple subclass. tuple_cmp_helper above already casts for the same reason.
+static mp_obj_tuple_t *native_tuple(mp_obj_t self_in) {
+    return MP_OBJ_TO_PTR(mp_obj_cast_to_native_base(self_in, MP_OBJ_FROM_PTR(&mp_type_tuple)));
+}
+
 static mp_obj_t tuple_count(mp_obj_t self_in, mp_obj_t value) {
     mp_check_self(mp_obj_is_type(self_in, &mp_type_tuple));
-    mp_obj_tuple_t *self = MP_OBJ_TO_PTR(self_in);
+    mp_obj_tuple_t *self = native_tuple(self_in);
     return mp_seq_count_obj(self->items, self->len, value);
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(tuple_count_obj, tuple_count);
 
 static mp_obj_t tuple_index(size_t n_args, const mp_obj_t *args) {
     mp_check_self(mp_obj_is_type(args[0], &mp_type_tuple));
-    mp_obj_tuple_t *self = MP_OBJ_TO_PTR(args[0]);
+    mp_obj_tuple_t *self = native_tuple(args[0]);
     return mp_seq_index_obj(self->items, self->len, n_args, args);
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(tuple_index_obj, 2, 4, tuple_index);
