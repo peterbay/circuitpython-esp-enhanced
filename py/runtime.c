@@ -115,10 +115,9 @@ void mp_init(void) {
 
     mp_obj_exception_initialize0(&MP_STATE_VM(mp_reload_exception), &mp_type_ReloadException);
 
-    // call port specific initialization if any
-    #ifdef MICROPY_PORT_INIT_FUNC
-    MICROPY_PORT_INIT_FUNC;
-    #endif
+    // CIRCUITPY-CHANGE: MICROPY_PORT_INIT_FUNC was invoked here as well as at
+    // the end of mp_init, where upstream has it, so a port that defined it got
+    // it twice. No port in this tree defines it, which is why nothing noticed.
 
     #if MICROPY_ENABLE_COMPILER
     // optimization disabled by default
