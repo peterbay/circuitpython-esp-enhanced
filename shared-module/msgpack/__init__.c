@@ -298,11 +298,15 @@ static void pack(mp_obj_t obj, msgpack_stream_t *s, mp_obj_t default_handler) {
             pack(next->value, s, default_handler);
         }
     } else if (mp_obj_is_float(obj)) {
-        union Float { mp_float_t f;
+        // CIRCUITPY-CHANGE: 0xca is msgpack's 32 bit float, but the union paired
+        // uint32_t with mp_float_t, which is a double on some ports. There it
+        // wrote half of the value and read back nonsense. The wire type is what
+        // decides the width here, not the port's float.
+        union Float { float f;
                       uint32_t u;
         };
         union Float data;
-        data.f = mp_obj_float_get(obj);
+        data.f = (float)mp_obj_float_get(obj);
         write1(s, 0xca);
         write4(s, data.u);
     } else if (obj == mp_const_none) {
@@ -452,13 +456,14 @@ static mp_obj_t unpack(msgpack_stream_t *s, mp_obj_t ext_hook, bool use_list) {
         case 0xd3: // int 64
             return mp_obj_new_int_from_ll((int64_t)read8(s));
         case 0xca: { // float
+            // CIRCUITPY-CHANGE: see the packing side, 0xca is a 32 bit float.
             union Float {
-                mp_float_t f;
+                float f;
                 uint32_t u;
             };
             union Float data;
             data.u = read4(s);
-            return mp_obj_new_float(data.f);
+            return mp_obj_new_float((mp_float_t)data.f);
         }
         case 0xcb: { // double
             union Double {
