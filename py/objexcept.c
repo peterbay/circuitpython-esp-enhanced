@@ -337,7 +337,14 @@ void mp_obj_exception_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     } else if (attr == MP_QSTR_value && self->base.type == &mp_type_StopIteration) {
         dest[0] = mp_obj_exception_get_value(self_in);
     } else if (attr == MP_QSTR___traceback__) {
-        dest[0] = (self->traceback) ? MP_OBJ_FROM_PTR(self->traceback) : mp_const_none;
+        // CIRCUITPY-CHANGE: the field is never NULL, it is set to the shared
+        // empty traceback at construction, so the None branch was dead and
+        // "e.__traceback__ is None" could not be true for an exception that was
+        // never raised. This is the same test mp_obj_exception_add_traceback
+        // uses to decide that there is no traceback yet.
+        dest[0] = (self->traceback != NULL &&
+            self->traceback != (mp_obj_traceback_t *)&mp_const_empty_traceback_obj)
+            ? MP_OBJ_FROM_PTR(self->traceback) : mp_const_none;
     #if MICROPY_CPYTHON_EXCEPTION_CHAIN
     } else if (attr == MP_QSTR___cause__) {
         dest[0] = (self->cause) ? MP_OBJ_FROM_PTR(self->cause) : mp_const_none;
