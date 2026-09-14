@@ -414,7 +414,7 @@ msgstr ""
 
 #: extmod/ulab/code/numpy/numerical.c extmod/ulab/code/ulab_tools.c
 #: ports/espressif/common-hal/pulseio/PulseIn.c
-#: shared-bindings/bitmaptools/__init__.c
+#: shared-bindings/bitmaptools/__init__.c shared-module/_pixelmap/PixelMap.c
 msgid "index out of range"
 msgstr ""
 
@@ -794,6 +794,8 @@ msgstr ""
 #: shared-bindings/i2cioexpander/IOPin.c shared-bindings/mipidsi/Display.c
 #: shared-bindings/pwmio/PWMOut.c shared-bindings/supervisor/__init__.c
 #: shared-module/aurora_epaper/aurora_framebuffer.c
+#: shared-module/busdisplay/BusDisplay.c shared-module/displayio/OnDiskBitmap.c
+#: shared-module/epaperdisplay/EPaperDisplay.c
 #: shared-module/lvfontio/OnDiskFont.c
 msgid "Invalid %q"
 msgstr ""
@@ -1084,6 +1086,198 @@ msgstr ""
 msgid "SDCard init"
 msgstr ""
 
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "invalid pin number"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "not a usable GPIO on this chip"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "payload is at most 251 bytes"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "oui must be 3 bytes"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "%q must be a known event base"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "EventQueue is deinitialized"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "too many event queues"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "could not allocate event queue"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "%q must be a string or buffer"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "%q must not be empty"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "client_cert and client_key go together"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "SmartConfig is already running"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "key derivation failed"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "SHA256 unavailable"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "HMAC failed"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c shared-bindings/aesio/aes.c
+msgid "Key must be 16, 24, or 32 bytes long"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "AES-192 is not supported by this chip"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "AES setkey failed"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "nonce must not be empty"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "encryption failed"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "data is too short to hold a tag"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "authentication failed"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "namespace too long"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "NVS is deinitialized"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "phy must be 1, 2 or 4"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "could not set PHY"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "frame must be 24 to 1500 bytes"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "channel must be 1 to 14"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "meta must hold 16 32-bit ints"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "CSI is already running"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "queue must be 2 to 64"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "at least one training field is needed"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "source must be 6 bytes"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "out must be word aligned"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "Partition is deinitialized"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "cannot write the running partition"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "no such partition"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "read past the end of the partition"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "write past the end of the partition"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "offset and length must be a multiple of 4096"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "erase past the end of the partition"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "already mapped"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "path must be absolute and short"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "already mounted"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "too many timers"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "callback must be callable"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "period must be positive"
+msgstr ""
+
+#: ports/espressif/bindings/espidf/__init__.c
+msgid "Timer is deinitialized"
+msgstr ""
+
 #: ports/espressif/bindings/espnow/ESPNow.c
 #: ports/espressif/common-hal/espulp/ULP.c
 #: shared-module/memorymonitor/AllocationAlarm.c
@@ -1093,6 +1287,142 @@ msgstr ""
 
 #: ports/espressif/bindings/espnow/Peer.c shared-bindings/dualbank/__init__.c
 msgid "%q is %q"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+#, c-format
+msgid "%s (0x%x)"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+msgid "Radio is already in use"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+msgid "extended_address must be 8 bytes"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+#, c-format
+msgid "frame must be %d to %d bytes"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+#, c-format
+msgid "Transmit %s"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+#, c-format
+msgid "data must be at least %d bytes"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+msgid "meta must be at least 16 bytes"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+msgid "duration must be 0.000016 to 1.0 seconds"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+msgid "address must be 2 or 8 bytes"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+msgid "no transmit power table"
+msgstr ""
+
+#: ports/espressif/bindings/ieee802154/Radio.c
+#, c-format
+msgid "tx_power must be %d to %d dBm"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "unknown device_type"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "endpoint not registered; start the stack first"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "value too long for this attribute"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "value is too large for this attribute"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "index must be (cluster, attribute[, role])"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "no such attribute on this endpoint"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "attribute is too large to read"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "could not read the attribute"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+msgid "value is the wrong size for this attribute"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Endpoint.c
+#, c-format
+msgid "could not write the attribute (ZCL status %d)"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+#, c-format
+msgid "%s failed (%d)"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+#, c-format
+msgid "%s failed: %s (0x%x)"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "call start() first"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "the Zigbee stack is busy"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "Zigbee stack already in use"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "channels must name at least one of 11 to 26"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "too many endpoints"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "two endpoints with the same endpoint_id"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "already started"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "could not start the Zigbee task"
+msgstr ""
+
+#: ports/espressif/bindings/zigbee/Stack.c
+msgid "attributes must name 1 to 16 attributes"
 msgstr ""
 
 #: ports/espressif/boards/adafruit_feather_esp32_v2/mpconfigboard.h
@@ -1389,10 +1719,6 @@ msgstr ""
 msgid "Unable to create lock"
 msgstr ""
 
-#: ports/espressif/common-hal/busio/SPI.c
-msgid "SPI configuration failed"
-msgstr ""
-
 #: ports/espressif/common-hal/busio/SPI.c ports/nordic/common-hal/busio/SPI.c
 msgid "All SPI peripherals are in use"
 msgstr ""
@@ -1401,6 +1727,10 @@ msgstr ""
 #: ports/espressif/common-hal/canio/CAN.c
 #: ports/espressif/common-hal/qspibus/QSPIBus.c
 msgid "ESP-IDF memory allocation failed"
+msgstr ""
+
+#: ports/espressif/common-hal/busio/SPI.c
+msgid "SPI configuration failed"
 msgstr ""
 
 #: ports/espressif/common-hal/busio/UART.c
@@ -1825,8 +2155,9 @@ msgstr ""
 #: ports/raspberrypi/bindings/cyw43/__init__.c py/argcheck.c py/objexcept.c
 #: shared-bindings/bitmapfilter/__init__.c shared-bindings/canio/CAN.c
 #: shared-bindings/digitalio/Pull.c shared-bindings/picogame/Sprite.c
-#: shared-bindings/supervisor/__init__.c shared-module/audiofilters/__init__.c
-#: shared-module/displayio/__init__.c shared-module/synthio/Synthesizer.c
+#: shared-bindings/supervisor/__init__.c shared-bindings/usb_net/__init__.c
+#: shared-module/audiofilters/__init__.c shared-module/displayio/__init__.c
+#: shared-module/synthio/Synthesizer.c
 msgid "%q must be of type %q or %q, not %q"
 msgstr ""
 
@@ -1981,7 +2312,7 @@ msgid "All timers for this pin are in use"
 msgstr ""
 
 #: ports/raspberrypi/common-hal/picogame/Display.c py/argcheck.c py/runtime.c
-#: shared-bindings/bitmapfilter/__init__.c
+#: shared-bindings/bitmapfilter/__init__.c shared-bindings/ttfrast/Label.c
 #: shared-module/audiodelays/MultiTapDelay.c shared-module/synthio/Note.c
 #: shared-module/synthio/__init__.c
 msgid "%q must be of type %q, not %q"
@@ -2898,6 +3229,7 @@ msgstr ""
 #: py/modstruct.c shared-bindings/picogame/Bitmap.c
 #: shared-bindings/picogame/Canvas.c shared-bindings/picogame/Framebuffer.c
 #: shared-module/picogame/__init__.c shared-module/struct/__init__.c
+#: shared-module/ttfrast/__init__.c
 msgid "buffer too small"
 msgstr ""
 
@@ -3636,10 +3968,11 @@ msgstr ""
 msgid "not a 128-bit UUID"
 msgstr ""
 
-#: shared-bindings/_bleio/__init__.c shared-bindings/emmcio/EMMC.c
-#: shared-bindings/memorymonitor/AllocationSize.c
+#: shared-bindings/_bleio/__init__.c shared-bindings/custom/__init__.c
+#: shared-bindings/emmcio/EMMC.c shared-bindings/memorymonitor/AllocationSize.c
 #: shared-bindings/pulseio/PulseIn.c shared-module/bitmaptools/__init__.c
 #: shared-module/displayio/Bitmap.c shared-module/displayio/Group.c
+#: shared-module/ttfrast/__init__.c
 msgid "Read-only"
 msgstr ""
 
@@ -3671,10 +4004,6 @@ msgstr ""
 #: shared-module/_pixelmap/PixelMap.c
 #, c-format
 msgid "Unmatched number of items on RHS (expected %d, got %d)."
-msgstr ""
-
-#: shared-bindings/aesio/aes.c
-msgid "Key must be 16, 24, or 32 bytes long"
 msgstr ""
 
 #: shared-bindings/aesio/aes.c
@@ -3814,7 +4143,7 @@ msgstr ""
 msgid "clip point must be (x,y) tuple"
 msgstr ""
 
-#: shared-bindings/bitmaptools/__init__.c
+#: shared-bindings/bitmaptools/__init__.c shared-bindings/custom/__init__.c
 msgid "source palette too large"
 msgstr ""
 
@@ -3842,7 +4171,7 @@ msgstr ""
 msgid "Mask bitmap must have 8 bits per pixel"
 msgstr ""
 
-#: shared-bindings/bitmaptools/__init__.c
+#: shared-bindings/bitmaptools/__init__.c shared-bindings/custom/__init__.c
 msgid "out of range of target"
 msgstr ""
 
@@ -3854,11 +4183,11 @@ msgstr ""
 msgid "background value out of range of target"
 msgstr ""
 
-#: shared-bindings/bitmaptools/__init__.c
+#: shared-bindings/bitmaptools/__init__.c shared-bindings/custom/__init__.c
 msgid "Coordinate arrays types have different sizes"
 msgstr ""
 
-#: shared-bindings/bitmaptools/__init__.c
+#: shared-bindings/bitmaptools/__init__.c shared-bindings/custom/__init__.c
 msgid "Coordinate arrays have different lengths"
 msgstr ""
 
@@ -3926,12 +4255,50 @@ msgstr ""
 msgid "tx and rx cannot both be None"
 msgstr ""
 
-#: shared-bindings/busio/UART.c shared-bindings/displayio/Group.c
+#: shared-bindings/busio/UART.c shared-bindings/digitalio/DigitalInOut.c
+#: shared-bindings/displayio/Group.c
 msgid "Must be a %q subclass."
 msgstr ""
 
 #: shared-bindings/canio/RemoteTransmissionRequest.c
 msgid "RemoteTransmissionRequests limited to 8 bytes"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+msgid "Character data needs at least 6 values"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+#, c-format
+msgid "Character data needs %d values"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+msgid "Unsupported bits_per_value"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+msgid "Scale must be >= 1"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+msgid "Font must be a dictionary object"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+msgid "max_width must be >= 0"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+msgid "Pin cannot be None"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+msgid "Pin must be a pin object"
+msgstr ""
+
+#: shared-bindings/custom/__init__.c
+msgid "Invalid type, must be 0 (builtin), 1 (extensible), or 2 (both)"
 msgstr ""
 
 #: shared-bindings/digitalio/DigitalInOut.c
@@ -4006,6 +4373,10 @@ msgid "Tile height must exactly divide bitmap height"
 msgstr ""
 
 #: shared-bindings/displayio/TileGrid.c
+msgid "Bitmap must contain at least one tile"
+msgstr ""
+
+#: shared-bindings/displayio/TileGrid.c
 msgid "New bitmap must be same size as old bitmap"
 msgstr ""
 
@@ -4035,7 +4406,7 @@ msgstr ""
 msgid "System entry must be gnss.SatelliteSystem"
 msgstr ""
 
-#: shared-bindings/hashlib/__init__.c
+#: shared-bindings/hashlib/Hash.c shared-bindings/hashlib/__init__.c
 msgid "Unsupported hash algorithm"
 msgstr ""
 
@@ -4150,6 +4521,10 @@ msgstr ""
 msgid "Publishers can only be created from a parent node"
 msgstr ""
 
+#: shared-bindings/registers/__init__.c
+msgid "register must be 1 to 8 bytes"
+msgstr ""
+
 #: shared-bindings/rgbmatrix/RGBMatrix.c
 msgid "The length of rgb_pins must be 6, 12, 18, 24, or 30"
 msgstr ""
@@ -4205,7 +4580,8 @@ msgstr ""
 
 #: shared-bindings/storage/__init__.c shared-bindings/usb_audio/__init__.c
 #: shared-bindings/usb_cdc/__init__.c shared-bindings/usb_hid/__init__.c
-#: shared-bindings/usb_midi/__init__.c shared-bindings/usb_video/__init__.c
+#: shared-bindings/usb_midi/__init__.c shared-bindings/usb_net/__init__.c
+#: shared-bindings/usb_tmc/__init__.c shared-bindings/usb_video/__init__.c
 msgid "Cannot change USB devices now"
 msgstr ""
 
@@ -4239,6 +4615,10 @@ msgstr ""
 
 #: shared-bindings/usb_hid/Device.c
 msgid "%q, %q, and %q must all be the same length"
+msgstr ""
+
+#: shared-bindings/usb_tmc/__init__.c
+msgid "Previous response not collected"
 msgstr ""
 
 #: shared-bindings/util.c
@@ -4366,6 +4746,10 @@ msgstr ""
 msgid "Unable to read color palette data"
 msgstr ""
 
+#: shared-module/displayio/TileGrid.c
+msgid "Tile grid is too large"
+msgstr ""
+
 #: shared-module/displayio/__init__.c
 msgid "Too many displays"
 msgstr ""
@@ -4380,6 +4764,10 @@ msgstr ""
 
 #: shared-module/gifio/GifWriter.c
 msgid "unsupported colorspace for GifWriter"
+msgstr ""
+
+#: shared-module/hashlib/Hash.c
+msgid "hash operation failed"
 msgstr ""
 
 #: shared-module/i2cdisplaybus/I2CDisplayBus.c
@@ -4447,6 +4835,10 @@ msgstr ""
 
 #: shared-module/msgpack/__init__.c
 msgid "no default packer"
+msgstr ""
+
+#: shared-module/msgpack/__init__.c
+msgid "msgpack container too long"
 msgstr ""
 
 #: shared-module/paralleldisplaybus/ParallelBus.c
@@ -4517,6 +4909,10 @@ msgid "'S' and 'O' are not supported format types"
 msgstr ""
 
 #: shared-module/struct/__init__.c
+msgid "repeat count too large"
+msgstr ""
+
+#: shared-module/struct/__init__.c
 msgid "buffer size must match format"
 msgstr ""
 
@@ -4534,6 +4930,46 @@ msgstr ""
 
 #: shared-module/touchio/TouchIn.c
 msgid "No pulldown on pin; 1Mohm recommended"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "not a font"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "not TrueType outlines"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "font is missing a required table"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "font has no units per em"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "font has no format 4 character map"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "font has no outlines"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "font bounding box is unusable at this size"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "max_glyphs too large for this size"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "bitmap must have at most 8 bits per pixel"
+msgstr ""
+
+#: shared-module/ttfrast/__init__.c
+msgid "font was created without a size"
 msgstr ""
 
 #: shared-module/usb/core/Device.c
