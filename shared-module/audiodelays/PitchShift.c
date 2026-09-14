@@ -61,10 +61,6 @@ void common_hal_audiodelays_pitch_shift_construct(audiodelays_pitch_shift_obj_t 
     self->freeze = false;
 
     // Allocate the window buffer
-    // CIRCUITPY-CHANGE: the window is given in bytes but holds one int16_t per
-    // channel, and nothing checked it. window=1 allocated a single byte and the
-    // playback loop then wrote a 16 bit sample into it, and window_size came out
-    // zero besides.
     mp_arg_validate_int_min(window, sizeof(uint16_t) * channel_count, MP_QSTR_window);
     self->window_len = window; // bytes
     self->window_buffer = m_malloc_without_collect(self->window_len);
@@ -238,10 +234,6 @@ audioio_get_buffer_result_t audiodelays_pitch_shift_get_buffer(audiodelays_pitch
             } else {
                 // For unsigned samples set to the middle which is "quiet"
                 if (MP_LIKELY(self->base.bits_per_sample == 16)) {
-                    // CIRCUITPY-CHANGE: memset takes an int but writes only its low
-                    // byte, and 32768 & 0xff is 0 -- so this filled the buffer with
-                    // zeros, which is full negative deflection for unsigned samples,
-                    // instead of the 0x8000 words that actually mean silence.
                     for (uint32_t si = 0; si < length; si++) {
                         word_buffer[si] = (int16_t)0x8000;
                     }

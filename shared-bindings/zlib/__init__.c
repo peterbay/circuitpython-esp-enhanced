@@ -53,9 +53,6 @@
 static mp_obj_t zlib_decompress(size_t n_args, const mp_obj_t *args) {
     mp_int_t wbits = 0;
     if (n_args > 1) {
-        // CIRCUITPY-CHANGE: MP_OBJ_SMALL_INT_VALUE just reinterprets the object
-        // word, so a long int, a float, a string or None came through as a
-        // nonsense window size and picked the wrong header format.
         wbits = mp_obj_get_int_truncated(args[1]);
     }
 

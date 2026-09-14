@@ -181,7 +181,7 @@ mp_uint_t unichar_xdigit_value(unichar c) {
 
 #if MICROPY_PY_BUILTINS_STR_UNICODE
 
-bool PLACE_IN_WARM_CODE(utf8_check)(const byte *p, size_t len) {
+bool PLACE_IN_WARM_CODE(unicode_encoding_check)(mp_encoding_t encoding, const byte *p, size_t len) {
     uint8_t need = 0;
     const byte *end = p + len;
     for (; p < end; p++) {
@@ -194,7 +194,7 @@ bool PLACE_IN_WARM_CODE(utf8_check)(const byte *p, size_t len) {
                 return 0;
             }
         } else {
-            if (c >= 0xc0) {
+            if (encoding == MP_ENCODING_UTF8 && c >= 0xc0) {
                 if (c >= 0xf8) {
                     // mismatch
                     return 0;

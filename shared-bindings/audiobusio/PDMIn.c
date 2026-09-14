@@ -96,10 +96,6 @@ static mp_obj_t audiobusio_pdmin_make_new(const mp_obj_type_t *type, size_t n_ar
     const mcu_pin_obj_t *clock_pin = validate_obj_is_free_pin(args[ARG_clock_pin].u_obj, MP_QSTR_clock_pin);
     const mcu_pin_obj_t *data_pin = validate_obj_is_free_pin(args[ARG_data_pin].u_obj, MP_QSTR_data_pin);
 
-    // CIRCUITPY-CHANGE: both of these were narrowed into a uint8_t before the
-    // divisibility test, so zero passed and values 256 apart were indistinguishable
-    // -- the port then got a configuration the caller never asked for. Check the
-    // value as given, and require a depth this module can actually produce.
     uint32_t sample_rate = mp_arg_validate_int_min(args[ARG_sample_rate].u_int, 1, MP_QSTR_sample_rate);
     mp_int_t requested_bit_depth = args[ARG_bit_depth].u_int;
     if (requested_bit_depth != 8 && requested_bit_depth != 16) {

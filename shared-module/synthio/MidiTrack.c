@@ -56,8 +56,6 @@ static void decode_until_pause(synthio_miditrack_obj_t *self) {
     uint8_t *buffer = self->track.buf;
     size_t len = self->track.len;
     do {
-        // CIRCUITPY-CHANGE: start_parse can leave pos at len, and this read had no
-        // guard of its own. synthio.MidiTrack(b"\x00", ...) reaches it.
         if (self->pos >= len) {
             break;
         }

@@ -185,9 +185,6 @@ static mp_obj_t audiomixer_mixer_obj_play(size_t n_args, const mp_obj_t *pos_arg
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-    // CIRCUITPY-CHANGE: the index was narrowed into a uint8_t before it was
-    // compared, so 256 or -256 became 0 and quietly drove voice 0 instead of
-    // raising. Check the value as given.
     uint8_t v = mp_arg_validate_int_range(args[ARG_voice].u_int, 0, self->voice_count - 1,
         MP_QSTR_voice);
     audiomixer_mixervoice_obj_t *voice = MP_OBJ_TO_PTR(self->voice[v]);
@@ -213,9 +210,6 @@ static mp_obj_t audiomixer_mixer_obj_stop_voice(size_t n_args, const mp_obj_t *p
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-    // CIRCUITPY-CHANGE: the index was narrowed into a uint8_t before it was
-    // compared, so 256 or -256 became 0 and quietly drove voice 0 instead of
-    // raising. Check the value as given.
     uint8_t v = mp_arg_validate_int_range(args[ARG_voice].u_int, 0, self->voice_count - 1,
         MP_QSTR_voice);
     audiomixer_mixervoice_obj_t *voice = MP_OBJ_TO_PTR(self->voice[v]);

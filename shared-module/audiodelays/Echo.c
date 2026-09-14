@@ -143,11 +143,6 @@ void recalculate_delay(audiodelays_echo_obj_t *self, mp_float_t f_delay_ms) {
         uint32_t new_echo_buffer_len = (uint32_t)(self->base.sample_rate / MICROPY_FLOAT_CONST(1000.0) * f_delay_ms) * sizeof(uint16_t);
 
         // Limit to valid range
-        // CIRCUITPY-CHANGE: these were two arms of one "else if", so raising the
-        // length to the audio buffer size could put it back above the maximum,
-        // and the memset below then took "max - len" as an unsigned difference
-        // and cleared about four gigabytes. The floor is applied first and the
-        // ceiling always after it.
         if (new_echo_buffer_len < self->buffer_len) {
             // If the echo buffer is smaller than our audio buffer, weird things happen
             new_echo_buffer_len = self->buffer_len;

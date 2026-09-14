@@ -80,6 +80,9 @@ typedef struct mp_dynamic_compiler_t {
     uint8_t small_int_bits; // must be <= host small_int_bits
     uint8_t native_arch;
     uint8_t nlr_buf_num_regs;
+    #if MICROPY_ENABLE_SOURCE_LINE
+    bool include_source_lines;
+    #endif
 } mp_dynamic_compiler_t;
 extern mp_dynamic_compiler_t mp_dynamic_compiler;
 #endif
@@ -146,6 +149,10 @@ typedef struct _mp_state_mem_t {
     #endif
 
     mp_state_mem_area_t area;
+    #if MICROPY_GC_SPLIT_HEAP
+    byte *area_pool_min;  // Min of all gc_pool_start values across all areas
+    byte *area_pool_max;  // Max of all gc_pool_end values across all areas
+    #endif
 
     int gc_stack_overflow;
     MICROPY_GC_STACK_ENTRY_TYPE gc_block_stack[MICROPY_ALLOC_GC_STACK_SIZE];
@@ -166,12 +173,6 @@ typedef struct _mp_state_mem_t {
 
     #if MICROPY_GC_SPLIT_HEAP
     mp_state_mem_area_t *gc_last_free_area;
-    // CIRCUITPY-CHANGE: lowest gc_pool_start and highest gc_pool_end across every
-    // area, so that gc_get_ptr_area() can reject a word that cannot be a heap
-    // pointer without walking the area list. Recomputed whenever an area is added
-    // or removed; see gc_update_pool_bounds().
-    byte *area_pool_min;
-    byte *area_pool_max;
     #endif
 
     #if MICROPY_PY_GC_COLLECT_RETVAL
@@ -264,6 +265,9 @@ typedef struct _mp_state_vm_t {
     mp_uint_t mp_optimise_value;
     #if MICROPY_EMIT_NATIVE
     uint8_t default_emit_opt; // one of MP_EMIT_OPT_xxx
+    #endif
+    #if MICROPY_DEBUG_PRINTERS
+    mp_uint_t mp_verbose_flag;
     #endif
     #endif
 

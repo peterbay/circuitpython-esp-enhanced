@@ -130,10 +130,6 @@ void chorus_recalculate_delay(audiodelays_chorus_obj_t *self, mp_float_t f_delay
     // Calculate the current chorus buffer length in bytes
     uint32_t new_chorus_buffer_len = (uint32_t)(self->base.sample_rate / MICROPY_FLOAT_CONST(1000.0) * f_delay_ms) * (self->base.channel_count * sizeof(uint16_t));
 
-    // CIRCUITPY-CHANGE: the buffer is allocated once for max_delay_ms, and
-    // nothing stopped a longer delay_ms from being used against it. Echo and
-    // MultiTapDelay both limit this to what they allocated; this did not, so a
-    // delay past the maximum ran off the end of the buffer.
     if (new_chorus_buffer_len > self->max_chorus_buffer_len) {
         new_chorus_buffer_len = self->max_chorus_buffer_len;
     }

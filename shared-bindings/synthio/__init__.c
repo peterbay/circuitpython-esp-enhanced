@@ -258,11 +258,6 @@ static mp_obj_t synthio_from_file(size_t n_args, const mp_obj_t *pos_args, mp_ma
         args[ARG_envelope].u_obj
         );
 
-    // CIRCUITPY-CHANGE: common_hal_synthio_miditrack_construct does not copy the
-    // track, it keeps the pointer and parses it as the track plays, so freeing
-    // the buffer here left it decoding memory that had been handed back. The
-    // MidiTrack owns the buffer.
-
     return MP_OBJ_FROM_PTR(result);
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(synthio_from_file_obj, 1, synthio_from_file);

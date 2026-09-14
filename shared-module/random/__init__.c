@@ -20,11 +20,6 @@
 
 static uint32_t yasmarang_pad = 0xeda4baba, yasmarang_n = 69, yasmarang_d = 233;
 static uint8_t yasmarang_dat = 0;
-// CIRCUITPY-CHANGE: "not yet seeded" used to be encoded as pad still holding its
-// initial value, so random.seed(0xEDA4BABA) re-triggered the hardware seed and was
-// the one seed that did not reproduce -- which the module docstring promises it
-// will. A flag says what the sentinel was trying to say, without colliding with a
-// legitimate value.
 static bool yasmarang_seeded = false;
 
 static uint32_t yasmarang(void) {

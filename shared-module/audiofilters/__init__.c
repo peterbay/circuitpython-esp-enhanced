@@ -48,8 +48,6 @@ void audiofilters_assign_filter_chain(audiofilters_filter_chain_t *self, mp_obj_
 
 void audiofilters_reset_filter_chain(audiofilters_filter_chain_t *self, uint8_t channel_count) {
     if (self->states) {
-        // CIRCUITPY-CHANGE: objs_len is a size_t, so a uint8_t counter wrapped back to
-        // zero once objs_len * channel_count reached 256 and the loop never terminated.
         for (size_t i = 0; i < self->objs_len * channel_count; i++) {
             synthio_biquad_filter_reset(&self->states[i]);
         }

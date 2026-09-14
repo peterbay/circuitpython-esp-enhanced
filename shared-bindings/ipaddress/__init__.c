@@ -30,11 +30,6 @@ bool ipaddress_parse_ipv4address(const char *str_data, size_t str_len, uint32_t 
             period_count++;
         }
     }
-    // CIRCUITPY-CHANGE: only "more than three" was rejected, so a string with fewer
-    // dots left period_index[period_count..3] uninitialised and the length
-    // period_index[i] - last_period underflowed size_t. It was contained only by the
-    // string data being NUL terminated, which is not something this function's
-    // signature promises. A dotted quad has exactly three.
     if (period_count != 3) {
         return false;
     }
@@ -55,12 +50,6 @@ bool ipaddress_parse_ipv4address(const char *str_data, size_t str_len, uint32_t 
         }
         last_period = period_index[i] + 1;
         if (ip_out != NULL) {
-            // CIRCUITPY-CHANGE: the octet was neither checked for being a small int
-            // nor range checked, so the shifted value carried into its neighbour:
-            // "300.1.1.1" parsed as 44.1.1.1, "1.2.3.256" as 1.2.3.0 and "-1.0.0.0"
-            // as 255.255.255.255. A typo in a static address configuration therefore
-            // configured a different address instead of raising, and the board came
-            // up unreachable with nothing to point at.
             if (!mp_obj_is_small_int(octet)) {
                 return false;
             }

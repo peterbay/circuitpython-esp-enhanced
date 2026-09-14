@@ -96,8 +96,6 @@ void common_hal_audiofreeverb_freeverb_construct(audiofreeverb_freeverb_obj_t *s
             common_hal_audiofreeverb_freeverb_deinit(self);
             m_malloc_fail(self->combbuffersizes[i]);
         }
-        // CIRCUITPY-CHANGE: the buffer holds uint16_t, so clearing size bytes
-        // left its upper half uninitialised and the reverb started from noise.
         memset(self->combbuffers[i], 0, self->combbuffersizes[i] * sizeof(uint16_t));
 
         self->combbufferindex[i] = 0;
@@ -116,7 +114,6 @@ void common_hal_audiofreeverb_freeverb_construct(audiofreeverb_freeverb_obj_t *s
             common_hal_audiofreeverb_freeverb_deinit(self);
             m_malloc_fail(self->allpassbuffersizes[i]);
         }
-        // CIRCUITPY-CHANGE: as above, these are uint16_t entries.
         memset(self->allpassbuffers[i], 0, self->allpassbuffersizes[i] * sizeof(uint16_t));
 
         self->allpassbufferindex[i] = 0;
@@ -307,11 +304,6 @@ audioio_get_buffer_result_t audiofreeverb_freeverb_get_buffer(audiofreeverb_free
 
         int16_t *sample_src = (int16_t *)self->sample_remaining_buffer;
 
-        // CIRCUITPY-CHANGE: these were declared inside the loop below, so they
-        // were zero again at the top of every sample and the switch at the
-        // bottom of it had no effect. Both channels of a stereo signal went
-        // through the left bank of comb and allpass filters, which is not a
-        // stereo reverb at all.
         uint32_t channel_comb_offset = 0, channel_allpass_offset = 0;
 
         for (uint32_t i = 0; i < n; i++) {

@@ -48,13 +48,10 @@ static mp_uint_t PLACE_IN_WARM_CODE(get_fmt_num)(const char **p) {
     while (unichar_isdigit(*++num)) {
         len++;
     }
-    // CIRCUITPY-CHANGE: mp_parse_num_integer returns a big-int OBJECT when the
-    // literal does not fit a small int, and MP_OBJ_SMALL_INT_VALUE on one of those
-    // is just its address shifted right -- struct.calcsize("99999999999i") returned
-    // a different number on every call. The count is also multiplied by the item
-    // size in three places, and that product overflowed past both size checks:
-    // calcsize("536870912q") came out 0 because 8 * 536870912 wraps. Bound it well
-    // below where any of that can happen; CPython's own limit is far lower still.
+    // CIRCUITPY-CHANGE: the count is multiplied by the item size in three
+    // places, and that product overflowed past both size checks --
+    // calcsize("536870912q") came out 0 because 8 * 536870912 wraps. Bound it
+    // well below where that can happen; CPython's own limit is far lower still.
     mp_int_t parsed = mp_obj_get_int(mp_parse_num_integer(*p, len, 10, NULL));
     if (parsed < 0 || parsed > 0xffff) {
         mp_raise_ValueError(MP_ERROR_TEXT("repeat count too large"));

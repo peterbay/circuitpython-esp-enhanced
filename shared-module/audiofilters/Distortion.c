@@ -210,10 +210,6 @@ audioio_get_buffer_result_t audiofilters_distortion_get_buffer(audiofilters_dist
             } else {
                 // For unsigned samples set to the middle which is "quiet"
                 if (MP_LIKELY(self->base.bits_per_sample == 16)) {
-                    // CIRCUITPY-CHANGE: memset takes an int but writes only its low
-                    // byte, and 32768 & 0xff is 0 -- so this filled the buffer with
-                    // zeros, which is full negative deflection for unsigned samples,
-                    // instead of the 0x8000 words that actually mean silence.
                     for (uint32_t si = 0; si < length; si++) {
                         word_buffer[si] = (int16_t)0x8000;
                     }
@@ -331,9 +327,6 @@ audioio_get_buffer_result_t audiofilters_distortion_get_buffer(audiofilters_dist
 
                     // Hard clip
                     if (!self->soft_clip) {
-                        // CIRCUITPY-CHANGE: the upper bound was 32768, which becomes
-                        // -32768 on the cast to int16_t below, so a positive overdrive
-                        // came out as a full negative spike.
                         word = MIN(MAX(word, -32767), 32767);
                     }
 
