@@ -644,8 +644,13 @@ SRC_C += \
 	shared/netutils/netutils.c \
 	peripherals/$(IDF_TARGET)/pins.c
 
+# CIRCUITPY-CHANGE: defined either way, because supervisor/shared/usb/
+# usb_msc_flash.c tests it before it includes the header that has the default,
+# and the build is -Werror=undef. Only defining it when it is on meant every
+# board that does not ask for it failed to compile.
+CIRCUITPY_PARTITION_DISK ?= 0
+CFLAGS += -DCIRCUITPY_PARTITION_DISK=$(CIRCUITPY_PARTITION_DISK)
 ifeq ($(CIRCUITPY_PARTITION_DISK),1)
-CFLAGS += -DCIRCUITPY_PARTITION_DISK=1
 SRC_C += supervisor/partition_disk.c
 endif
 
