@@ -179,7 +179,38 @@ ifeq ($(CIRCUITPY_TINYUSB),1)
       shared-module/usb_video/USBFramebuffer.c \
       lib/tinyusb/src/class/video/video_device.c \
 
-    CFLAGS += -DCFG_TUD_VIDEO=1 -DCFG_TUD_VIDEO_STREAMING=1 -DCFG_TUD_VIDEO_STREAMING_EP_BUFSIZE=256 -DCFG_TUD_VIDEO_STREAMING_BULK=1
+    # CIRCUITPY-CHANGE: bulk UVC streaming is an extension that Linux hosts
+    # accept and Windows does not -- there, only isochronous works. It stays the
+    # default so nothing changes for the ports this module was written on, but a
+    # board can ask for isochronous instead.
+    CIRCUITPY_USB_VIDEO_BULK ?= 1
+    # The isochronous endpoint's packet size, which is what caps the frame rate:
+    # one packet goes out per USB frame, so 256 bytes is 256 kB/s and a 128x96
+    # YUYV frame at 24 kB cannot then be sent ten times a second. Full speed
+    # allows up to 1023. Left at 256 by default so nothing changes for the ports
+    # this was written on.
+    CIRCUITPY_USB_VIDEO_EP_BUFSIZE ?= 256
+    # Stream MJPEG instead of uncompressed YUY2. Measured on an ESP32-S3: the
+    # isochronous link carries about 200 kB/s whatever the packet size, so a
+    # 160x120 YUY2 frame at 38 kB is six frames a second and that is the ceiling.
+    # Only a port that provides usb_video_jpeg_init/encode/deinit can turn this
+    # on.
+    CIRCUITPY_USB_VIDEO_JPEG ?= 0
+    # How much room a compressed frame gets, per buffer. This is not a tuning
+    # knob: esp_new_jpeg ignores the output size it is handed and writes past the
+    # end of the buffer rather than reporting that the frame did not fit, which
+    # corrupts whatever the allocator put next and hard faults the board a frame
+    # or two later. So the buffer has to be larger than any frame the encoder can
+    # produce. Measured against white noise, which is the worst case for JPEG,
+    # 4:2:2 costs 0.50 bytes a pixel at quality 40, 1.34 at 92 and 2.70 at 100, so
+    # 300 KiB covers every quality up to 320x240. A port that turns MJPEG on has
+    # to have the memory to spare for two of these.
+    CIRCUITPY_USB_VIDEO_JPEG_FRAME_BYTES ?= 307200
+    # The one frame rate the descriptor advertises. A host will not ask for more
+    # than this, so it is a ceiling as much as a promise, and an uncompressed
+    # stream that cannot keep up makes the host refuse to start at all.
+    CIRCUITPY_USB_VIDEO_FRAME_RATE ?= 10
+    CFLAGS += -DCFG_TUD_VIDEO=1 -DCFG_TUD_VIDEO_STREAMING=1 -DCFG_TUD_VIDEO_STREAMING_EP_BUFSIZE=$(CIRCUITPY_USB_VIDEO_EP_BUFSIZE) -DCFG_TUD_VIDEO_STREAMING_BULK=$(CIRCUITPY_USB_VIDEO_BULK) -DCIRCUITPY_USB_VIDEO_JPEG=$(CIRCUITPY_USB_VIDEO_JPEG) -DCIRCUITPY_USB_VIDEO_JPEG_FRAME_BYTES=$(CIRCUITPY_USB_VIDEO_JPEG_FRAME_BYTES) -DDEFAULT_FRAME_RATE=$(CIRCUITPY_USB_VIDEO_FRAME_RATE)
   endif
 
   ifeq ($(CIRCUITPY_USB_AUDIO), 1)

@@ -667,6 +667,24 @@ ifeq ($(CIRCUITPY_SSL),1)
 SRC_C += common-hal/ssl/crt_bundle.c
 endif
 
+# CIRCUITPY-CHANGE: the JPEG encoder behind usb_video's MJPEG stream. It is not
+# registered as an IDF component -- only its headers and one prebuilt archive
+# are used, added here and to BINARY_BLOBS below, so a board that does not
+# stream MJPEG pays nothing for it.
+#
+# PSRAM is a requirement, not a preference. The encoder writes past the end of
+# the output buffer instead of reporting that a frame did not fit, so the buffer
+# has to be larger than the largest frame it can produce -- CIRCUITPY_USB_VIDEO_
+# JPEG_FRAME_BYTES, two of them -- and that is far more internal RAM than a board
+# has to spare.
+ifeq ($(CIRCUITPY_USB_VIDEO_JPEG),1)
+ifeq ($(CIRCUITPY_ESP_PSRAM_SIZE),0)
+$(error CIRCUITPY_USB_VIDEO_JPEG needs a board with PSRAM)
+endif
+SRC_C += supervisor/usb_video_jpeg.c
+CFLAGS += -I$(CURDIR)/esp_new_jpeg/include
+endif
+
 SRC_C += $(wildcard common-hal/espidf/*.c)
 
 ifneq ($(CIRCUITPY_ESP_USB_SERIAL_JTAG),0)
@@ -1024,6 +1042,13 @@ ifneq ($(CIRCUITPY_ZIGBEE),0)
 	BINARY_BLOBS += $(ZIGBEE_LIB_DIR)/libesp-zigbee.release.a \
 		$(ZIGBEE_LIB_DIR)/libesp-zigbee-core.zczr.release.a \
 		$(ZIGBEE_LIB_DIR)/libesp-zigbee-idf.native.release.a
+endif
+# CIRCUITPY-CHANGE: esp_new_jpeg is a prebuilt archive, like the Wi-Fi and
+# Zigbee blobs. It is not registered as an IDF component: it ships no library
+# for every target CircuitPython builds, and a board that does not stream MJPEG
+# should not have to have one.
+ifeq ($(CIRCUITPY_USB_VIDEO_JPEG),1)
+	BINARY_BLOBS += esp_new_jpeg/lib/$(IDF_TARGET)/libesp_new_jpeg.a
 endif
 ifneq ($(CIRCUITPY_DOTCLOCKFRAMEBUFFER),0)
 	ESP_IDF_COMPONENTS_LINK += esp_lcd

@@ -57,10 +57,22 @@ void common_hal_framebufferio_framebufferdisplay_construct(framebufferio_framebu
         self->row_stride = self->core.width * self->core.colorspace.depth / 8;
     }
 
-    self->framebuffer_protocol->get_bufinfo(self->framebuffer, &self->bufinfo);
-    size_t framebuffer_size = self->first_pixel_offset + self->row_stride * (self->core.height - 1) + self->core.width * self->core.colorspace.depth / 8;
+    // CIRCUITPY-CHANGE: a framebuffer that takes the picture band by band keeps
+    // no buffer to check the size of.
+    self->rows_per_buffer = 0;
+    if (self->framebuffer_protocol->get_rows_per_buffer && self->framebuffer_protocol->write_rows) {
+        int rows = self->framebuffer_protocol->get_rows_per_buffer(self->framebuffer);
+        if (rows > 0) {
+            self->rows_per_buffer = MIN(rows, self->core.height);
+        }
+    }
 
-    mp_arg_validate_length_min(self->bufinfo.len, framebuffer_size, MP_QSTR_framebuffer);
+    self->framebuffer_protocol->get_bufinfo(self->framebuffer, &self->bufinfo);
+    if (self->rows_per_buffer == 0) {
+        size_t framebuffer_size = self->first_pixel_offset + self->row_stride * (self->core.height - 1) + self->core.width * self->core.colorspace.depth / 8;
+
+        mp_arg_validate_length_min(self->bufinfo.len, framebuffer_size, MP_QSTR_framebuffer);
+    }
 
     self->first_manual_refresh = !auto_refresh;
 
@@ -136,6 +148,12 @@ static bool _refresh_area(framebufferio_framebufferdisplay_obj_t *self, const di
     uint16_t rows_per_buffer = displayio_area_height(&clipped);
     uint8_t pixels_per_word = (sizeof(uint32_t) * 8) / self->core.colorspace.depth;
     uint16_t pixels_per_buffer = displayio_area_size(&clipped);
+    // CIRCUITPY-CHANGE: the band size stays the area buffer's own. Forcing it to
+    // whatever a streaming framebuffer wanted made the variable length array
+    // below several kilobytes, and refreshing from the supervisor's stack --
+    // which is what happens once the running program stops -- faulted the
+    // board. A streaming framebuffer is handed whatever rows come and puts them
+    // together itself, on the heap.
     if (displayio_area_size(&clipped) > buffer_size * pixels_per_word) {
         rows_per_buffer = buffer_size * pixels_per_word / displayio_area_width(&clipped);
         if (rows_per_buffer == 0) {
@@ -184,6 +202,23 @@ static bool _refresh_area(framebufferio_framebufferdisplay_obj_t *self, const di
 
         displayio_display_core_fill_area(&self->core, &subrectangle, mask, buffer);
 
+        // CIRCUITPY-CHANGE: hand the band straight over instead of keeping it.
+        // The area is the full width of the display here, because a streaming
+        // framebuffer only ever gets full refreshes, so the band is exactly
+        // what write_rows expects.
+        if (self->rows_per_buffer != 0) {
+            for (uint16_t i = subrectangle.y1; i < subrectangle.y2; i++) {
+                MARK_ROW_DIRTY(i);
+            }
+            self->framebuffer_protocol->write_rows(self->framebuffer, subrectangle.y1,
+                subrectangle.y2 - subrectangle.y1, buffer);
+            RUN_BACKGROUND_TASKS;
+            #if CIRCUITPY_TINYUSB
+            usb_background();
+            #endif
+            continue;
+        }
+
         uint8_t *buf = (uint8_t *)self->bufinfo.buf, *endbuf = buf + self->bufinfo.len;
         (void)endbuf; // Hint to compiler that endbuf is "used" even if NDEBUG
         buf += self->first_pixel_offset;
@@ -214,7 +249,12 @@ static bool _refresh_area(framebufferio_framebufferdisplay_obj_t *self, const di
 
 static void _refresh_display(framebufferio_framebufferdisplay_obj_t *self) {
     self->framebuffer_protocol->get_bufinfo(self->framebuffer, &self->bufinfo);
-    if (!self->bufinfo.buf) {
+    // CIRCUITPY-CHANGE: a streaming framebuffer has no buffer to report, and
+    // keeps nothing between frames, so every refresh has to cover the whole
+    // display rather than just what changed.
+    if (self->rows_per_buffer != 0) {
+        self->core.full_refresh = true;
+    } else if (!self->bufinfo.buf) {
         return;
     }
     if (!displayio_display_core_start_refresh(&self->core)) {
