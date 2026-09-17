@@ -60,10 +60,6 @@ void memorymonitor_allocationsizes_track_allocation(size_t block_count) {
         power_of_two++;
         block_count >>= 1;
     }
-    // CIRCUITPY-CHANGE: there are only ALLOCATION_SIZE_BUCKETS buckets, but the
-    // count above runs to the width of a size_t. An allocation of 65536 blocks
-    // or more wrote past the array and into the fields that follow it in the
-    // object. Everything that large lands in the last bucket instead.
     if (power_of_two >= ALLOCATION_SIZE_BUCKETS) {
         power_of_two = ALLOCATION_SIZE_BUCKETS - 1;
     }

@@ -18,10 +18,6 @@
 
 #define BLOCK_SIZE (126) // (2^7) - 2 // (DO NOT CHANGE!)
 
-// CIRCUITPY-CHANGE: construct writes the whole file header into the buffer and
-// only flushes at the end, so the buffer can never be smaller than that header:
-// 13 bytes of logical screen descriptor, a 384 byte global colour table and the
-// 19 byte Netscape looping block.
 #define GIF_HEADER_SIZE (13 + 128 * 3 + 19)
 // Each frame writes a 19 byte header ahead of the block data (8 for the
 // graphic control extension, 11 for the image descriptor) and a 3 byte end
@@ -79,12 +75,6 @@ void shared_module_gifio_gifwriter_construct(gifio_gifwriter_t *self, mp_obj_t *
     self->own_file = own_file;
 
     size_t nblocks = (width * height + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    // CIRCUITPY-CHANGE: the old size of nblocks * 128 + 4 covered neither the
-    // per frame overhead nor the file header, and write_data only asserts the
-    // bound, which is compiled out. Frames overran whenever width * height was
-    // a multiple of 126 (a 63x2 image corrupts the object after the buffer and
-    // takes out module globals), and any image under 379 pixels -- a 16x16
-    // sprite included -- overran while still inside the constructor.
     self->size = MAX(GIF_HEADER_SIZE, nblocks * 128 + GIF_FRAME_OVERHEAD);
     self->data = m_malloc_without_collect(self->size);
     self->cur = 0;
@@ -174,15 +164,6 @@ void shared_module_gifio_gifwriter_add_frame(gifio_gifwriter_t *self, const mp_b
     int pixel_count = self->width * self->height;
     int blocks = (pixel_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    // CIRCUITPY-CHANGE: up to nineteen bytes of frame header used to go out before
-    // the source buffer's length was checked, and that check -- the mp_get_index in
-    // each branch below -- raises. A bitmap of the wrong size, which is an ordinary
-    // caller mistake, therefore left a header in the file with no frame behind it:
-    // the next frame's header follows the stray prefix and most decoders stop
-    // there. For some sizes the later writes also ran past the block, because the
-    // requirement had grown by the header that was already written. Check the length
-    // once, before anything is emitted; the per-branch checks below are left in
-    // place as they are what document each format's requirement.
     size_t needed_bytes = (self->colorspace == DISPLAYIO_COLORSPACE_L8)
         ? (size_t)pixel_count
         : 2u * (size_t)pixel_count;
@@ -204,7 +185,6 @@ void shared_module_gifio_gifwriter_add_frame(gifio_gifwriter_t *self, const mp_b
     uint8_t *data = self->data + self->cur;
 
     if (self->colorspace == DISPLAYIO_COLORSPACE_L8) {
-        mp_get_index(&mp_type_memoryview, bufinfo->len, MP_OBJ_NEW_SMALL_INT(pixel_count - 1), false);
 
         uint8_t *pixels = bufinfo->buf;
         for (int i = 0; i < blocks; i++) {
@@ -218,7 +198,6 @@ void shared_module_gifio_gifwriter_add_frame(gifio_gifwriter_t *self, const mp_b
             }
         }
     } else if (!self->dither) {
-        mp_get_index(&mp_type_memoryview, bufinfo->len, MP_OBJ_NEW_SMALL_INT(2 * pixel_count - 1), false);
 
         uint16_t *pixels = bufinfo->buf;
         for (int i = 0; i < blocks; i++) {
@@ -239,7 +218,6 @@ void shared_module_gifio_gifwriter_add_frame(gifio_gifwriter_t *self, const mp_b
             }
         }
     } else {
-        mp_get_index(&mp_type_memoryview, bufinfo->len, MP_OBJ_NEW_SMALL_INT(2 * pixel_count - 1), false);
 
         uint16_t *pixels = bufinfo->buf;
         int x = 0, y = 0;
