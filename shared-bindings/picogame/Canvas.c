@@ -79,10 +79,12 @@ static mp_obj_t picogame_canvas_make_new(const mp_obj_type_t *type, size_t n_arg
         self->transparent = 0;
         self->has_transparent = false;
     }
-    uint16_t fill = self->has_transparent ? self->transparent : 0;
-    for (size_t i = 0; i < (size_t)w * h; i++) {
-        self->data[i] = fill;
-    }
+    // clear() word-fills (and memsets a zero fill) instead of storing pixel by pixel. It marks the
+    // surface dirty, so the accumulator is reset on both sides: before, because clear() would
+    // otherwise min/max against a field mp_obj_malloc left uninitialised, and after, because a
+    // freshly built Canvas is not a pending repaint.
+    picogame_canvas_dirty_reset(self);
+    picogame_canvas_clear(self, self->has_transparent ? self->transparent : 0);
     picogame_canvas_dirty_reset(self);
     return MP_OBJ_FROM_PTR(self);
 }

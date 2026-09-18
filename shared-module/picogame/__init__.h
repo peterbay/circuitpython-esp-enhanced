@@ -27,13 +27,63 @@
 #endif
 #endif
 
+// Place a hot pixel kernel in SRAM instead of leaving it to run from flash through the XIP cache.
+// Opt-in per board (CIRCUITPY_PICOGAME_RAM_KERNELS): it costs RAM, not flash - the image still
+// carries the code and startup copies it in - and on RP2040 that is about 8 KB of heap for
+// 10-30% on sprite blits (the spread is flash layout between builds). The section name is the RP2 SDK's .time_critical, which its linker script
+// collects into RAM; a port without that would silently leave the code in flash, so the switch is
+// also gated on the SDK being present. No-op everywhere else.
+#ifndef CIRCUITPY_PICOGAME_RAM_KERNELS
+#define CIRCUITPY_PICOGAME_RAM_KERNELS (0)
+#endif
+#if CIRCUITPY_PICOGAME_RAM_KERNELS && defined(PICO_BUILD)
+#define PICOGAME_RAM_FUNC(name) __attribute__((section(".time_critical.picogame." #name))) name
+#else
+#define PICOGAME_RAM_FUNC(name) name
+#endif
+
+// Fill `nw` 32-bit words with `w`. Walks a pointer and stores four at a time, because at -Os GCC
+// turned the obvious indexed loop into `lsls idx,#2 / str [base,idx] / adds idx / cmp / b` - it
+// recomputes the byte offset from the index for every single word, 8 cycles per two pixels, which
+// is exactly the 4.3 cyc/px the strip background fill measured. Thumb-1 reaches all four stores
+// with immediate offsets, so the unrolled body is four STRs and one ADD. Caller guarantees `w32`
+// is 4-byte aligned; both callers peel a leading pixel to get there.
+// Counted rather than pointer-compared, and the remainder is straight-line: the end-pointer form
+// made GCC precompute the unrolled bound with a dozen instructions and spill r8/r9, and a second
+// loop for the remainder kept enough values live to widen the prologue. Short spans - a triangle
+// row is a handful of pixels - pay that on every call, so the cheap entry matters as much as the
+// unrolled body.
+static inline void picogame_fill_words(uint32_t *w32, int nw, uint32_t w) {
+    for (int b = nw >> 2; b > 0; b--) {
+        w32[0] = w;
+        w32[1] = w;
+        w32[2] = w;
+        w32[3] = w;
+        w32 += 4;
+    }
+    if (nw & 2) {
+        w32[0] = w;
+        w32[1] = w;
+        w32 += 2;
+    }
+    if (nw & 1) {
+        w32[0] = w;
+    }
+}
+
 // Sample one texel as wire RGB565; false = transparent (skip). Shared by the sprite/canvas
 // blit paths so they inline one copy (see the blit contract: PAL8 indices must be < palette len).
+// `key` is a SENTINEL: the transparent value, or -1 for an opaque bitmap. A PAL8 index is 0-255
+// and an RGB565 value 0-65535, so -1 can never match - which folds the "is this bitmap keyed at
+// all" test into the key compare itself. Passing the flag separately cost a second compare on
+// every pixel, invariant across the loop but not unswitched at -Os.
+// Both samples are widened to int32_t explicitly: that keeps the -1 comparison signed no matter
+// how wide `int` is, instead of relying on uint16_t promoting to a signed type.
 static inline bool src_pixel_s(int format, const uint8_t *data, const uint16_t *pal,
-    bool transp, uint16_t key, int idx, uint16_t *out) {
+    int32_t key, int idx, uint16_t *out) {
     if (format == PICOGAME_FMT_PAL8) {
         uint8_t i = data[idx];
-        if (transp && i == (uint8_t)key) {
+        if ((int32_t)i == key) {
             return false;
         }
         *out = pal[i];                           // indices must be < palette length (see blit contract)
@@ -44,11 +94,17 @@ static inline bool src_pixel_s(int format, const uint8_t *data, const uint16_t *
     #pragma GCC diagnostic ignored "-Wcast-align"
     uint16_t v = ((const uint16_t *)data)[idx];
     #pragma GCC diagnostic pop
-    if (transp && v == key) {
+    if ((int32_t)v == key) {
         return false;
     }
     *out = v;
     return true;
+}
+
+// The transparent key of `bm` as that sentinel (-1 when the bitmap is opaque). A PAL8 key is
+// already narrowed to 8 bits at construction, so this needs no per-format case.
+static inline int32_t picogame_key_of(const picogame_bitmap_obj_t *bm) {
+    return bm->has_transparent ? (int32_t)bm->transparent : -1;
 }
 
 
@@ -98,6 +154,11 @@ typedef struct {
     const int16_t *verts;
     const uint16_t *colors;
     uint16_t count, cap;              // cap = what the buffers can hold
+    // Screen-space y extent of the whole batch, recomputed when `count` is set (the documented
+    // order is fill verts, then set count). The compositor band-rejects the WHOLE layer against a
+    // strip with this, instead of re-rejecting every triangle in the batch once per strip: at 100
+    // triangles and 17 strips that was 1700 rejects of ~41 cycles each. by1 >= by2 means empty.
+    int16_t by1, by2;
     int32_t dx1, dy1, dx2, dy2;       // dirty accumulator (count-set -> full screen)
 } picogame_triangles_obj_t;
 

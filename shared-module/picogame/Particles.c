@@ -34,9 +34,14 @@ static void swap_remove(picogame_particles_obj_t *ps, int i) {
 // Dim a wire-order RGB565 color to num/den of its brightness (per channel).
 static inline uint16_t scale_wire565(uint16_t wire, int num, int den) {
     uint16_t c = (uint16_t)((wire >> 8) | (wire << 8));   // wire -> native
-    int r = ((c >> 11) & 0x1F) * num / den;
-    int g = ((c >> 5) & 0x3F) * num / den;
-    int b = (c & 0x1F) * num / den;
+    // One divide for all three channels: the ratio is the same, so reciprocate it once in Q8.
+    // den is life0 (emit clamps life to >= 1) and num is the remaining life, so 0 <= q <= 256 and
+    // a 6-bit channel times q stays well inside int. Truncating the reciprocal can darken a
+    // channel by one LSB against the old per-channel divide - invisible on a fade ramp.
+    int q = (num << 8) / den;
+    int r = (((c >> 11) & 0x1F) * q) >> 8;
+    int g = (((c >> 5) & 0x3F) * q) >> 8;
+    int b = ((c & 0x1F) * q) >> 8;
     uint16_t out = (uint16_t)((r << 11) | (g << 5) | b);
     return (uint16_t)((out >> 8) | (out << 8));           // native -> wire
 }
@@ -139,9 +144,24 @@ void picogame_blit_particles(
     int sz = ps->size;
     int rx2 = x0 + region_w;
     int ry2 = strip_top + strip_h;
-    for (int i = 0; i < ps->count; i++) {
-        int sx = (ps->px[i] >> 8) + ox;
-        int sy = (ps->py[i] >> 8) + oy;
+    // Reject on Y alone first, against bounds precomputed in the particles' own
+    // coordinates. A strip spans the full width of the region, so the X test almost
+    // never rejects anything, and testing it first made every particle pay for it
+    // along with six clamps and eight spilled loads: measured 62 cycles per particle
+    // per strip, nearly all of it rejection, which at 34 strips and 256 particles
+    // came to 4.3 ms a frame. The two bounds below say the same thing the ys >= ye
+    // clamp did, with sz >= 1 and strip_h >= 1: above the strip, or below it.
+    const int32_t *pxs = ps->px, *pys = ps->py;
+    int ylo = strip_top - sz - oy;             // py >> 8 <= ylo -> entirely above
+    int yhi = ry2 - oy;                        // py >> 8 >= yhi -> entirely below
+    int count = ps->count;
+    for (int i = 0; i < count; i++) {
+        int sy8 = pys[i] >> 8;
+        if (sy8 <= ylo || sy8 >= yhi) {
+            continue;
+        }
+        int sx = (pxs[i] >> 8) + ox;
+        int sy = sy8 + oy;
         int xs = picogame_imax(sx, x0);
         int ys = picogame_imax(sy, strip_top);
         int xe = picogame_imin(sx + sz, rx2);

@@ -59,6 +59,8 @@ static mp_obj_t picogame_triangles_make_new(const mp_obj_type_t *type, size_t n_
     size_t cap_c = ci.len >> 1;
     self->cap = (uint16_t)(cap_v < cap_c ? cap_v : cap_c);
     self->count = 0;
+    self->by1 = 0;                  // empty band until count is set: by1 >= by2 rejects every strip
+    self->by2 = 0;
     picogame_dirty_reset(&self->dx1);
     return MP_OBJ_FROM_PTR(self);
 }
@@ -82,6 +84,29 @@ static mp_obj_t tri_set_count(mp_obj_t self_in, mp_obj_t v) {
         n = self->cap;
     }
     self->count = (uint16_t)n;
+    // Batch y extent, for the compositor's per-strip band reject. Three loads per triangle once
+    // here replaces a full reject pass per strip.
+    int lo = 32767, hi = -32768;
+    const int16_t *p = self->verts;
+    for (int i = 0; i < n; i++, p += 6) {
+        int a = p[1], b = p[3], c = p[5];
+        int t = a < b ? a : b;
+        if (c < t) {
+            t = c;
+        }
+        if (t < lo) {
+            lo = t;
+        }
+        t = a > b ? a : b;
+        if (c > t) {
+            t = c;
+        }
+        if (t > hi) {
+            hi = t;
+        }
+    }
+    self->by1 = (int16_t)lo;
+    self->by2 = (int16_t)(hi < 32767 ? hi + 1 : 32767);      // exclusive; empty batch -> by1 >= by2
     picogame_dirty_union(&self->dx1, 0, 0, 32767, 32767);   // clipped to the play rect later
     return mp_const_none;
 }

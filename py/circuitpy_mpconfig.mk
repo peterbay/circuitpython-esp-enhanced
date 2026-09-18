@@ -632,6 +632,15 @@ CFLAGS += -DCIRCUITPY_PICOGAME_FRAMEBUFFER=$(CIRCUITPY_PICOGAME_FRAMEBUFFER)
 ifneq ($(CIRCUITPY_PICOGAME_FPU),)
 CFLAGS += -DCIRCUITPY_PICOGAME_FPU=$(CIRCUITPY_PICOGAME_FPU)
 endif
+# Run the sprite blit from SRAM instead of executing it from flash through the XIP cache.
+# Measured on RP2040: sprites 10-30% faster (the spread is flash layout between builds),
+# because a handful of sprites per frame get the blit evicted between calls and pay a cold
+# miss every time. Tilemaps gain nothing - they call
+# the same blit in a tight loop, which keeps itself cached. Costs about 8 KB of heap, so it is
+# off by default and a board with RAM to spare opts in. Needs a port whose linker script
+# collects .time_critical (the RP2 SDK ones do); elsewhere it is a no-op.
+CIRCUITPY_PICOGAME_RAM_KERNELS ?= 0
+CFLAGS += -DCIRCUITPY_PICOGAME_RAM_KERNELS=$(CIRCUITPY_PICOGAME_RAM_KERNELS)
 
 CIRCUITPY_STATUS_BAR ?= 1
 CFLAGS += -DCIRCUITPY_STATUS_BAR=$(CIRCUITPY_STATUS_BAR)

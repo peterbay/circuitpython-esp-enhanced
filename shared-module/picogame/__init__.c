@@ -115,14 +115,37 @@ static inline void picogame_fx_put(uint16_t *dst, uint16_t src, int x, int y, co
     }
 }
 
+// Copy one sprite row between two at-least-2-byte-aligned pixel buffers.
+//
+// When source and destination share word alignment, memcpy is the fastest thing
+// available here: RP2040 links the bootrom implementation, measured at 1.8 cycles per
+// pixel. When they do not - about half the rows, because buf is word-aligned so it comes
+// down to the parities of the source and destination row offsets, which are independent -
+// that same memcpy cannot use word accesses and collapses to 13.9 cycles per pixel, and
+// a plain halfword loop beats it several times over.
+//
+// Replacing the ALIGNED case with an inline four-words-at-a-time loop was tried and
+// measured worse (2.8 cyc/px and a bigger per-row prologue): GCC lowers it to ldr/str
+// pairs, not to ldmia/stmia, on Thumb-1. Leave that half to memcpy.
+static inline void picogame_row_copy(uint16_t *dst, const uint16_t *src, int n) {
+    if ((((uintptr_t)dst ^ (uintptr_t)src) & 2u) == 0) {
+        memcpy(dst, src, (size_t)n * 2u);
+        return;
+    }
+    #pragma GCC unroll 4
+    for (int i = 0; i < n; i++) {
+        dst[i] = src[i];
+    }
+}
+
 // Fetch one source pixel from HOISTED scalars: the caller lifts format/data/palette/transparency
 // out of the bitmap struct ONCE before its loop, so this does no per-pixel reload of bm fields (a
 // `*dst` uint16_t store would otherwise force GCC to reload bm's uint16_t members every pixel). `idx`
 // is the linear source offset (srow + sx). Returns false on the transparent key. Used by the scaled /
 // affine / transpose paths; the unscaled fast path inlines the read directly.
 
-void picogame_blit_bitmap(
-    uint16_t *buf, int bw, int bh, int ox, int oy,
+void PICOGAME_RAM_FUNC(picogame_blit_bitmap)(
+    uint16_t * buf, int bw, int bh, int ox, int oy,
     picogame_bitmap_obj_t *bm, int dx0, int dy0, int frame, bool fx, bool fy,
     bool transpose, const picogame_fx_t *fxm) {
     if (bm == NULL) {
@@ -165,8 +188,7 @@ void picogame_blit_bitmap(
         int t_fmt = bm->format;                    // hoist bm fields once (see src_pixel_s)
         const uint8_t *t_data = bm->data;
         const uint16_t *t_pal = bm->palette;
-        bool t_transp = bm->has_transparent;
-        uint16_t t_key = bm->transparent;
+        int32_t t_key = picogame_key_of(bm);
         for (int y = ys; y < ye; y++) {
             int ly = y - dy0;                      // -> source X (0..sw-1)
             int su = fx ? sw - 1 - ly : ly;        // per-row: source column is constant across the row
@@ -176,7 +198,7 @@ void picogame_blit_bitmap(
             int svstep = fy ? -1 : 1;
             for (int x = xs; x < xe; x++) {
                 uint16_t val;
-                if (src_pixel_s(t_fmt, t_data, t_pal, t_transp, t_key,
+                if (src_pixel_s(t_fmt, t_data, t_pal, t_key,
                     sv * stride0 + frame_col0 + su, &val)) {
                     picogame_fx_put(dst, val, x, y, fxm);
                 }
@@ -198,6 +220,30 @@ void picogame_blit_bitmap(
     int frame_col = frame * sw;
     int stride = bm->stride;
     bool transp = bm->has_transparent;
+    int run = x_end - x_start;
+    int nrows = y_end - y_start;
+
+    // Hoist out of the ROW loop everything that cannot change between rows. GCC only
+    // unswitches the innermost (pixel) loop, so leaving the flip / transparency /
+    // effect selectors in the row body made every row re-decide them: ~20 of the 105
+    // cycles per sprite row measured on M0+, against 1.5 cycles per pixel of actual
+    // copying. Row walking is strength-reduced to adds for the same reason - the
+    // per-row `sy * stride` multiply and `(y - oy) * bw` address computation are gone.
+    int sy0 = y_start - dy0;
+    int systep = 1;
+    if (fy) {
+        sy0 = sh - 1 - sy0;
+        systep = -1;
+    }
+    int sx0 = x_start - dx0;
+    int xstep = 1;
+    if (fx) {
+        sx0 = sw - 1 - sx0;
+        xstep = -1;
+    }
+    int srow = sy0 * stride + frame_col;
+    int srow_step = systep * stride;
+    uint16_t *dstrow = buf + (y_start - oy) * bw + (x_start - ox);
 
     if (bm->format == PICOGAME_FMT_PAL8) {
         const uint8_t *data = bm->data;
@@ -211,21 +257,20 @@ void picogame_blit_bitmap(
         // TO RESTORE FULL BOUNDS-SAFETY (at that cost) reinstate the clamp - add `unsigned pe =
         // bm->pal_entries;` here and `if (idx >= pe) { idx = 0; }` after each `idx = data[...]` in BOTH
         // loops below, and the matching guard in src_pixel() (search "blit contract").
-        for (int y = y_start; y < y_end; y++) {
-            int sy = y - dy0;
-            if (fy) {
-                sy = sh - 1 - sy;
-            }
-            int srow = sy * stride + frame_col;
-            uint16_t *dst = buf + (y - oy) * bw + (x_start - ox);
-            int sx = x_start - dx0, xstep = 1;       // hoist flip_x: walk sx +/-1, no per-pixel test
-            if (fx) {
-                sx = sw - 1 - sx;
-                xstep = -1;
-            }
-            if (fxm == NULL) {                   // plain copy (most sprites): no per-pixel fx branch/call
+        //
+        // DO NOT fold `!transp` into the key as a -1 sentinel (`int32_t key = transp ? ... : -1;` and
+        // `if (idx != key)`). It looks like one compare less per pixel, but GCC 14.2 DOES unswitch
+        // these two loops on `transp` even at -Os: the opaque copy comes out with no per-pixel test at
+        // all. A runtime sentinel takes that away, and measured: opaque PAL8 +33%, opaque flipped
+        // RGB565 +37%, an 8x8 tilemap background +12% - while blit_bitmap itself shrank 1048 bytes,
+        // which is the loop clones disappearing. src_pixel_s (the scaled/affine/mode7 sampler) is the
+        // opposite case and DOES take the sentinel - it is not a loop GCC can clone.
+        if (fxm == NULL) {                   // plain copy (most sprites): no per-pixel fx branch/call
+            for (int i = 0; i < nrows; i++) {
+                uint16_t *dst = dstrow;
+                int sx = sx0;
                 #pragma GCC unroll 4   // hot path: unrolling the plain sprite blit is ~6% faster on M0+ (measured), +0.6KB
-                for (int x = x_start; x < x_end; x++) {
+                for (int x = 0; x < run; x++) {
                     uint8_t idx = data[srow + sx];
                     if (!transp || idx != key) {
                         *dst = pal[idx];
@@ -233,7 +278,15 @@ void picogame_blit_bitmap(
                     dst++;
                     sx += xstep;
                 }
-            } else {
+                srow += srow_step;
+                dstrow += bw;
+            }
+        } else {
+            // The effect path needs true screen coords (DITHER keys off them), so this
+            // one keeps x/y as the loop variables.
+            for (int y = y_start; y < y_end; y++) {
+                uint16_t *dst = dstrow;
+                int sx = sx0;
                 for (int x = x_start; x < x_end; x++) {
                     uint8_t idx = data[srow + sx];
                     if (!transp || idx != key) {
@@ -242,6 +295,8 @@ void picogame_blit_bitmap(
                     dst++;
                     sx += xstep;
                 }
+                srow += srow_step;
+                dstrow += bw;
             }
         }
     } else { // PICOGAME_FMT_RGB565
@@ -252,26 +307,20 @@ void picogame_blit_bitmap(
         const uint16_t *data = (const uint16_t *)bm->data;
         #pragma GCC diagnostic pop
         uint16_t key = bm->transparent;
-        for (int y = y_start; y < y_end; y++) {
-            int sy = y - dy0;
-            if (fy) {
-                sy = sh - 1 - sy;
+        if (fxm == NULL && !transp && !fx) {
+            // Opaque + not x-flipped: the row is contiguous in both src and dst -> one
+            // block copy per row (either pointer may be only 2-byte aligned).
+            for (int i = 0; i < nrows; i++) {
+                picogame_row_copy(dstrow, &data[srow + sx0], run);
+                srow += srow_step;
+                dstrow += bw;
             }
-            int srow = sy * stride + frame_col;
-            uint16_t *dst = buf + (y - oy) * bw + (x_start - ox);
-            int sx = x_start - dx0, xstep = 1;       // hoist flip_x: walk sx +/-1, no per-pixel test
-            if (fx) {
-                sx = sw - 1 - sx;
-                xstep = -1;
-            }
-            if (fxm == NULL) {                   // plain copy (most sprites): no per-pixel fx branch/call
-                if (!transp && !fx) {            // opaque + not x-flipped: the row is contiguous in
-                    // both src and dst -> one memcpy (dst may be 2-byte aligned; memcpy handles that).
-                    memcpy(dst, &data[srow + sx], (size_t)(x_end - x_start) * 2u);
-                    continue;
-                }
+        } else if (fxm == NULL) {            // plain copy (most sprites): no per-pixel fx branch/call
+            for (int i = 0; i < nrows; i++) {
+                uint16_t *dst = dstrow;
+                int sx = sx0;
                 #pragma GCC unroll 4   // hot path: unrolling the plain sprite blit is ~6% faster on M0+ (measured), +0.6KB
-                for (int x = x_start; x < x_end; x++) {
+                for (int x = 0; x < run; x++) {
                     uint16_t v = data[srow + sx];
                     if (!transp || v != key) {
                         *dst = v;
@@ -279,7 +328,15 @@ void picogame_blit_bitmap(
                     dst++;
                     sx += xstep;
                 }
-            } else {
+                srow += srow_step;
+                dstrow += bw;
+            }
+        } else {
+            // The effect path needs true screen coords (DITHER keys off them), so this
+            // one keeps x/y as the loop variables.
+            for (int y = y_start; y < y_end; y++) {
+                uint16_t *dst = dstrow;
+                int sx = sx0;
                 for (int x = x_start; x < x_end; x++) {
                     uint16_t v = data[srow + sx];
                     if (!transp || v != key) {
@@ -288,6 +345,8 @@ void picogame_blit_bitmap(
                     dst++;
                     sx += xstep;
                 }
+                srow += srow_step;
+                dstrow += bw;
             }
         }
     }
@@ -327,8 +386,8 @@ void picogame_blit_bitmap_scaled(
     int s_fmt = bm->format;                       // hoist bm fields once (see src_pixel_s)
     const uint8_t *s_data = bm->data;
     const uint16_t *s_pal = bm->palette;
-    bool s_transp = bm->has_transparent;
-    uint16_t s_key = bm->transparent;
+    bool s_transp = bm->has_transparent;          // still selects the opaque fast paths below
+    int32_t s_key = picogame_key_of(bm);
     if (scale == 512 && !fx && !fy && fxm == NULL && !s_transp && s_fmt == PICOGAME_FMT_RGB565
         && (((uintptr_t)s_data & 1) == 0)) {
         // 2x integer upscale fast path - the half-res-canvas genre's per-frame blit (a full-screen
@@ -470,7 +529,7 @@ void picogame_blit_bitmap_scaled(
                 sx = sw - 1 - sx;
             }
             uint16_t val;
-            if (src_pixel_s(s_fmt, s_data, s_pal, s_transp, s_key, srow + sx, &val)) {
+            if (src_pixel_s(s_fmt, s_data, s_pal, s_key, srow + sx, &val)) {
                 picogame_fx_put(&drow[x - ox], val, x, y, fxm);
             }
         }
@@ -648,8 +707,7 @@ void picogame_blit_bitmap_affine(
     int a_fmt = bm->format;                       // hoist bm fields once (see src_pixel_s)
     const uint8_t *a_data = bm->data;
     const uint16_t *a_pal = bm->palette;
-    bool a_transp = bm->has_transparent;
-    uint16_t a_key = bm->transparent;
+    int32_t a_key = picogame_key_of(bm);
     int x_start = picogame_imax(minx, ox), y_start = picogame_imax(miny, oy);
     int x_end = picogame_imin(maxx + 1, ox + bw), y_end = picogame_imin(maxy + 1, oy + bh);
     if (x_start >= x_end || y_start >= y_end) {
@@ -685,9 +743,14 @@ void picogame_blit_bitmap_affine(
             int su = uacc >> 16, sv = vacc >> 16;   // already the flipped source coords
             uacc += uxc;
             vacc += vxc;
-            if (su >= 0 && su < sw && sv >= 0 && sv < sh) {
+            // Unsigned compares: a negative coordinate wraps to a huge unsigned and
+            // fails the same branch, so two tests do what four signed ones did. The
+            // identical change in Canvas's put() made that function smaller as well
+            // as faster, and this loop runs once per destination pixel of a rotated
+            // sprite - the most expensive per-pixel path in the module.
+            if ((unsigned)su < (unsigned)sw && (unsigned)sv < (unsigned)sh) {
                 uint16_t val;
-                if (src_pixel_s(a_fmt, a_data, a_pal, a_transp, a_key,
+                if (src_pixel_s(a_fmt, a_data, a_pal, a_key,
                     sv * stride + frame_col + su, &val)) {
                     picogame_fx_put(&drow[x - ox], val, x, y, fxm);
                 }
@@ -794,6 +857,13 @@ mp_obj_t picogame_blit_strip_layers(
     mp_obj_t *items, uint8_t *kinds, size_t n, uint16_t background, int ox, int oy) {
     mp_obj_t pending = MP_OBJ_NULL;               // a BaseException latched from a StripDraw callback
     int npix = region_w * strip_h;
+    // MEASURED AND DROPPED: skipping this fill when the bottom layer is a proven full-strip
+    // opaque coverer (tilemap spanning the region with no holes, or an opaque canvas) saved
+    // 0.21 ms a frame - tilemap backgrounds went 5.05 -> 4.85 ms - for 432 bytes of flash. That
+    // ratio is several times worse than other things already turned down on size, mostly because
+    // unrolling the word fill (see picogame_fill_words) had already halved what there was to
+    // save. Worth revisiting only on a framebuffer target, where the same 0.21 ms is ~6% of the
+    // frame instead of ~1%.
     if (background == 0) {
         memset(buf, 0, (size_t)npix * 2);            // common case (black/clear) -> fast bulk clear
     } else {
@@ -815,9 +885,7 @@ mp_obj_t picogame_blit_strip_layers(
         uint32_t *w32 = (uint32_t *)(buf + i);       // now 4-byte aligned
         #pragma GCC diagnostic pop
         int nw = (npix - i) >> 1;
-        for (int k = 0; k < nw; k++) {
-            w32[k] = w;
-        }
+        picogame_fill_words(w32, nw, w);
         i += nw << 1;
         if (i < npix) {                              // odd trailing pixel
             buf[i] = background;
@@ -893,6 +961,9 @@ mp_obj_t picogame_blit_strip_layers(
             // reject vs THIS strip, then the Canvas rasteriser through a stack view over
             // the strip buffer. Screen-space by design: the view offset is not applied.
             picogame_triangles_obj_t *t = MP_OBJ_TO_PTR(items[i]);
+            if (t->by1 >= strip_top + strip_h || t->by2 <= strip_top) {
+                continue;         // whole batch misses this strip - see by1/by2 in the struct
+            }
             picogame_canvas_obj_t v;
             v.data = buf;
             v.data_obj = MP_OBJ_NULL;
@@ -909,6 +980,19 @@ mp_obj_t picogame_blit_strip_layers(
         } else {
             picogame_sprite_obj_t *spr = MP_OBJ_TO_PTR(items[i]);
             if (!(spr->flags & PICOGAME_SPR_VISIBLE)) {
+                continue;
+            }
+            // CIRCUITPY-CHANGE: reject the sprite against THIS strip before entering
+            // the blitter. blit_sprite clips correctly on its own, but it first does
+            // work that is wasted for a strip the sprite does not touch -- picking the
+            // effect, and for a tinted PAL8 sprite baking a whole palette -- and the
+            // dispatch above runs once per strip, so that repeats for every strip of
+            // the frame. Same aabb the dirty rects are built from, so a sprite is
+            // blitted for exactly the strips its rect claimed.
+            int ax1, ay1, ax2, ay2;
+            picogame_sprite_aabb(spr, &ax1, &ay1, &ax2, &ay2);
+            if (ay1 + ioy >= strip_top + strip_h || ay2 + ioy <= strip_top ||
+                ax1 + iox >= x0 + region_w || ax2 + iox <= x0) {
                 continue;
             }
             blit_sprite(buf, region_w, strip_h, x0, strip_top, spr, iox, ioy);

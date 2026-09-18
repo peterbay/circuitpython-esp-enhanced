@@ -210,6 +210,15 @@ int picogame_scene_compute_dirty_rects(
     }
 
     // Cap the count by repeatedly merging the pair that wastes the fewest pixels.
+    //
+    // MEASURED COST, so nobody has to rediscover it: the pair search is O(n^2) and runs once per
+    // merge, so on a busy frame this loop - not the painting - is the frame. With 32 changed items
+    // it is 3.2 ms on RP2040 (5421 pair evaluations at ~58 cycles each); at 16 it is 0.5 ms, and
+    // below max_rects it does not run at all. `n` is bounded at PICOGAME_RAW_RECTS, and overflow
+    // above that falls back to one full-screen repaint, so it cannot run away - but the 6-to-64
+    // band is dear. Hoisting the areas into a scratch array and building the union from locals
+    // buys 25% for 184 bytes of flash and 256 of stack, which was judged not worth it; the real
+    // fix would be an incremental best-pair table (recompute only the rows a merge touched).
     while (nr > max_rects) {
         int bi = 0, bj = 1;
         long best = -1;
@@ -219,6 +228,10 @@ int picogame_scene_compute_dirty_rects(
                 picogame_rect_t u = raw[i];
                 rect_merge(&u, &raw[j]);
                 long waste = rect_area(&u) - area_i - rect_area(&raw[j]);
+                // NOTE: `best < 0` doubles as "nothing picked yet", but waste CAN be negative
+                // once a merge here has grown a rect into overlapping another, and then the next
+                // pair examined replaces the pick unconditionally. Coverage stays correct; only
+                // the choice is worse than it should be.
                 if (best < 0 || waste < best) {
                     best = waste;
                     bi = i;

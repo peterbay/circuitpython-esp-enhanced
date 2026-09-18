@@ -50,7 +50,11 @@ static void mark(picogame_canvas_obj_t *cv, int lx1, int ly1, int lx2, int ly2) 
 // 8 calls/iteration). Inlining bloated them (circle was ~1.4 KB); a real call keeps
 // them small. Shapes aren't the hot path (the sprite/tilemap blits don't use put).
 static __attribute__((noinline)) void put(picogame_canvas_obj_t *cv, int x, int y, uint16_t c) {
-    if (x >= 0 && y >= 0 && x < cv->w && y < cv->h) {
+    // Unsigned compares fold the two negative tests into the upper-bound ones: a
+    // negative coordinate wraps to a huge unsigned and fails the same branch. Three
+    // instructions and three cycles less per pixel than testing the sign separately,
+    // on every shape that plots through here.
+    if ((unsigned)x < (unsigned)cv->w && (unsigned)y < (unsigned)cv->h) {
         cv->data[y * cv->w + x] = c;
     }
 }
@@ -60,8 +64,23 @@ static __attribute__((noinline)) void put(picogame_canvas_obj_t *cv, int x, int 
 // so it stays safe on Cortex-M0+ (RP2040), which faults on an unaligned 32-bit access - a StripDraw
 // view's rows into the render strip can start on an odd pixel. This is the per-frame path for
 // view.clear / Sky / HUD-bar / Fade fills, so the word-fill is worth it.
+// Deliberately NOT PICOGAME_RAM_FUNC: measured. Every caller is in flash, so putting this in SRAM
+// routes each call through a long-branch veneer, and the per-row triangle cost went 91 -> 100
+// cycles while the word-fill loop itself did not move (3.69 cyc/px either way). Short spans call
+// this often enough that the trampoline outweighs the faster fetch.
 static void fill565(uint16_t *p, int n, uint16_t color) {
     if (n <= 0) {
+        return;
+    }
+    // Short spans are what the scanline shapes actually ask for - a triangle row, a raycast wall
+    // run - and for those, plain halfword stores beat both the memset call and the word path's
+    // entry work. Taking them out first keeps that entry off the hot short case: unrolling the
+    // word loop made wide fills 2.3x faster but widened this prologue, which showed up as
+    // +11 cycles on every triangle row until this early-out took them off it.
+    if (n <= 4) {
+        do {
+            *p++ = color;
+        } while (--n);
         return;
     }
     if (color == 0) {
@@ -77,10 +96,7 @@ static void fill565(uint16_t *p, int n, uint16_t color) {
     #pragma GCC diagnostic ignored "-Wcast-align"
     uint32_t *w32 = (uint32_t *)p;             // now 4-byte aligned
     #pragma GCC diagnostic pop
-    int nw = n >> 1;
-    for (int i = 0; i < nw; i++) {
-        w32[i] = w;
-    }
+    picogame_fill_words(w32, n >> 1, w);
     if (n & 1) {                               // trailing odd pixel
         p[n - 1] = color;
     }
@@ -177,7 +193,7 @@ typedef struct {
     int fmt, stride, shx, shy, mx, my, horizon, y_off;
     int32_t z, rx0, ry0, rsx, rsy, cam_x, cam_y;
     bool transp;
-    uint16_t key;
+    int32_t key;
 } mode7_ctx_t;
 
 static void mode7_rows(void *arg, int lo, int hi) {
@@ -215,7 +231,7 @@ static void mode7_rows(void *arg, int lo, int hi) {
         for (int sx = 0; sx < w; sx++) {
             int tx = (fx >> c->shx) & c->mx, ty = (fy >> c->shy) & c->my;
             uint16_t val;
-            if (src_pixel_s(c->fmt, c->data, c->pal, c->transp, c->key, ty * c->stride + tx, &val)) {
+            if (src_pixel_s(c->fmt, c->data, c->pal, c->key, ty * c->stride + tx, &val)) {
                 drow[sx] = val;
             }
             fx += stepx;
@@ -245,8 +261,8 @@ void picogame_canvas_mode7(picogame_canvas_obj_t *cv, picogame_bitmap_obj_t *tex
     int fmt = tex->format;
     const uint8_t *data = tex->data;
     const uint16_t *pal = tex->palette;
-    bool transp = tex->has_transparent;
-    uint16_t key = tex->transparent;
+    bool transp = tex->has_transparent;           // still gates the interp fast path above
+    int32_t key = picogame_key_of(tex);
     // sy is a row WITHIN this surface (a StripDraw view is a Canvas onto one strip);
     // the absolute screen row is sy + y_off, so the horizon test uses that. y_off = 0
     // for a full-screen Canvas, = the strip's screen y for a StripDraw view (0-RAM floor).
@@ -270,6 +286,41 @@ void picogame_canvas_rect(picogame_canvas_obj_t *cv, int x, int y, int w, int h,
 }
 
 void picogame_canvas_line(picogame_canvas_obj_t *cv, int x0, int y0, int x1, int y1, uint16_t color) {
+    // Reject the whole line by its bounding box. Without this the walk below steps
+    // over every pixel of a line that is entirely off the surface and throws each one
+    // away in put(), which is unbounded work for world-space lines behind a camera.
+    // The bounds are scoped to this block on purpose: keeping them live across the
+    // Bresenham loop below spilled its step variables to the stack and cost it 4%.
+    {
+        int bx1 = x0 < x1 ? x0 : x1, bx2 = x0 > x1 ? x0 : x1;
+        int by1 = y0 < y1 ? y0 : y1, by2 = y0 > y1 ? y0 : y1;
+        if (bx2 < 0 || by2 < 0 || bx1 >= cv->w || by1 >= cv->h) {
+            return;
+        }
+    }
+    // Axis-aligned lines are a span, not a walk: one word-filled run instead of a
+    // clipped, indexed store per pixel. Rules, bars, borders and crosshairs are all
+    // this case, and the horizontal one is what span565 already does.
+    if (y0 == y1) {
+        int xs = x0 < x1 ? x0 : x1, xe = x0 > x1 ? x0 : x1;
+        span565(cv, y0, xs, xe, color);
+        mark(cv, xs, y0, xe + 1, y0 + 1);
+        return;
+    }
+    if (x0 == x1) {
+        // The reject above leaves 0 <= x0 < w here: a vertical line's bounding box is
+        // one column wide, so both out-of-range cases already returned.
+        int ys = y0 < y1 ? y0 : y1, ye = (y0 > y1 ? y0 : y1) + 1;
+        int cys = ys < 0 ? 0 : ys;
+        int cye = ye > cv->h ? cv->h : ye;
+        uint16_t *p = cv->data + (size_t)cys * cv->w + x0;
+        for (int yy = cys; yy < cye; yy++) {
+            *p = color;
+            p += cv->w;
+        }
+        mark(cv, x0, ys, x0 + 1, ye);
+        return;
+    }
     int dx = x1 - x0, dy = y1 - y0;
     int adx = dx < 0 ? -dx : dx;
     int ady = dy < 0 ? -dy : dy;
@@ -299,7 +350,10 @@ void picogame_canvas_line(picogame_canvas_obj_t *cv, int x0, int y0, int x1, int
 
 // Clamp a row span to the surface and word-fill it (the span-pass idiom shared by the filled
 // shapes; the per-pixel put() loops it replaced clipped and indexed every pixel).
-static inline int64_t edge_slope(int32_t dx, int32_t dy) {
+// NOT inlined: fill_triangle calls this three times, and inlining put a copy of BOTH the 32-bit
+// and the 64-bit divide at each site - six divide call sites, of which three are the rarely taken
+// wide-edge path. One out-of-line copy is the same work per call and a good deal smaller.
+static __attribute__((noinline)) int64_t edge_slope(int32_t dx, int32_t dy) {
     if (dx >= -32768 && dx <= 32767) {
         return (int32_t)(dx << 16) / dy;
     }
@@ -413,8 +467,17 @@ void picogame_canvas_fill_triangle(picogame_canvas_obj_t *cv,
         // top half: rows [Y0, Y1) walk edges A->C and A->B
         int ys = Y[0] < 0 ? 0 : Y[0];
         int ye = (Y[1] - 1) < (h - 1) ? (Y[1] - 1) : (h - 1);
-        int64_t accAC = ((int64_t)X[0] << 16) + sAC * (ys - Y[0]);
-        int64_t acc2 = ((int64_t)X[0] << 16) + sAB * (ys - Y[0]);
+        // `ys - Y[0]` is how many rows the clip at the top of the screen skipped, which is ZERO
+        // for any triangle that starts on-screen - the usual case. Each of these seeds is an
+        // int64 x int32 multiply, i.e. a call to __aeabi_lmul; a compare skips three of the four
+        // most of the time. (Measured 737 cycles of setup per triangle, ~100 of it these calls.)
+        int skip = ys - Y[0];
+        int64_t accAC = (int64_t)X[0] << 16;
+        int64_t acc2 = accAC;
+        if (skip) {
+            accAC += sAC * skip;
+            acc2 += sAB * skip;
+        }
         for (int y = ys; y <= ye; y++) {
             int xac = (int)(accAC >> 16);
             int xsh = (int)(acc2 >> 16);
@@ -434,8 +497,12 @@ void picogame_canvas_fill_triangle(picogame_canvas_obj_t *cv,
         // bottom half: rows [Y1, Y2] walk edges A->C and B->C (a flat bottom degenerates to sBC=0)
         ys = Y[1] < 0 ? 0 : Y[1];
         ye = Y[2] < (h - 1) ? Y[2] : (h - 1);
-        accAC = ((int64_t)X[0] << 16) + sAC * (ys - Y[0]);
-        acc2 = ((int64_t)X[1] << 16) + sBC * (ys - Y[1]);
+        accAC = ((int64_t)X[0] << 16) + sAC * (ys - Y[0]);   // spans the whole top half: rarely 0
+        acc2 = (int64_t)X[1] << 16;
+        skip = ys - Y[1];
+        if (skip) {
+            acc2 += sBC * skip;
+        }
         for (int y = ys; y <= ye; y++) {
             int xac = (int)(accAC >> 16);
             int xsh = (int)(acc2 >> 16);
@@ -468,21 +535,38 @@ void picogame_canvas_ellipse(picogame_canvas_obj_t *cv, int cx, int cy, int rx, 
     // canvas that fits in RAM on this target. A larger ellipse (only reachable on a big-RAM board with an
     // oversized canvas) renders a wrong shape - never a fault, since put() clips every pixel to the canvas.
     long rx2 = (long)rx * rx, ry2 = (long)ry * ry, rr = rx2 * ry2;
-    for (int dy = -ry; dy <= ry; dy++) {
-        int s = 0;
-        while ((long)(s + 1) * (s + 1) * ry2 + (long)dy * dy * rx2 <= rr) {
-            s++;
+    // Both extents depend on the offset only through its SQUARE, so the two halves
+    // of each pass share a width and the halves can be drawn together. That also
+    // makes the extent monotonic, so it carries from one row to the next and is
+    // decremented instead of being searched from zero every row - the same shape
+    // fill_ellipse uses below. Searching from zero cost one pass over the whole
+    // half-disc, O(r^2) multiplies where O(r) will do; on a radius of 50 that was
+    // 85% of the time this function took. The pixels are identical either way.
+    int s = rx;
+    for (int dy = 0; dy <= ry; dy++) {
+        long lim = rr - (long)dy * dy * rx2;       // s*s*ry2 <= lim <=> the old (s+1)-increment bound
+        while ((long)s * s * ry2 > lim) {
+            s--;
         }
         put(cv, cx - s, cy + dy, color);
         put(cv, cx + s, cy + dy, color);
-    }
-    for (int dx = -rx; dx <= rx; dx++) {
-        int s = 0;
-        while ((long)(s + 1) * (s + 1) * rx2 + (long)dx * dx * ry2 <= rr) {
-            s++;
+        if (dy) {
+            put(cv, cx - s, cy - dy, color);
+            put(cv, cx + s, cy - dy, color);
         }
-        put(cv, cx + dx, cy - s, color);
-        put(cv, cx + dx, cy + s, color);
+    }
+    int t = ry;
+    for (int dx = 0; dx <= rx; dx++) {
+        long lim = rr - (long)dx * dx * ry2;
+        while ((long)t * t * rx2 > lim) {
+            t--;
+        }
+        put(cv, cx + dx, cy - t, color);
+        put(cv, cx + dx, cy + t, color);
+        if (dx) {
+            put(cv, cx - dx, cy - t, color);
+            put(cv, cx - dx, cy + t, color);
+        }
     }
     mark(cv, cx - rx, cy - ry, cx + rx + 1, cy + ry + 1);
 }
@@ -573,6 +657,13 @@ void picogame_canvas_text(picogame_canvas_obj_t *cv, int x, int y, const char *t
     bool onebit = (sheet->bits_per_value == 1);   // terminalio.FONT is 1-bpp; other fonts take the fallback
     const uint8_t *sdata = (const uint8_t *)sheet->data;
     int sstride_b = sheet->stride * 4;            // atlas row stride in BYTES (stride counts uint32)
+    // The atlas bit layout is constant for the whole string, but the inner loop stores
+    // through a uint16_t* and sheet->bitmask IS a uint16_t, so the compiler must assume
+    // they can alias and reloads the descriptor on every pixel. Copying the three fields
+    // into locals is what lets them stay in registers: about a third of that loop.
+    int sx_shift = sheet->x_shift;
+    size_t sx_mask = sheet->x_mask;
+    uint16_t sbitmask = sheet->bitmask;
     for (const uint8_t *p = (const uint8_t *)text; *p; p++) {
         uint8_t gi = fontio_builtinfont_get_glyph_index(f, *p);
         if (gi != 0xff) {                   // 0xff = no glyph -> blank advance
@@ -588,7 +679,7 @@ void picogame_canvas_text(picogame_canvas_obj_t *cv, int x, int y, const char *t
                     const uint8_t *srow = sdata + (size_t)sy * sstride_b;
                     for (int gx = gx0; gx < gx1; gx++) {
                         int sx = tx + gx;
-                        if ((srow[sx >> sheet->x_shift] >> (sheet->x_mask - (sx & sheet->x_mask))) & sheet->bitmask) {
+                        if ((srow[sx >> sx_shift] >> (sx_mask - ((size_t)sx & sx_mask))) & sbitmask) {
                             drow[gx] = fg;
                         } else if (has_bg) {
                             drow[gx] = bg;
