@@ -15,6 +15,7 @@
 #include "py/compile.h"
 #include "py/frozenmod.h"
 #include "py/mphal.h"
+#include "py/persistentcode.h"
 #include "py/runtime.h"
 #include "py/repl.h"
 #include "py/gc.h"
@@ -81,12 +82,24 @@
 #include "shared-bindings/epaperdisplay/EPaperDisplay.h"
 #endif
 
+#if CIRCUITPY_PICOGAME_RGB444
+#include "shared-module/picogame/__init__.h"
+#endif
+
 #if CIRCUITPY_KEYPAD
 #include "shared-module/keypad/__init__.h"
 #endif
 
+#if CIRCUITPY_STORAGE_MAP_FILE
+#include "shared-bindings/storage/__init__.h"
+#endif
+
 #if CIRCUITPY_AUDIOFILEWRITER
 #include "shared-module/audiofilewriter/AudioFileWriter.h"
+#endif
+
+#if CIRCUITPY_USB_HOST_AUDIO
+#include "shared-module/usb_host_audio/USBIn.h"
 #endif
 
 #if CIRCUITPY_MEMORYMONITOR
@@ -375,6 +388,11 @@ static void cleanup_after_vm(mp_obj_t exception) {
     atexit_reset();
     #endif
 
+    // Restore the panel's pixel format while the display bus is still alive.
+    #if CIRCUITPY_PICOGAME_RGB444
+    picogame_reset();
+    #endif
+
     // Turn off the display and flush the filesystem before the heap disappears.
     #if CIRCUITPY_DISPLAYIO
     reset_displays();
@@ -389,7 +407,9 @@ static void cleanup_after_vm(mp_obj_t exception) {
     bleio_user_reset();
     #endif
 
-    #if CIRCUITPY_CANIO
+    #if CIRCUITPY_CANIO && CIRCUITPY_BULK_RESET
+    // Bulk-reset ports reset CAN controllers here. Finalizer ports rely on
+    // GC finalizers calling deinit on the CAN objects.
     common_hal_canio_reset();
     #endif
 
@@ -397,8 +417,16 @@ static void cleanup_after_vm(mp_obj_t exception) {
     keypad_reset();
     #endif
 
+    #if CIRCUITPY_STORAGE_MAP_FILE
+    storage_map_file_reset();
+    #endif
+
     #if CIRCUITPY_AUDIOFILEWRITER
     audiofilewriter_reset();
+    #endif
+
+    #if CIRCUITPY_USB_HOST_AUDIO
+    usb_host_audio_reset();
     #endif
 
     // Close user-initiated sockets.
@@ -426,7 +454,9 @@ static void cleanup_after_vm(mp_obj_t exception) {
     stop_mp();
 
     // Don't reset pins until finalisers have run.
+    #if CIRCUITPY_BULK_RESET
     reset_all_pins();
+    #endif
 
     // Let the workflows know we've reset in case they want to restart.
     supervisor_workflow_reset();
@@ -806,7 +836,9 @@ static bool __attribute__((noinline)) run_code_py(safe_mode_t safe_mode, bool *s
         common_hal_alarm_clear_pin_preservations();
         #endif
         // Reset pins, as if there was a hard reset.
+        #if CIRCUITPY_BULK_RESET
         reset_all_pins();
+        #endif
         // Pretend that the next run is the first run, as if we were reset.
         *simulate_reset = true;
     }
@@ -877,8 +909,8 @@ static void __attribute__ ((noinline)) run_boot_py(safe_mode_t safe_mode) {
         #endif
 
         // Get the base filesystem.
-        fs_user_mount_t *vfs = filesystem_circuitpy();
-        FATFS *fs = &vfs->fatfs;
+        supervisor_vfs_t *vfs_root = filesystem_circuitpy();
+        fs_user_mount_t *vfs = vfs_root == NULL ? NULL : &vfs_root->fat;
 
         // Allow boot.py access to CIRCUITPY, and allow writes to boot_out.txt.
         // We can't use the regular flags for this, because they might get modified inside boot.py.
@@ -886,6 +918,9 @@ static void __attribute__ ((noinline)) run_boot_py(safe_mode_t safe_mode) {
 
         // Write version info
         mp_printf(&mp_plat_print, "%s\nBoard ID:%s\n", MICROPY_FULL_VERSION_INFO, CIRCUITPY_BOARD_ID);
+        #if MICROPY_PERSISTENT_CODE_LOAD_NATIVE
+        mp_printf(&mp_plat_print, "%q:%s\n", MP_QSTR_architecture, MPY_FEATURE_ARCH_NAME);
+        #endif
         #if CIRCUITPY_MICROCONTROLLER && COMMON_HAL_MCU_PROCESSOR_UID_LENGTH > 0
         uint8_t raw_id[COMMON_HAL_MCU_PROCESSOR_UID_LENGTH];
         common_hal_mcu_processor_get_uid(raw_id);
@@ -907,15 +942,17 @@ static void __attribute__ ((noinline)) run_boot_py(safe_mode_t safe_mode) {
         supervisor_status_bar_resume();
         #endif
         bool write_boot_output = true;
-        FIL boot_output_file;
-        if (f_open(fs, &boot_output_file, CIRCUITPY_BOOT_OUTPUT_FILE, FA_READ) == FR_OK) {
+        supervisor_vfs_file_t boot_output_file;
+        if (supervisor_vfs_open_file(vfs_root, CIRCUITPY_BOOT_OUTPUT_FILE, SUPERVISOR_FS_OPEN_READ, 0,
+            &boot_output_file) == SUPERVISOR_FS_OK) {
             char *file_contents = m_new(char, boot_text.alloc);
-            UINT chars_read;
-            if (f_read(&boot_output_file, file_contents, 1 + boot_text.len, &chars_read) == FR_OK) {
+            size_t chars_read;
+            if (supervisor_vfs_read_file(&boot_output_file, file_contents, 1 + boot_text.len, &chars_read) ==
+                SUPERVISOR_FS_OK) {
                 write_boot_output =
                     (chars_read != boot_text.len) || (memcmp(boot_text.buf, file_contents, chars_read) != 0);
             }
-            // no need to f_close the file
+            supervisor_vfs_close_file(&boot_output_file);
         }
 
         if (write_boot_output) {
@@ -923,11 +960,14 @@ static void __attribute__ ((noinline)) run_boot_py(safe_mode_t safe_mode) {
             // in case power is momentary or will fail shortly due to, say a low, battery.
             mp_hal_delay_ms(1000);
 
-            f_open(fs, &boot_output_file, CIRCUITPY_BOOT_OUTPUT_FILE, FA_WRITE | FA_CREATE_ALWAYS);
-            UINT chars_written;
-            f_write(&boot_output_file, boot_text.buf, boot_text.len, &chars_written);
-            f_close(&boot_output_file);
-            filesystem_flush();
+            if (supervisor_vfs_open_file(vfs_root, CIRCUITPY_BOOT_OUTPUT_FILE,
+                SUPERVISOR_FS_OPEN_WRITE | SUPERVISOR_FS_OPEN_CREATE | SUPERVISOR_FS_OPEN_TRUNCATE, 0,
+                &boot_output_file) == SUPERVISOR_FS_OK) {
+                size_t chars_written;
+                supervisor_vfs_write_file(&boot_output_file, boot_text.buf, boot_text.len, &chars_written);
+                supervisor_vfs_close_file(&boot_output_file);
+                filesystem_flush();
+            }
         }
         #endif
 
@@ -1022,7 +1062,9 @@ int __attribute__((used)) main(void) {
     set_safe_mode(port_init());
 
     // All ports need pins reset, after never-reset pins are marked in port_init();
+    #if CIRCUITPY_BULK_RESET
     reset_all_pins();
+    #endif
 
     port_heap_init();
 

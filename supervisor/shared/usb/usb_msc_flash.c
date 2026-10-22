@@ -117,7 +117,7 @@ size_t usb_msc_descriptor_length(void) {
     return sizeof(usb_msc_descriptor_template);
 }
 
-static const char storage_interface_name[] = USB_INTERFACE_NAME " Mass Storage";
+static const char storage_interface_name[] = "Mass Storage";
 
 size_t usb_msc_add_descriptor(uint8_t *descriptor_buf, descriptor_counts_t *descriptor_counts, uint8_t *current_interface_string) {
     memcpy(descriptor_buf, usb_msc_descriptor_template, sizeof(usb_msc_descriptor_template));
@@ -137,7 +137,7 @@ size_t usb_msc_add_descriptor(uint8_t *descriptor_buf, descriptor_counts_t *desc
     descriptor_counts->num_out_endpoints++;
     descriptor_counts->current_endpoint++;
 
-    usb_add_interface_string(*current_interface_string, storage_interface_name);
+    usb_add_interface_name(*current_interface_string, NULL, storage_interface_name);
     descriptor_buf[MSC_INTERFACE_STRING_INDEX] = *current_interface_string;
     (*current_interface_string)++;
 
@@ -147,7 +147,8 @@ size_t usb_msc_add_descriptor(uint8_t *descriptor_buf, descriptor_counts_t *desc
 // We hardcode LUN -> mount mapping so that it doesn't changes with saves and
 // SD card appearing and disappearing.
 static fs_user_mount_t *get_vfs(int lun) {
-    fs_user_mount_t *root = filesystem_circuitpy();
+    supervisor_vfs_t *root_vfs = filesystem_circuitpy();
+    fs_user_mount_t *root = root_vfs == NULL ? NULL : &root_vfs->fat;
     if (lun == 0) {
         return root;
     }
@@ -156,7 +157,8 @@ static fs_user_mount_t *get_vfs(int lun) {
     #ifdef SAVES_LUN
     if (lun == SAVES_LUN) {
         const char *path_under_mount;
-        fs_user_mount_t *saves = filesystem_for_path("/saves", &path_under_mount);
+        supervisor_vfs_t *saves_mount = filesystem_for_path("/saves", &path_under_mount);
+        fs_user_mount_t *saves = saves_mount == NULL ? NULL : &saves_mount->fat;
         if (saves != root &&
             (saves->blockdev.flags & MP_BLOCKDEV_FLAG_NATIVE) != 0 && !gc_ptr_on_heap(saves)) {
             return saves;
@@ -173,7 +175,8 @@ static fs_user_mount_t *get_vfs(int lun) {
     #ifdef SDCARD_LUN
     if (lun == SDCARD_LUN) {
         const char *path_under_mount;
-        fs_user_mount_t *sdcard = filesystem_for_path("/sd", &path_under_mount);
+        supervisor_vfs_t *sdcard_mount = filesystem_for_path("/sd", &path_under_mount);
+        fs_user_mount_t *sdcard = sdcard_mount == NULL ? NULL : &sdcard_mount->fat;
         // If sdcard ("/sd") is on the root filesystem, nothing has been mounted there, so don't
         // return it as a separate filesystem.
         // If the SD card was automounted at startup, then it persists across VMs and its fs_user_mount_t is
@@ -194,8 +197,10 @@ static fs_user_mount_t *get_vfs(int lun) {
     #ifdef EMMC_LUN
     if (lun == EMMC_LUN) {
         const char *path_under_mount;
+        fs_user_mount_t *emmc;
 
-        fs_user_mount_t *emmc = filesystem_for_path(CIRCUITPY_EMMC_MOUNT_PATH, &path_under_mount);
+        supervisor_vfs_t *emmc_mount = filesystem_for_path(CIRCUITPY_EMMC_MOUNT_PATH, &path_under_mount);
+        emmc = emmc_mount == NULL ? NULL : &emmc_mount->fat;
         // Unlike the SD card there is no heap-mount case to allow: the eMMC's
         // drive exists only when the supervisor mounted it, and
         // that mount is static. A user mount made by code.py stays a Python
@@ -231,9 +236,32 @@ void usb_msc_umount(void) {
         if (vfs == NULL) {
             continue;
         }
-        blockdev_unlock(vfs);
+        blockdev_unlock((supervisor_vfs_t *)vfs);
         locked[i] = false;
     }
+}
+
+// Release the USB MSC lock on CIRCUITPY (LUN 0), if USB MSC holds it.
+// Locks held by others (Python, workflows) are not touched.
+void usb_msc_release_circuitpy_lock(void) {
+    if (!locked[0]) {
+        return;
+    }
+    fs_user_mount_t *vfs = get_vfs(0);
+    if (vfs != NULL) {
+        blockdev_unlock((supervisor_vfs_t *)vfs);
+    }
+    locked[0] = false;
+}
+
+// Whether USB MSC holds the blockdev lock on this mount.
+bool usb_msc_holds_lock(fs_user_mount_t *vfs) {
+    for (uint8_t i = 0; i < LUN_COUNT; i++) {
+        if (locked[i] && get_vfs(i) == vfs) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void usb_msc_remount(fs_user_mount_t *fs_mount) {
@@ -313,7 +341,7 @@ bool tud_msc_is_writable_cb(uint8_t lun) {
         return false;
     }
     // Lock the blockdev once we say we're writable.
-    if (!locked[lun] && !blockdev_lock(vfs)) {
+    if (!locked[lun] && !blockdev_lock((supervisor_vfs_t *)vfs)) {
         return false;
     }
     locked[lun] = true;
@@ -490,7 +518,7 @@ bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition, bool start, boo
             if (disk_ioctl(current_mount, CTRL_SYNC, NULL) != RES_OK) {
                 return false;
             } else {
-                blockdev_unlock(current_mount);
+                blockdev_unlock((supervisor_vfs_t *)current_mount);
                 ejected[lun] = true;
                 locked[lun] = false;
             }

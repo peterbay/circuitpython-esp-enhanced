@@ -17,10 +17,9 @@
 #include "genhdr/mpversion.h"
 #include "py/mperrno.h"
 #include "py/mpstate.h"
+#include "py/persistentcode.h"
 
 #include "shared-bindings/wifi/Radio.h"
-#include "shared/timeutils/timeutils.h"
-#include "supervisor/fatfs.h"
 #include "supervisor/filesystem.h"
 #include "supervisor/port.h"
 #include "supervisor/shared/reload.h"
@@ -49,7 +48,13 @@
 #endif
 
 #if CIRCUITPY_WIFI
+#include "common-hal/wifi/__init__.h"
 #include "shared-bindings/wifi/__init__.h"
+#endif
+
+#if CIRCUITPY_MII
+#include "shared-bindings/mii/__init__.h"
+#include "shared-bindings/mii/Ethernet.h"
 #endif
 
 #if CIRCUITPY_SETTINGS_TOML
@@ -94,7 +99,7 @@ typedef struct {
 static wifi_radio_error_t _wifi_status = WIFI_RADIO_ERROR_NONE;
 #endif
 
-#if CIRCUITPY_STATUS_BAR && (CIRCUITPY_WIFI || CIRCUITPY_HOSTNETWORK)
+#if CIRCUITPY_STATUS_BAR && (CIRCUITPY_WIFI || CIRCUITPY_HOSTNETWORK || CIRCUITPY_MII)
 // Store various last states to compute if status bar needs an update.
 static bool _last_enabled = false;
 static uint32_t _last_ip = 0;
@@ -203,8 +208,35 @@ static bool _get_web_workflow_ip(uint32_t *ipv4_address) {
     // hostnetwork uses the host network namespace and is reachable via localhost.
     *ipv4_address = 0x0100007f; // 127.0.0.1
     return true;
+    #elif CIRCUITPY_MII
+    mii_ethernet_obj_t *eth = (mii_ethernet_obj_t *)mii_get_default_instance();
+    if (eth == NULL || !common_hal_mii_ethernet_get_enabled(eth)) {
+        return false;
+    }
+    *ipv4_address = mii_get_ipv4_address();
+    return true;
     #else
     return false;
+    #endif
+}
+
+// Get the network interface hostname (the one sent to the DHCP server) when
+// no mDNS server is active to provide one. Never allocates. Returns "" when
+// there isn't one.
+static const char *_get_web_workflow_hostname(void) {
+    #if CIRCUITPY_WIFI
+    if (!common_hal_wifi_radio_get_enabled(&common_hal_wifi_radio_obj)) {
+        return "";
+    }
+    return wifi_get_hostname_raw();
+    #elif CIRCUITPY_MII
+    mii_ethernet_obj_t *eth = (mii_ethernet_obj_t *)mii_get_default_instance();
+    if (eth == NULL || !common_hal_mii_ethernet_get_enabled(eth)) {
+        return "";
+    }
+    return mii_get_hostname_raw();
+    #else
+    return "";
     #endif
 }
 
@@ -230,7 +262,7 @@ mdns_server_obj_t *supervisor_web_workflow_mdns(mp_obj_t network_interface) {
 
 #if CIRCUITPY_STATUS_BAR
 bool supervisor_web_workflow_status_dirty(void) {
-    #if CIRCUITPY_WIFI || CIRCUITPY_HOSTNETWORK
+    #if CIRCUITPY_WIFI || CIRCUITPY_HOSTNETWORK || CIRCUITPY_MII
     uint32_t ipv4_address = 0;
     bool enabled = _get_web_workflow_ip(&ipv4_address);
     if (enabled != _last_enabled || ipv4_address != _last_ip || web_api_port != _last_web_api_port) {
@@ -250,7 +282,7 @@ bool supervisor_web_workflow_status_dirty(void) {
 
 #if CIRCUITPY_STATUS_BAR
 void supervisor_web_workflow_status(void) {
-    #if CIRCUITPY_WIFI || CIRCUITPY_HOSTNETWORK
+    #if CIRCUITPY_WIFI || CIRCUITPY_HOSTNETWORK || CIRCUITPY_MII
     uint32_t ipv4_address = 0;
     _last_enabled = _get_web_workflow_ip(&ipv4_address);
     _last_web_api_port = web_api_port;
@@ -280,6 +312,9 @@ void supervisor_web_workflow_status(void) {
         _last_ip = 0;
         serial_write_compressed(MP_ERROR_TEXT("No IP"));
     }
+    #elif CIRCUITPY_MII
+    _last_ip = 0;
+    serial_write_compressed(MP_ERROR_TEXT("No IP"));
     #endif
     #else
     return;
@@ -288,10 +323,16 @@ void supervisor_web_workflow_status(void) {
 #endif
 
 bool supervisor_start_web_workflow(void) {
-    #if CIRCUITPY_WEB_WORKFLOW && CIRCUITPY_SETTINGS_TOML && (CIRCUITPY_WIFI || CIRCUITPY_HOSTNETWORK)
+    #if CIRCUITPY_WEB_WORKFLOW && CIRCUITPY_SETTINGS_TOML && (CIRCUITPY_WIFI || CIRCUITPY_HOSTNETWORK || CIRCUITPY_MII)
 
     #if CIRCUITPY_WIFI
     mp_obj_t socketpool_radio = MP_OBJ_FROM_PTR(&common_hal_wifi_radio_obj);
+    #elif CIRCUITPY_MII
+    mp_obj_t socketpool_radio = mii_get_default_instance();
+    if (socketpool_radio == NULL) {
+        // The board never registered its ethernet instance.
+        return false;
+    }
     #else
     mp_obj_t socketpool_radio = MP_OBJ_FROM_PTR(&common_hal_hostnetwork_obj);
     #endif
@@ -335,6 +376,22 @@ bool supervisor_start_web_workflow(void) {
         common_hal_wifi_radio_set_enabled(&common_hal_wifi_radio_obj, false);
         return false;
     }
+    #endif
+
+    #if CIRCUITPY_MII && !CIRCUITPY_WIFI
+    mii_ethernet_obj_t *eth = (mii_ethernet_obj_t *)mii_get_default_instance();
+    if (eth == NULL) {
+        return false;
+    }
+    // Re-enable the interface in case user code disabled it before a reload.
+    if (!common_hal_mii_ethernet_get_enabled(eth)) {
+        common_hal_mii_ethernet_set_enabled(eth, true);
+    }
+
+    // The listening socket cannot be created until the interface has an
+    // address, so wait out the DHCP lease. This brings the workflow up during
+    // the first VM start instead of after the next one.
+    mii_wait_for_lease();
     #endif
 
     // Skip starting the workflow if the reset reason reflects a problem.
@@ -729,11 +786,13 @@ static void _reply_redirect(socketpool_socket_obj_t *socket, _request *request, 
 }
 #endif
 
-static void _reply_directory_json(socketpool_socket_obj_t *socket, _request *request, fs_user_mount_t *fs_mount, FF_DIR *dir, const char *request_path, const char *path) {
-    FILINFO file_info;
-    char *fn = file_info.fname;
-    FRESULT res = f_readdir(dir, &file_info);
-    if (res != FR_OK) {
+static void _reply_directory_json(socketpool_socket_obj_t *socket, _request *request, supervisor_vfs_t *fs_mount, supervisor_vfs_dir_t *dir, const char *request_path, const char *path) {
+    char fn[FF_MAX_LFN + 1];
+    bool is_dir = false;
+    size_t file_size = 0;
+    uint64_t mtime_ns = 0;
+    supervisor_fs_err_t res = supervisor_vfs_readdir(dir, fn, sizeof(fn), &is_dir, &file_size, &mtime_ns);
+    if (res != SUPERVISOR_FS_OK) {
         _reply_missing(socket, request);
         return;
     }
@@ -743,18 +802,12 @@ static void _reply_directory_json(socketpool_socket_obj_t *socket, _request *req
     _send_str(socket, "\r\n");
     mp_print_t _socket_print = {socket, _print_chunk};
 
-    // Send mount info.
-    DWORD free_clusters = 0;
-    FATFS *fatfs = &fs_mount->fatfs;
-    f_getfree(fatfs, &free_clusters);
-    size_t ssize;
-    #if FF_MAX_SS != FF_MIN_SS
-    ssize = fatfs->ssize;
-    #else
-    ssize = FF_MIN_SS;
-    #endif
-    uint32_t cluster_size = fatfs->csize * ssize;
-    uint32_t total_clusters = fatfs->n_fatent - 2;
+    // Send mount info. Counts are in filesystem blocks: clusters on FAT,
+    // blocks on littlefs.
+    size_t block_size = 0;
+    size_t total_blocks = 0;
+    size_t free_blocks = 0;
+    supervisor_vfs_statfs(fs_mount, &block_size, &total_blocks, &free_blocks);
 
     const char *writable = "false";
     // Test to see if we can grab the write lock. USB will grab the underlying
@@ -768,20 +821,20 @@ static void _reply_directory_json(socketpool_socket_obj_t *socket, _request *req
         "{\"free\": %u, "
         "\"total\": %u, "
         "\"block_size\": %u, "
-        "\"writable\": %s, ", free_clusters, total_clusters, cluster_size, writable);
+        "\"writable\": %s, ", free_blocks, total_blocks, block_size, writable);
 
     // Send file list
     _send_chunk(socket, "\"files\": [");
     bool first = true;
 
-    while (res == FR_OK && fn[0] != 0) {
+    while (res == SUPERVISOR_FS_OK && fn[0] != 0) {
         if (!first) {
             _send_chunk(socket, ",");
         }
         _send_chunks(socket,
-            "{\"name\": \"", file_info.fname, "\",",
+            "{\"name\": \"", fn, "\",",
             "\"directory\": ", NULL);
-        if ((file_info.fattrib & AM_DIR) != 0) {
+        if (is_dir) {
             _send_chunk(socket, "true");
         } else {
             _send_chunk(socket, "false");
@@ -790,31 +843,31 @@ static void _reply_directory_json(socketpool_socket_obj_t *socket, _request *req
         // LittleFS.
         _send_chunk(socket, ", ");
 
-        uint32_t truncated_time = timeutils_mktime(1980 + (file_info.fdate >> 9),
-            (file_info.fdate >> 5) & 0xf,
-            file_info.fdate & 0x1f,
-            file_info.ftime >> 11,
-            (file_info.ftime >> 5) & 0x3f,
-            (file_info.ftime & 0x1f) * 2);
-
-        // Manually append zeros to make the time nanoseconds. Support for printing 64 bit numbers
-        // varies across chipsets.
-        mp_printf(&_socket_print, "\"modified_ns\": %lu000000000, ", truncated_time);
-        size_t file_size = 0;
-        if ((file_info.fattrib & AM_DIR) == 0) {
-            file_size = file_info.fsize;
+        // mpprint doesn't support 64-bit formats on all targets, so print the
+        // seconds and zero-padded remainder of the nanosecond value separately.
+        mp_uint_t mtime_secs = (mp_uint_t)(mtime_ns / 1000000000ULL);
+        mp_uint_t mtime_frac = (mp_uint_t)(mtime_ns % 1000000000ULL);
+        if (mtime_secs == 0) {
+            // Avoid a leading zero, which isn't valid JSON.
+            mp_printf(&_socket_print, "\"modified_ns\": %u, ", mtime_frac);
+        } else {
+            mp_printf(&_socket_print, "\"modified_ns\": %u%09u, ", mtime_secs, mtime_frac);
         }
-        mp_printf(&_socket_print, "\"file_size\": %d }", file_size);
+        if (!is_dir) {
+            mp_printf(&_socket_print, "\"file_size\": %d }", file_size);
+        } else {
+            _send_chunk(socket, "\"file_size\": 0 }");
+        }
 
         first = false;
-        res = f_readdir(dir, &file_info);
+        res = supervisor_vfs_readdir(dir, fn, sizeof(fn), &is_dir, &file_size, &mtime_ns);
     }
     _send_chunk(socket, "]}");
     _send_chunk(socket, "");
 }
 
-static void _reply_with_file(socketpool_socket_obj_t *socket, _request *request, const char *filename, FIL *active_file) {
-    uint32_t total_length = f_size(active_file);
+static void _reply_with_file(socketpool_socket_obj_t *socket, _request *request, const char *filename, supervisor_vfs_file_t *active_file) {
+    uint32_t total_length = supervisor_vfs_file_size(active_file);
 
     _send_str(socket, "HTTP/1.1 200 OK\r\n");
     mp_print_t _socket_print = {socket, _print_raw};
@@ -839,7 +892,7 @@ static void _reply_with_file(socketpool_socket_obj_t *socket, _request *request,
     while (total_read < total_length) {
         uint8_t data_buffer[64];
         size_t quantity_read;
-        f_read(active_file, data_buffer, 64, &quantity_read);
+        supervisor_vfs_read_file(active_file, data_buffer, 64, &quantity_read);
         total_read += quantity_read;
         // When getting near the end of the file, disable Nagle's combining algorithm so that
         // data is sent immediately.
@@ -916,13 +969,16 @@ static void _reply_with_version_json(socketpool_socket_obj_t *socket, _request *
     mp_print_t _socket_print = {socket, _print_chunk};
 
     const char *hostname = "";
-    const char *instance_name = "";
     #if CIRCUITPY_MDNS
     if (!common_hal_mdns_server_deinited(&mdns)) {
         hostname = common_hal_mdns_server_get_hostname(&mdns);
-        instance_name = common_hal_mdns_server_get_instance_name(&mdns);
     }
     #endif
+    if (hostname[0] == '\0') {
+        // Fall back to the network interface hostname when no mDNS server is
+        // advertising one.
+        hostname = _get_web_workflow_hostname();
+    }
     uint32_t ipv4_address = 0;
     (void)_get_web_workflow_ip(&ipv4_address);
     _update_encoded_ip(ipv4_address);
@@ -933,11 +989,14 @@ static void _reply_with_version_json(socketpool_socket_obj_t *socket, _request *
         "\"build_date\": \"" MICROPY_BUILD_DATE "\", "
         "\"board_name\": \"%s\", "
         "\"mcu_name\": \"" MICROPY_HW_MCU_NAME "\", "
+        #if MICROPY_PERSISTENT_CODE_LOAD_NATIVE
+        "\"architecture\": \"" MPY_FEATURE_ARCH_NAME "\", "
+        #endif
         "\"board_id\": \"" CIRCUITPY_BOARD_ID "\", "
         "\"creator_id\": %u, "
         "\"creation_id\": %u, "
         "\"hostname\": \"%s\", "
-        "\"port\": %d, ", instance_name, CIRCUITPY_CREATOR_ID, CIRCUITPY_CREATION_ID, hostname, web_api_port, _our_ip_encoded);
+        "\"port\": %d, ", MICROPY_HW_BOARD_NAME, CIRCUITPY_CREATOR_ID, CIRCUITPY_CREATION_ID, hostname, web_api_port, _our_ip_encoded);
     #if CIRCUITPY_MICROCONTROLLER && COMMON_HAL_MCU_PROCESSOR_UID_LENGTH > 0
     uint8_t raw_id[COMMON_HAL_MCU_PROCESSOR_UID_LENGTH];
     common_hal_mcu_processor_get_uid(raw_id);
@@ -965,23 +1024,17 @@ static void _reply_with_diskinfo_json(socketpool_socket_obj_t *socket, _request 
         if (i > 0) {
             _send_chunk(socket, ",");
         }
-        fs_user_mount_t *fs = MP_OBJ_TO_PTR(vfs->obj);
-        // Skip non-fat and non-native block file systems.
-        if (fs->base.type != &mp_fat_vfs_type || (fs->blockdev.flags & MP_BLOCKDEV_FLAG_NATIVE) == 0) {
+        supervisor_vfs_t *fs = MP_OBJ_TO_PTR(vfs->obj);
+        // Skip filesystems the supervisor can't work with (non-fat and
+        // non-native block file systems).
+        if (!supervisor_vfs_supported(fs)) {
             vfs = vfs->next;
             continue;
         }
-        DWORD free_clusters = 0;
-        FATFS *fatfs = &fs->fatfs;
-        f_getfree(fatfs, &free_clusters);
-        size_t ssize;
-        #if FF_MAX_SS != FF_MIN_SS
-        ssize = fatfs->ssize;
-        #else
-        ssize = FF_MIN_SS;
-        #endif
-        size_t block_size = fatfs->csize * ssize;
-        size_t total_size = fatfs->n_fatent - 2;
+        size_t block_size = 0;
+        size_t total_size = 0;
+        size_t free_blocks = 0;
+        supervisor_vfs_statfs(fs, &block_size, &total_size, &free_blocks);
 
         const char *writable = "false";
         if (filesystem_lock(fs)) {
@@ -993,7 +1046,7 @@ static void _reply_with_diskinfo_json(socketpool_socket_obj_t *socket, _request 
             "\"free\": %u, "
             "\"total\": %u, "
             "\"block_size\": %u, "
-            "\"writable\": %s}", vfs->str, free_clusters, total_size, block_size, writable);
+            "\"writable\": %s}", vfs->str, free_blocks, total_size, block_size, writable);
         i++;
         vfs = vfs->next;
     }
@@ -1001,21 +1054,6 @@ static void _reply_with_diskinfo_json(socketpool_socket_obj_t *socket, _request 
 
     // Empty chunk signals the end of the response.
     _send_chunk(socket, "");
-}
-
-
-// FATFS has a two second timestamp resolution but the BLE API allows for nanosecond resolution.
-// This function truncates the time the time to a resolution storable by FATFS and fills in the
-// FATFS encoded version into fattime.
-static uint64_t truncate_time(uint64_t input_time, DWORD *fattime) {
-    timeutils_struct_time_t tm;
-    uint64_t seconds_since_epoch = timeutils_seconds_since_epoch_from_nanoseconds_since_1970(input_time);
-    timeutils_seconds_since_epoch_to_struct_time(seconds_since_epoch, &tm);
-    uint64_t truncated_time = timeutils_nanoseconds_since_epoch_to_nanoseconds_since_1970((seconds_since_epoch / 2) * 2 * 1000000000);
-
-    *fattime = ((tm.tm_year - 1980) << 25) | (tm.tm_mon << 21) | (tm.tm_mday << 16) |
-        (tm.tm_hour << 11) | (tm.tm_min << 5) | (tm.tm_sec >> 1);
-    return truncated_time;
 }
 
 static void _discard_incoming(socketpool_socket_obj_t *socket, size_t amount) {
@@ -1034,52 +1072,46 @@ static void _discard_incoming(socketpool_socket_obj_t *socket, size_t amount) {
     }
 }
 
-static void _write_file_and_reply(socketpool_socket_obj_t *socket, _request *request, fs_user_mount_t *fs_mount, const TCHAR *path) {
-    FIL active_file;
+static void _write_file_and_reply(socketpool_socket_obj_t *socket, _request *request, supervisor_vfs_t *fs_mount, const TCHAR *path) {
+    supervisor_vfs_file_t active_file;
 
     if (!filesystem_lock(fs_mount)) {
         _discard_incoming(socket, request->content_length);
         _reply_conflict(socket, request);
         return;
     }
-    if (request->timestamp_ms > 0) {
-        DWORD fattime;
-        truncate_time(request->timestamp_ms * 1000000, &fattime);
-        override_fattime(fattime);
-    }
 
-    FATFS *fs = &fs_mount->fatfs;
-    FRESULT result = f_open(fs, &active_file, path, FA_WRITE);
+    uint64_t mtime_ns = request->timestamp_ms > 0 ? (uint64_t)request->timestamp_ms * 1000000 : 0;
+
+    supervisor_fs_err_t result = supervisor_vfs_open_file(fs_mount, path, SUPERVISOR_FS_OPEN_WRITE, mtime_ns, &active_file);
     bool new_file = false;
     size_t old_length = 0;
-    if (result == FR_NO_FILE) {
+    if (result == SUPERVISOR_FS_NO_FILE) {
         new_file = true;
-        result = f_open(fs, &active_file, path, FA_WRITE | FA_OPEN_ALWAYS);
-    } else if (result == FR_OK) {
-        old_length = f_size(&active_file);
+        result = supervisor_vfs_open_file(fs_mount, path,
+            SUPERVISOR_FS_OPEN_WRITE | SUPERVISOR_FS_OPEN_CREATE, mtime_ns, &active_file);
+    } else if (result == SUPERVISOR_FS_OK) {
+        old_length = supervisor_vfs_file_size(&active_file);
     }
 
-    if (result == FR_NO_PATH) {
-        override_fattime(0);
+    if (result == SUPERVISOR_FS_NO_PATH) {
         filesystem_unlock(fs_mount);
         _discard_incoming(socket, request->content_length);
         _reply_missing(socket, request);
         return;
     }
-    if (result == FR_WRITE_PROTECTED) {
+    if (result == SUPERVISOR_FS_WRITE_PROTECTED) {
         // The filesystem is held by something else with write access (most
         // commonly USB-MSC: the host has CIRCUITPY mounted, so CircuitPython
         // can't write through FatFS). Match the mkdir/move/delete paths and
         // reply 409 Conflict so clients can show an actionable message
         // ("eject CIRCUITPY / disable USB MSC") instead of a generic 500.
-        override_fattime(0);
         filesystem_unlock(fs_mount);
         _discard_incoming(socket, request->content_length);
         _reply_conflict(socket, request);
         return;
     }
-    if (result != FR_OK) {
-        override_fattime(0);
+    if (result != SUPERVISOR_FS_OK) {
         filesystem_unlock(fs_mount);
         _discard_incoming(socket, request->content_length);
         _reply_server_error(socket, request);
@@ -1087,19 +1119,18 @@ static void _write_file_and_reply(socketpool_socket_obj_t *socket, _request *req
     }
 
     // Change the file size to start.
-    f_lseek(&active_file, request->content_length);
-    if (f_tell(&active_file) < request->content_length) {
+    supervisor_vfs_seek_file(&active_file, request->content_length);
+    if (supervisor_vfs_tell_file(&active_file) < request->content_length) {
         if (!new_file) {
             // Truncate the file back to the old length.
-            f_lseek(&active_file, old_length);
-            f_truncate(&active_file);
+            supervisor_vfs_seek_file(&active_file, old_length);
+            supervisor_vfs_truncate_file(&active_file);
         }
-        f_close(&active_file);
+        supervisor_vfs_close_file(&active_file);
 
         if (new_file) {
-            f_unlink(fs, path);
+            supervisor_vfs_unlink(fs_mount, path);
         }
-        override_fattime(0);
         filesystem_unlock(fs_mount);
         // Too large.
         if (request->expect) {
@@ -1112,8 +1143,10 @@ static void _write_file_and_reply(socketpool_socket_obj_t *socket, _request *req
     } else if (request->expect) {
         _reply_continue(socket, request);
     }
-    f_truncate(&active_file);
-    f_rewind(&active_file);
+    // Truncate to content_length (current offset) and rewind so that the body
+    // overwrites the file from the start.
+    supervisor_vfs_truncate_file(&active_file);
+    supervisor_vfs_seek_file(&active_file, 0);
 
     size_t total_read = 0;
     bool error = false;
@@ -1129,18 +1162,17 @@ static void _write_file_and_reply(socketpool_socket_obj_t *socket, _request *req
             break;
         }
         total_read += len;
-        UINT actual;
-        f_write(&active_file, bytes, len, &actual);
-        if (actual < (UINT)len) {
+        size_t actual;
+        supervisor_fs_err_t write_result = supervisor_vfs_write_file(&active_file, bytes, len, &actual);
+        if (actual < (size_t)len || write_result != SUPERVISOR_FS_OK) {
             error = true;
             break;
         }
     }
 
-    f_close(&active_file);
+    supervisor_vfs_close_file(&active_file);
     filesystem_unlock(fs_mount);
 
-    override_fattime(0);
     if (error) {
         _discard_incoming(socket, request->content_length - total_read);
         _reply_server_error(socket, request);
@@ -1286,12 +1318,12 @@ static bool _reply(socketpool_socket_obj_t *socket, _request *request) {
             // Delete is almost identical for files and directories so share the
             // implementation.
             if (strcasecmp(request->method, "DELETE") == 0) {
-                FRESULT result = supervisor_workflow_delete_recursive(path);
-                if (result == FR_WRITE_PROTECTED) {
+                supervisor_fs_err_t result = supervisor_workflow_delete_recursive(path);
+                if (result == SUPERVISOR_FS_WRITE_PROTECTED) {
                     _reply_conflict(socket, request);
-                } else if (result == FR_NO_PATH || result == FR_NO_FILE) {
+                } else if (result == SUPERVISOR_FS_NO_PATH || result == SUPERVISOR_FS_NO_FILE) {
                     _reply_missing(socket, request);
-                } else if (result != FR_OK) {
+                } else if (result != SUPERVISOR_FS_OK) {
                     _reply_server_error(socket, request);
                 } else {
                     _reply_no_content(socket, request);
@@ -1306,14 +1338,14 @@ static bool _reply(socketpool_socket_obj_t *socket, _request *request) {
                     destination[destinationlen - 1] = '\0';
                 }
 
-                FRESULT result = supervisor_workflow_move(path, destination);
-                if (result == FR_WRITE_PROTECTED) {
+                supervisor_fs_err_t result = supervisor_workflow_move(path, destination);
+                if (result == SUPERVISOR_FS_WRITE_PROTECTED) {
                     _reply_conflict(socket, request);
-                } else if (result == FR_EXIST) { // File exists and won't be overwritten.
+                } else if (result == SUPERVISOR_FS_EXIST) { // File exists and won't be overwritten.
                     _reply_precondition_failed(socket, request);
-                } else if (result == FR_NO_PATH || result == FR_NO_FILE) { // Missing higher directories or target file.
+                } else if (result == SUPERVISOR_FS_NO_PATH || result == SUPERVISOR_FS_NO_FILE) { // Missing higher directories or target file.
                     _reply_missing(socket, request);
-                } else if (result != FR_OK) {
+                } else if (result != SUPERVISOR_FS_OK) {
                     _reply_server_error(socket, request);
                 } else {
                     _reply_created(socket, request);
@@ -1321,18 +1353,15 @@ static bool _reply(socketpool_socket_obj_t *socket, _request *request) {
                 }
                 return false;
             } else if (directory && strcasecmp(request->method, "PUT") == 0) {
-                DWORD fattime = 0;
-                if (request->timestamp_ms > 0) {
-                    truncate_time(request->timestamp_ms * 1000000, &fattime);
-                }
-                FRESULT result = supervisor_workflow_mkdir_parents(fattime, path);
-                if (result == FR_WRITE_PROTECTED) {
+                uint64_t mtime_ns = request->timestamp_ms > 0 ? (uint64_t)request->timestamp_ms * 1000000 : 0;
+                supervisor_fs_err_t result = supervisor_workflow_mkdir_parents(mtime_ns, path);
+                if (result == SUPERVISOR_FS_WRITE_PROTECTED) {
                     _reply_conflict(socket, request);
-                } else if (result == FR_EXIST) {
+                } else if (result == SUPERVISOR_FS_EXIST) {
                     _reply_no_content(socket, request);
-                } else if (result == FR_NO_PATH) {
+                } else if (result == SUPERVISOR_FS_NO_PATH) {
                     _reply_missing(socket, request);
-                } else if (result != FR_OK) {
+                } else if (result != SUPERVISOR_FS_OK) {
                     _reply_server_error(socket, request);
                 } else {
                     _reply_created(socket, request);
@@ -1342,43 +1371,28 @@ static bool _reply(socketpool_socket_obj_t *socket, _request *request) {
             }
 
             // These responses don't use helpers because they stream data in and
-            // out. So, share the mount lookup code.
+            // out. So, share the mount lookup code. filesystem_for_path handles
+            // both the root filesystem and additional mounts, whether they are
+            // FAT or littlefs.
             const char *path_out = NULL;
-            mp_vfs_mount_t *vfs = mp_vfs_lookup_path(path, &path_out);
-            if (vfs == MP_VFS_NONE) {
+            supervisor_vfs_t *fs_mount = filesystem_for_path(path, &path_out);
+            if (fs_mount == NULL || !supervisor_vfs_supported(fs_mount)) {
                 _reply_missing(socket, request);
                 return false;
             }
-            fs_user_mount_t *fs_mount;
-            if (vfs == MP_VFS_ROOT) {
-                fs_mount = filesystem_circuitpy();
-            } else {
-                fs_mount = MP_OBJ_TO_PTR(vfs->obj);
-                // Skip non-fat and non-native block file systems.
-                if (!filesystem_native_fatfs(fs_mount)) {
-                    _reply_missing(socket, request);
-                    return false;
-                }
-                // Check if the vfs name is one character long: it must be "/" in that case.
-                // If so don't remove the mount point name. We must use an absolute path
-                // because otherwise the path will be adjusted by os.getcwd() when it's looked up.
-                if (strlen(vfs->str) != 1) {
-                    // Remove the mount point directory name, such as "/sd".
-                    path += strlen(vfs->str);
-                }
-                pathlen = strlen(path);
+            path = (char *)path_out;
+            pathlen = strlen(path);
 
-            }
-            FATFS *fs = &fs_mount->fatfs;
             if (directory) {
                 if (strcasecmp(request->method, "GET") == 0) {
-                    FF_DIR dir;
-                    FRESULT res = f_opendir(fs, &dir, path);
+                    supervisor_vfs_dir_t dir;
+                    memset(&dir, 0, sizeof(dir));
+                    supervisor_fs_err_t res = supervisor_vfs_opendir(fs_mount, path, &dir);
                     // Put the / back for replies.
                     if (pathlen > 1) {
                         path[pathlen - 1] = '/';
                     }
-                    if (res != FR_OK) {
+                    if (res != SUPERVISOR_FS_OK) {
                         _reply_missing(socket, request);
                         return false;
                     }
@@ -1390,20 +1404,20 @@ static bool _reply(socketpool_socket_obj_t *socket, _request *request) {
                         _reply_missing(socket, request);
                     }
 
-                    f_closedir(&dir);
+                    supervisor_vfs_closedir(&dir);
                 }
             } else { // Dealing with a file.
                 if (strcasecmp(request->method, "GET") == 0) {
-                    FIL active_file;
-                    FRESULT result = f_open(fs, &active_file, path, FA_READ);
+                    supervisor_vfs_file_t active_file;
+                    supervisor_fs_err_t result = supervisor_vfs_open_file(fs_mount, path, SUPERVISOR_FS_OPEN_READ, 0, &active_file);
 
-                    if (result != FR_OK) {
+                    if (result != SUPERVISOR_FS_OK) {
                         _reply_missing(socket, request);
                     } else {
                         _reply_with_file(socket, request, path, &active_file);
                     }
 
-                    f_close(&active_file);
+                    supervisor_vfs_close_file(&active_file);
                 } else if (strcasecmp(request->method, "PUT") == 0) {
                     _write_file_and_reply(socket, request, fs_mount, path);
                     return true;

@@ -99,6 +99,16 @@ Sets the size of the python stack. Must be a multiple of 4. The default value is
 Increasing the stack reduces the size of the heap available to python code.
 Used to avoid "Pystack exhausted" errors when the code can't be reworked to avoid it.
 
+CIRCUITPY_USB_HOST_ISO_BUFFER_SIZE (integer)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Allocates a buffer for incoming isochronous USB data, such as from a USB camera
+read with ``usb.core``, on boards with a ``usb_host.Port``. Without it, isochronous IN
+transfers return at most one packet per USB frame, so data arriving while code is busy is lost.
+The value is rounded up to the next power of two and limited to the range 2048
+to 65536. A typical value for a USB camera is 16384. The buffer is allocated when
+the USB host port is created and is never freed.
+Only available on rp2 boards with isochronous host support.
+
 CIRCUITPY_WEB_API_PASSWORD (string)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Password required to make modifications to the board from the Web Workflow.
@@ -229,6 +239,22 @@ Example: Configure the display to 640x480 black and white (1 bit per pixel):
     CIRCUITPY_DISPLAY_COLOR_DEPTH=1
 
 `Adafruit Feather RP2350 <https://circuitpython.org/board/adafruit_feather_rp2350/>`_
+`Adafruit Metro RP2350 <https://circuitpython.org/board/adafruit_metro_rp2350/>`_
+
+CIRCUITPY_PICODVI_AUDIO (boolean)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Whether the display configured at board initialization also sends sound through
+the DVI cable, as ``supervisor.runtime.audio``. Defaults to true. It needs a 640-wide
+output: 640x480, 320x240 or 160x120. Audio uses about 37 KB of internal RAM
+next to a 640x480 display. Set this to false to keep that RAM free, for
+example on a monitor without speakers.
+
+``supervisor.runtime.audio`` is a :py:class:`picodvi.AudioOut`. It becomes ``None`` when
+the display is released by ``displayio.release_displays()`` or when it is
+deinitialized, and stays ``None`` until the next reset.
+
+`Adafruit Feather RP2350 <https://circuitpython.org/board/adafruit_feather_rp2350/>`_
+`Adafruit Fruit Jam <https://circuitpython.org/board/adafruit_fruit_jam/>`_
 `Adafruit Metro RP2350 <https://circuitpython.org/board/adafruit_metro_rp2350/>`_
 
 CIRCUITPY_SAFEMODE_DELAY (float)

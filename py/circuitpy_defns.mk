@@ -244,6 +244,10 @@ endif
 ifeq ($(CIRCUITPY_ZIGBEE),1)
 SRC_PATTERNS += zigbee/%
 endif
+
+ifeq ($(CIRCUITPY_MII),1)
+SRC_PATTERNS += mii/%
+endif
 ifeq ($(CIRCUITPY_FLOPPYIO),1)
 SRC_PATTERNS += floppyio/%
 endif
@@ -268,8 +272,14 @@ endif
 ifeq ($(CIRCUITPY_GNSS),1)
 SRC_PATTERNS += gnss/%
 endif
+ifeq ($(CIRCUITPY_HARDWAREKEY),1)
+SRC_PATTERNS += hardwarekey/%
+endif
 ifeq ($(CIRCUITPY_HASHLIB),1)
 SRC_PATTERNS += hashlib/%
+endif
+ifeq ($(CIRCUITPY_HMAC),1)
+SRC_PATTERNS += hmac/%
 endif
 ifeq ($(CIRCUITPY_I2CDISPLAYBUS),1)
 SRC_PATTERNS += i2cdisplaybus/%
@@ -475,6 +485,12 @@ endif
 ifeq ($(CIRCUITPY_USB_HOST),1)
 SRC_PATTERNS += usb_host/%
 endif
+ifeq ($(CIRCUITPY_USB_HOST_AUDIO),1)
+SRC_PATTERNS += usb_host_audio/%
+endif
+ifeq ($(CIRCUITPY_USB_HOST_BULK),1)
+SRC_PATTERNS += usb_host_bulk/%
+endif
 ifeq ($(CIRCUITPY_USB_MIDI),1)
 SRC_PATTERNS += usb_midi/%
 endif
@@ -498,9 +514,6 @@ SRC_PATTERNS += ustack/%
 endif
 ifeq ($(CIRCUITPY_VECTORIO),1)
 SRC_PATTERNS += vectorio/%
-endif
-ifeq ($(CIRCUITPY_VIDEOCORE),1)
-SRC_PATTERNS += videocore/%
 endif
 ifeq ($(CIRCUITPY_WARNINGS),1)
 SRC_PATTERNS += warnings/%
@@ -570,6 +583,10 @@ SRC_COMMON_HAL_ALL = \
 	dualbank/__init__.c \
 	emmcio/EMMC.c \
 	emmcio/__init__.c \
+	mii/MDIO.c \
+	mii/Ethernet.c \
+	mii/RMII.c \
+	mii/__init__.c \
 	floppyio/__init__.c \
 	frequencyio/FrequencyIn.c \
 	frequencyio/__init__.c \
@@ -620,6 +637,8 @@ SRC_COMMON_HAL_ALL = \
 	rtc/__init__.c \
 	sdioio/SDCard.c \
 	sdioio/__init__.c \
+	hardwarekey/HardwareKey.c \
+	hardwarekey/__init__.c \
 	socketpool/__init__.c \
 	socketpool/SocketPool.c \
 	socketpool/Socket.c \
@@ -627,6 +646,8 @@ SRC_COMMON_HAL_ALL = \
 	spitarget/__init__.c \
 	usb_host/__init__.c \
 	usb_host/Port.c \
+	usb_host_bulk/__init__.c \
+	usb_host_bulk/InStream.c \
 	watchdog/WatchDogMode.c \
 	watchdog/WatchDogTimer.c \
 	watchdog/__init__.c \
@@ -699,6 +720,7 @@ $(filter $(SRC_PATTERNS), \
 	paralleldisplaybus/__init__.c \
 	qrio/PixelPolicy.c \
 	qrio/QRInfo.c \
+	rgbmatrix/RowAddressMode.c \
 	supervisor/RunReason.c \
 	supervisor/Runtime.c \
 	supervisor/StatusBar.c \
@@ -863,6 +885,7 @@ SRC_SHARED_MODULE_ALL = \
 	rotaryio/IncrementalEncoder.c \
 	sdcardio/SDCard.c \
 	sdcardio/__init__.c \
+	hardwarekey/HardwareKey.c \
 	sharpdisplay/SharpMemoryFramebuffer.c \
 	sharpdisplay/__init__.c \
 	socket/__init__.c \
@@ -890,6 +913,8 @@ SRC_SHARED_MODULE_ALL = \
 	usb/core/__init__.c \
 	usb/core/Device.c \
 	usb/util/__init__.c \
+	usb_host_audio/USBIn.c \
+	usb_host_audio/__init__.c \
 	ustack/__init__.c \
 	vectorio/Circle.c \
 	vectorio/Polygon.c \
@@ -989,7 +1014,7 @@ ifeq ($(CIRCUITPY_GIFIO),1)
 SRC_MOD += $(addprefix lib/AnimatedGIF/, \
 	gif.c \
 )
-$(BUILD)/lib/AnimatedGIF/gif.o: CFLAGS += -DCIRCUITPY
+$(BUILD)/lib/AnimatedGIF/gif.o: CFLAGS += -DCIRCUITPY -Wno-unused-but-set-variable
 endif
 
 ifeq ($(CIRCUITPY_JPEGIO),1)
@@ -1061,6 +1086,12 @@ else
 SRC_COMMON_HAL_ALL += \
 	hashlib/Hash.c \
 	hashlib/__init__.c
+endif
+
+ifeq ($(CIRCUITPY_HMAC),1)
+SRC_SHARED_MODULE_ALL += \
+	hmac/HMAC.c \
+	hmac/__init__.c
 endif
 
 ifeq ($(CIRCUITPY_RGBMATRIX),1)

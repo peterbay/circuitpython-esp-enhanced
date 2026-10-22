@@ -468,7 +468,7 @@ void usb_video_streaming_write_rows(uint16_t y, uint16_t rows, const void *data)
 }
 
 size_t usb_video_add_descriptor(uint8_t *descriptor_buf, descriptor_counts_t *descriptor_counts, uint8_t *current_interface_string) {
-    usb_add_interface_string(*current_interface_string, "CircuitPython UVC");
+    usb_add_interface_name(*current_interface_string, NULL, "UVC");
     #if CIRCUITPY_USB_VIDEO_JPEG
     const uint8_t usb_video_descriptor_mjpeg[] = {
         #if CFG_TUD_VIDEO_STREAMING_BULK

@@ -21,3 +21,7 @@ CIRCUITPY_ESP_PSRAM_FREQ = 80m
 # The reason for this board: CSI on a Wi-Fi 6 part. Needs
 # CONFIG_ESP_WIFI_CSI_ENABLED=y in the board sdkconfig as well.
 CIRCUITPY_ESPIDF_CSI = 1
+
+# The only board whose sdkconfig carries CONFIG_ZB_ENABLED, CONFIG_ZB_ZCZR and
+# CONFIG_ZB_RADIO_NATIVE, which esp-zigbee-lib needs in order to build anything.
+CIRCUITPY_ZIGBEE = 1

@@ -405,7 +405,7 @@ size_t usb_audio_add_descriptor(uint8_t *descriptor_buf, descriptor_counts_t *de
         const uint8_t ep_out = iso_ep_num;
         #endif
 
-        usb_add_interface_string(*current_interface_string, "CircuitPython Headset");
+        usb_add_interface_name(*current_interface_string, NULL, "Headset");
 
         const uint8_t usb_audio_descriptor[] = {
             USB_AUDIO_HEADSET_DESCRIPTOR(
@@ -440,7 +440,7 @@ size_t usb_audio_add_descriptor(uint8_t *descriptor_buf, descriptor_counts_t *de
     }
 
     if (usb_audio_direction_is_output()) {
-        usb_add_interface_string(*current_interface_string, "CircuitPython Speaker");
+        usb_add_interface_name(*current_interface_string, NULL, "Speaker");
 
         // The AudioStreaming interface follows the AudioControl interface.
         usb_audio_spk_as_itf = descriptor_counts->current_interface + 1;
@@ -469,7 +469,7 @@ size_t usb_audio_add_descriptor(uint8_t *descriptor_buf, descriptor_counts_t *de
         return sizeof(usb_audio_descriptor);
     }
 
-    usb_add_interface_string(*current_interface_string, "CircuitPython Microphone");
+    usb_add_interface_name(*current_interface_string, NULL, "Microphone");
 
     // The AudioStreaming interface follows the AudioControl interface.
     usb_audio_mic_as_itf = descriptor_counts->current_interface + 1;

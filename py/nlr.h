@@ -192,7 +192,12 @@
 #error "MICROPY_NLR_SETJMP_BUILTIN cannot be used with the native code emitter"
 #endif
 
-#if MICROPY_NLR_SETJMP && !MICROPY_NLR_SETJMP_BUILTIN
+// Needed even on the builtin path: mp_fun_table in py/nativeglue.c names setjmp
+// under MICROPY_NLR_SETJMP regardless of how nlr_push is implemented, and that
+// file is compiled whether or not the native emitter is enabled. Older toolchain
+// headers pulled setjmp.h in transitively, which hid this; ESP-IDF 6.1's esp_libc
+// does not.
+#if MICROPY_NLR_SETJMP
 #include <setjmp.h>
 #endif
 

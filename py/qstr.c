@@ -86,8 +86,9 @@ size_t PLACE_IN_WARM_CODE(qstr_compute_hash)(const byte *data, size_t len) {
 #if MICROPY_QSTR_BYTES_IN_HASH
 const qstr_hash_t PLACE_IN_DTCM_DATA(mp_qstr_const_hashes_static[]) = {
     #ifndef NO_QSTR
-#define QDEF0(id, hash, len, str) hash,
-#define QDEF1(id, hash, len, str)
+// CIRCUITPY-CHANGE: QDEF has an offset argument
+#define QDEF0(id, hash, len, offset, str) hash,
+#define QDEF1(id, hash, len, offset, str)
 // CIRCUITPY-CHANGE: translations
 #define TRANSLATION(id, length, compressed ...)
     #include "genhdr/qstrdefs.generated.h"
@@ -99,18 +100,38 @@ const qstr_hash_t PLACE_IN_DTCM_DATA(mp_qstr_const_hashes_static[]) = {
 };
 #endif
 
-const qstr_len_t PLACE_IN_DTCM_DATA(mp_qstr_const_lengths_static[]) = {
+// CIRCUITPY-CHANGE: The ROM pools store their strings in one NUL-separated blob
+// per pool instead of a pointer array plus a length array. The blob is built by
+// the preprocessor concatenating each QDEF's string literal followed by "\0", in
+// file order; makeqstrdata.py computes the matching offsets, which are emitted as
+// the QDEF offset argument. The offsets array has one extra trailing entry, the
+// total blob length, so that qstr_len() is a difference of adjacent offsets. The
+// string literal's own implicit NUL accounts for the "- 1" in sizeof() below.
+const char mp_qstr_const_blob_static[] =
     #ifndef NO_QSTR
-#define QDEF0(id, hash, len, str) len,
-#define QDEF1(id, hash, len, str)
-// CIRCUITPY-CHANGE: translations
+#define QDEF0(id, hash, len, offset, str) str "\0"
+#define QDEF1(id, hash, len, offset, str)
 #define TRANSLATION(id, length, compressed ...)
     #include "genhdr/qstrdefs.generated.h"
 #undef QDEF0
 #undef QDEF1
-// CIRCUITPY-CHANGE: translations
+#undef TRANSLATION
+    #else
+    ""
+    #endif
+;
+
+const qstr_offset_t PLACE_IN_DTCM_DATA(mp_qstr_const_offsets_static[]) = {
+    #ifndef NO_QSTR
+#define QDEF0(id, hash, len, offset, str) offset,
+#define QDEF1(id, hash, len, offset, str)
+#define TRANSLATION(id, length, compressed ...)
+    #include "genhdr/qstrdefs.generated.h"
+#undef QDEF0
+#undef QDEF1
 #undef TRANSLATION
     #endif
+    sizeof(mp_qstr_const_blob_static) - 1,
 };
 
 const qstr_pool_t mp_qstr_const_pool_static = {
@@ -118,24 +139,14 @@ const qstr_pool_t mp_qstr_const_pool_static = {
     0,                  // no previous pool
     false,              // is_sorted
     MICROPY_ALLOC_QSTR_ENTRIES_INIT,
-    MP_QSTRnumber_of_static,   // corresponds to number of strings in array just below
+    MP_QSTRnumber_of_static,   // corresponds to number of strings in the blob
     #if MICROPY_QSTR_BYTES_IN_HASH
     (qstr_hash_t *)mp_qstr_const_hashes_static,
     #endif
-    (qstr_len_t *)mp_qstr_const_lengths_static,
-    {
-        #ifndef NO_QSTR
-#define QDEF0(id, hash, len, str) str,
-#define QDEF1(id, hash, len, str)
-// CIRCUITPY-CHANGE: translations
-#define TRANSLATION(id, length, compressed ...)
-        #include "genhdr/qstrdefs.generated.h"
-#undef QDEF0
-#undef QDEF1
-// CIRCUITPY-CHANGE: translations
-#undef TRANSLATION
-        #endif
-    },
+    // CIRCUITPY-CHANGE: strings live in the blob; no lengths array or qstrs[]
+    NULL,               // lengths
+    mp_qstr_const_blob_static,
+    mp_qstr_const_offsets_static,
 };
 
 // The next pool is the remainder of the qstrs defined in the firmware. This
@@ -143,8 +154,9 @@ const qstr_pool_t mp_qstr_const_pool_static = {
 #if MICROPY_QSTR_BYTES_IN_HASH
 const qstr_hash_t PLACE_IN_DTCM_DATA(mp_qstr_const_hashes[]) = {
     #ifndef NO_QSTR
-#define QDEF0(id, hash, len, str)
-#define QDEF1(id, hash, len, str) hash,
+// CIRCUITPY-CHANGE: QDEF has an offset argument
+#define QDEF0(id, hash, len, offset, str)
+#define QDEF1(id, hash, len, offset, str) hash,
 // CIRCUITPY-CHANGE: translations
 #define TRANSLATION(id, length, compressed ...)
     #include "genhdr/qstrdefs.generated.h"
@@ -156,18 +168,32 @@ const qstr_hash_t PLACE_IN_DTCM_DATA(mp_qstr_const_hashes[]) = {
 };
 #endif
 
-const qstr_len_t PLACE_IN_DTCM_DATA(mp_qstr_const_lengths[]) = {
+// CIRCUITPY-CHANGE: blob and offsets, see above
+const char mp_qstr_const_blob[] =
     #ifndef NO_QSTR
-#define QDEF0(id, hash, len, str)
-#define QDEF1(id, hash, len, str) len,
-// CIRCUITPY-CHANGE: translations
+#define QDEF0(id, hash, len, offset, str)
+#define QDEF1(id, hash, len, offset, str) str "\0"
 #define TRANSLATION(id, length, compressed ...)
     #include "genhdr/qstrdefs.generated.h"
 #undef QDEF0
 #undef QDEF1
-// CIRCUITPY-CHANGE: translations
+#undef TRANSLATION
+    #else
+    ""
+    #endif
+;
+
+const qstr_offset_t PLACE_IN_DTCM_DATA(mp_qstr_const_offsets[]) = {
+    #ifndef NO_QSTR
+#define QDEF0(id, hash, len, offset, str)
+#define QDEF1(id, hash, len, offset, str) offset,
+#define TRANSLATION(id, length, compressed ...)
+    #include "genhdr/qstrdefs.generated.h"
+#undef QDEF0
+#undef QDEF1
 #undef TRANSLATION
     #endif
+    sizeof(mp_qstr_const_blob) - 1,
 };
 
 const qstr_pool_t mp_qstr_const_pool = {
@@ -175,24 +201,14 @@ const qstr_pool_t mp_qstr_const_pool = {
     MP_QSTRnumber_of_static,
     true,               // is_sorted
     MICROPY_ALLOC_QSTR_ENTRIES_INIT,
-    MP_QSTRnumber_of - MP_QSTRnumber_of_static,   // corresponds to number of strings in array just below
+    MP_QSTRnumber_of - MP_QSTRnumber_of_static,   // corresponds to number of strings in the blob
     #if MICROPY_QSTR_BYTES_IN_HASH
     (qstr_hash_t *)mp_qstr_const_hashes,
     #endif
-    (qstr_len_t *)mp_qstr_const_lengths,
-    {
-        #ifndef NO_QSTR
-#define QDEF0(id, hash, len, str)
-#define QDEF1(id, hash, len, str) str,
-// CIRCUITPY-CHANGE: translations
-#define TRANSLATION(id, length, compressed ...)
-        #include "genhdr/qstrdefs.generated.h"
-#undef QDEF0
-#undef QDEF1
-// CIRCUITPY-CHANGE: translations
-#undef TRANSLATION
-        #endif
-    },
+    // CIRCUITPY-CHANGE: strings live in the blob; no lengths array or qstrs[]
+    NULL,               // lengths
+    mp_qstr_const_blob,
+    mp_qstr_const_offsets,
 };
 
 // If frozen code is enabled, then there is an additional, sorted, ROM pool
@@ -284,6 +300,22 @@ static const qstr_pool_t *PLACE_IN_WARM_CODE(find_qstr)(qstr *q) {
     return pool;
 }
 
+// CIRCUITPY-CHANGE: ROM pools keep their strings in a blob addressed by offsets;
+// runtime pools keep a pointer array and a length array. See qstr_pool_t.
+static inline const char *pool_str(const qstr_pool_t *pool, size_t at) {
+    if (pool->blob != NULL) {
+        return pool->blob + pool->offsets[at];
+    }
+    return pool->qstrs[at];
+}
+
+static inline size_t pool_len(const qstr_pool_t *pool, size_t at) {
+    if (pool->blob != NULL) {
+        return pool->offsets[at + 1] - pool->offsets[at] - 1;
+    }
+    return pool->lengths[at];
+}
+
 // qstr_mutex must be taken while in this function
 static qstr qstr_add(mp_uint_t len, const char *q_ptr) {
     #if MICROPY_QSTR_BYTES_IN_HASH
@@ -323,6 +355,9 @@ static qstr qstr_add(mp_uint_t len, const char *q_ptr) {
         #else
         pool->lengths = (qstr_len_t *)(pool->qstrs + new_alloc);
         #endif
+        // CIRCUITPY-CHANGE: runtime pools use qstrs[] and lengths, not a blob
+        pool->blob = NULL;
+        pool->offsets = NULL;
         pool->prev = MP_STATE_VM(last_pool);
         pool->total_prev_len = MP_STATE_VM(last_pool)->total_prev_len + MP_STATE_VM(last_pool)->len;
         pool->alloc = new_alloc;
@@ -388,7 +423,8 @@ qstr qstr_find_strn(const char *str, size_t str_len) {
         if (pool->is_sorted) {
             while (high - low > 1) {
                 size_t mid = (low + high) / 2;
-                int cmp = strncmp(str, pool->qstrs[mid], str_len);
+                // CIRCUITPY-CHANGE: pool accessor
+                int cmp = strncmp(str, pool_str(pool, mid), str_len);
                 if (cmp <= 0) {
                     high = mid;
                 } else {
@@ -403,8 +439,9 @@ qstr qstr_find_strn(const char *str, size_t str_len) {
                 #if MICROPY_QSTR_BYTES_IN_HASH
                 pool->hashes[at] == str_hash &&
                 #endif
-                pool->lengths[at] == str_len
-                && memcmp(pool->qstrs[at], str, str_len) == 0) {
+                // CIRCUITPY-CHANGE: pool accessors
+                pool_len(pool, at) == str_len
+                && memcmp(pool_str(pool, at), str, str_len) == 0) {
                 #if MICROPY_OPT_QSTR_FIND_CACHE
                 qstr_find_cache_remember(str, str_len, pool->total_prev_len + at);
                 #endif
@@ -537,24 +574,28 @@ mp_uint_t PLACE_IN_WARM_CODE(qstr_hash)(qstr q) {
     #if MICROPY_QSTR_BYTES_IN_HASH
     return pool->hashes[q];
     #else
-    return qstr_compute_hash((byte *)pool->qstrs[q], pool->lengths[q]);
+    // CIRCUITPY-CHANGE: pool accessors
+    return qstr_compute_hash((byte *)pool_str(pool, q), pool_len(pool, q));
     #endif
 }
 
 size_t PLACE_IN_WARM_CODE(qstr_len)(qstr q) {
     const qstr_pool_t *pool = find_qstr(&q);
-    return pool->lengths[q];
+    // CIRCUITPY-CHANGE: pool accessor
+    return pool_len(pool, q);
 }
 
 const char *qstr_str(qstr q) {
     const qstr_pool_t *pool = find_qstr(&q);
-    return pool->qstrs[q];
+    // CIRCUITPY-CHANGE: pool accessor
+    return pool_str(pool, q);
 }
 
 const byte *PLACE_IN_WARM_CODE(qstr_data)(qstr q, size_t *len) {
     const qstr_pool_t *pool = find_qstr(&q);
-    *len = pool->lengths[q];
-    return (byte *)pool->qstrs[q];
+    // CIRCUITPY-CHANGE: pool accessors
+    *len = pool_len(pool, q);
+    return (byte *)pool_str(pool, q);
 }
 
 void qstr_pool_info(size_t *n_pool, size_t *n_qstr, size_t *n_str_data_bytes, size_t *n_total_bytes) {

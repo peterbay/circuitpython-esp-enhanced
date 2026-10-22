@@ -56,12 +56,16 @@ CONFIG_ESP_WIFI_RX_BA_WIN=6
 #
 # ESP System Settings
 #
-# TEMPORARY, bring-up only. With memory protection on, OpenOCD announces
-# "Memory protection is enabled. Reset target to disable it..." and resets the
-# chip the moment it attaches -- which destroys the very state being
-# investigated. Every JTAG reading taken with this enabled was of a freshly
-# reset board sitting in ROM, not of the fault.
-CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=y
+# Off, for two reasons. With memory protection on, OpenOCD announces "Memory
+# protection is enabled. Reset target to disable it..." and resets the chip the
+# moment it attaches -- which destroys the very state being investigated. And
+# loaded native code executes from RAM, which memory protection forbids, so
+# CIRCUITPY_LOAD_NATIVE requires it off anyway (esp-idf-config/sdkconfig-native.defaults).
+# This used to name CONFIG_ESP_SYSTEM_MEMPROT_FEATURE, a renamed alias that still
+# maps onto the symbol below. It read "=y", against what the note above asks for;
+# that went unnoticed because the symbol was not available for esp32c5 until
+# ESP-IDF 6.1, where it turned memory protection back on and broke the build.
+# CONFIG_ESP_SYSTEM_MEMPROT is not set
 # end of ESP System Settings
 
 #

@@ -183,8 +183,8 @@ bool partition_disk_mount(const char *label, const char *path, bool usb_writable
     }
 
     // Only one side may write a FAT filesystem at a time.
-    filesystem_set_concurrent_write_protection(vfs, true);
-    filesystem_set_writable_by_usb(vfs, usb_writable);
+    filesystem_set_concurrent_write_protection((supervisor_vfs_t *)vfs, true);
+    filesystem_set_writable_by_usb((supervisor_vfs_t *)vfs, usb_writable);
 
     memcpy(_disk_path, path, path_len + 1);
     mp_vfs_mount_t *mount = &_disk_vfs;
@@ -229,7 +229,7 @@ bool partition_disk_format(const char *label, partition_disk_result_t *result) {
 
     _partition = part;
     // mkfs writes through the block device, so it must look writable.
-    filesystem_set_concurrent_write_protection(vfs, false);
+    filesystem_set_concurrent_write_protection((supervisor_vfs_t *)vfs, false);
 
     uint8_t working_buf[FF_MAX_SS];
     FRESULT res = f_mkfs(&vfs->fatfs, FM_FAT | FM_SFD, 0, working_buf, sizeof(working_buf));

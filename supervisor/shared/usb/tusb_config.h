@@ -94,7 +94,6 @@ extern "C" {
 // Use DMA with the USB peripheral.
 #if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3)
 #define CFG_TUD_DWC2_DMA_ENABLE (1)
-#define CFG_TUH_DWC2_DMA_ENABLE (1)
 #endif
 
 // Vendor name included in Inquiry response, max 8 bytes
@@ -193,6 +192,10 @@ extern "C" {
 #if CIRCUITPY_USB_HOST || CIRCUITPY_MAX3421E
 #define CFG_TUH_ENABLED 1
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+#define CFG_TUH_DWC2_DMA_ENABLE (1)
+#endif
+
 // Always use PIO to do host on RP2.
 #if !CIRCUITPY_MAX3421E
 #define CFG_TUH_RPI_PIO_USB 1
@@ -200,7 +203,7 @@ extern "C" {
 #define CFG_TUH_RPI_PIO_USB 1
 #endif
 
-#if CIRCUITPY_USB_DEVICE_HIGH_SPEED == 1
+#if CIRCUITPY_USB_DEVICE_HIGH_SPEED == 1 || (defined(CONFIG_IDF_TARGET_ESP32P4) && CIRCUITPY_USB_HOST_INSTANCE == 1) || defined(CONFIG_IDF_TARGET_ESP32S31)
 #define _HOST_SPEED OPT_MODE_HIGH_SPEED
 #else
 #define _HOST_SPEED 0
@@ -230,7 +233,6 @@ extern "C" {
 #define CFG_TUH_HUB                 2
 #define CFG_TUH_CDC                 0
 #define CFG_TUH_MSC                 0
-#define CFG_TUH_VENDOR              0
 #define CFG_TUH_API_EDPT_XFER       1
 
 // max device support (excluding hub device)
@@ -248,6 +250,7 @@ extern "C" {
 #define nrf52_errata_187 errata_187
 #define nrf52_errata_171 errata_171
 #define nrf52_errata_166 errata_166
+#define nrf52_errata_199 errata_199
 
 #ifdef __cplusplus
 }

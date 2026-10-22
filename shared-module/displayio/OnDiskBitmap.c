@@ -15,11 +15,43 @@
 
 #include "py/mperrno.h"
 #include "py/runtime.h"
+#include "py/stream.h"
+#if CIRCUITPY_STORAGE_MAP_FILE
+#include "shared-bindings/storage/__init__.h"
+#endif
 
 
 #define DISPLAYIO_ODBMP_DEBUG(...) (void)0
 // #define DISPLAYIO_ODBMP_DEBUG(...) mp_printf(&mp_plat_print __VA_OPT__(,) __VA_ARGS__)
 
+
+#if CIRCUITPY_STORAGE_MAP_FILE
+static void add_run(void *self_in, const uint8_t *addr, size_t len) {
+    displayio_ondiskbitmap_t *self = self_in;
+    if (self->map_count < MP_ARRAY_SIZE(self->map)) {
+        self->map[self->map_count].addr = addr;
+        self->map[self->map_count].len = len;
+        self->map_count++;
+    } else {
+        self->map_count = MP_ARRAY_SIZE(self->map) + 1;  // too fragmented: read through the cache
+    }
+}
+
+// Flash address of len bytes at offset if they lie in one run, else NULL.
+static const uint8_t *map_at(displayio_ondiskbitmap_t *self, uint32_t offset, uint32_t len) {
+    for (uint8_t i = 0; i < self->map_count; i++) {
+        if (offset < self->map[i].len) {
+            return offset + len <= self->map[i].len ? self->map[i].addr + offset : NULL;
+        }
+        offset -= self->map[i].len;
+    }
+    return NULL;
+}
+
+const uint8_t *displayio_ondiskbitmap_row(displayio_ondiskbitmap_t *self, int16_t y) {
+    return map_at(self, self->data_offset + (self->height - y - 1) * self->stride, self->width);
+}
+#endif
 
 static uint32_t read_word(uint16_t *bmp_header, uint16_t index) {
     // CIRCUITPY-CHANGE: the high half promotes to signed int before the shift, so a
@@ -27,23 +59,26 @@ static uint32_t read_word(uint16_t *bmp_header, uint16_t index) {
     return bmp_header[index] | ((uint32_t)bmp_header[index + 1] << 16);
 }
 
-void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self, pyb_file_obj_t *file) {
-    // Load the wave
+void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self, mp_obj_t file) {
     self->file = file;
-    // CIRCUITPY-CHANGE: this was left uninitialised, and a 12 byte BITMAPCOREHEADER
-    // only fills the first 26 bytes of it while the code below reads compression
-    // from byte 30. Zeroing does not make the parse correct -- that is handled
-    // separately -- but it does stop it reading whatever was on the stack.
+    self->cache_len = 0;
+    // CIRCUITPY-CHANGE: a 12 byte BITMAPCOREHEADER only fills the start of this,
+    // and bits_per_pixel below is read from a word past it. Zeroing does not make
+    // the parse correct, but it stops it reading whatever was on the stack.
     uint16_t bmp_header[69] = {0};
-    f_rewind(&self->file->fp);
-    UINT bytes_read;
+    int errcode = 0;
+
+    mp_stream_seek(file, 0, MP_SEEK_SET, &errcode);
+    if (errcode != 0) {
+        mp_raise_OSError(errcode);
+    }
 
     // Read the minimum amount of bytes required to parse a BITMAPCOREHEADER.
     // If needed, we will read more bytes down below.
-    if (f_read(&self->file->fp, bmp_header, 26, &bytes_read) != FR_OK) {
-        mp_raise_OSError(MP_EIO);
+    mp_uint_t bytes_read = mp_stream_rw(file, bmp_header, 26, &errcode, MP_STREAM_RW_ONCE);
+    if (errcode != 0) {
+        mp_raise_OSError(errcode);
     }
-    DISPLAYIO_ODBMP_DEBUG("bytes_read: %d\n", bytes_read);
     if (bytes_read != 26 || memcmp(bmp_header, "BM", 2) != 0) {
         mp_arg_error_invalid(MP_QSTR_file);
     }
@@ -54,8 +89,9 @@ void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self,
 
     if (header_size == 40 || header_size == 108 || header_size == 124) {
         // Read the remaining header bytes
-        if (f_read(&self->file->fp, bmp_header + 13, header_size - 12, &bytes_read) != FR_OK) {
-            mp_raise_OSError(MP_EIO);
+        bytes_read = mp_stream_rw(file, bmp_header + 13, header_size - 12, &errcode, MP_STREAM_RW_ONCE);
+        if (errcode != 0) {
+            mp_raise_OSError(errcode);
         }
         DISPLAYIO_ODBMP_DEBUG("bytes_read: %d\n", bytes_read);
         if (bytes_read != (header_size - 12)) {
@@ -167,12 +203,14 @@ void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self,
             uint32_t *palette_data = m_malloc_without_collect(
                 (size_t)number_of_colors * sizeof(uint32_t));
 
-            f_rewind(&self->file->fp);
-            f_lseek(&self->file->fp, palette_offset);
+            mp_stream_seek(file, palette_offset, MP_SEEK_SET, &errcode);
+            if (errcode != 0) {
+                mp_raise_OSError(errcode);
+            }
 
-            UINT palette_bytes_read;
-            if (f_read(&self->file->fp, palette_data, palette_size, &palette_bytes_read) != FR_OK) {
-                mp_raise_OSError(MP_EIO);
+            mp_uint_t palette_bytes_read = mp_stream_rw(file, palette_data, palette_size, &errcode, MP_STREAM_RW_ONCE);
+            if (errcode != 0) {
+                mp_raise_OSError(errcode);
             }
             if (palette_bytes_read != palette_size) {
                 mp_raise_ValueError(MP_ERROR_TEXT("Unable to read color palette data"));
@@ -215,11 +253,15 @@ void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self,
         self->stride = (bit_stride / 8);
     }
 
-    // CIRCUITPY-CHANGE: one row's worth of buffer for get_pixel to read into, so
-    // that a run along a row costs one seek and one read rather than one of each
-    // per pixel. Allocated once here because stride is only known now.
-    self->row_cache = m_malloc_without_collect(self->stride);
-    self->cached_row = UINT32_MAX;
+    #if CIRCUITPY_STORAGE_MAP_FILE
+    self->map_count = 0;
+    if (storage_map_runs(file, add_run, self) != 0 || self->map_count > MP_ARRAY_SIZE(self->map)) {
+        self->map_count = 0;
+    }
+    // BMP rows don't start on a 4-byte boundary, so in a split file some row crosses a run.
+    self->rows_mapped = self->bits_per_pixel == 8 &&
+        map_at(self, self->data_offset, (uint32_t)(self->height - 1) * self->stride + self->width) != NULL;
+    #endif
 }
 
 
@@ -233,69 +275,68 @@ uint32_t common_hal_displayio_ondiskbitmap_get_pixel(displayio_ondiskbitmap_t *s
     uint8_t bytes_per_pixel = (self->bits_per_pixel / 8)  ? (self->bits_per_pixel / 8) : 1;
     uint8_t pixels_per_byte = 8 / self->bits_per_pixel;
 
-    // CIRCUITPY-CHANGE: this used to seek and read for every single pixel, with a
-    // comment saying no cache was needed because the filesystem caches sectors.
-    // The sector cache does spare the flash read, but not the f_lseek -- which
-    // validates its argument and walks the cluster chain, and BMP rows are stored
-    // bottom-up so the offsets run backwards and the forward-seek shortcut never
-    // applies -- nor the f_read call itself. The general TileGrid loop calls this
-    // once per pixel, so a full-screen bitmap was tens of thousands of FatFS
-    // entries per frame. Measured on a 48x64 bitmap: 1010 cycles per pixel against
-    // 145 for the same grid backed by memory.
-    //
-    // A row is read once and served from there. Zero it first so that a file
-    // shorter than its own header claims still reads as zeros, which is what the
-    // per-pixel short read used to produce.
-    uint32_t row = self->height - y - 1;
-    if (row != self->cached_row) {
-        memset(self->row_cache, 0, self->stride);
-        f_lseek(&self->file->fp, self->data_offset + row * self->stride);
-        UINT bytes_read;
-        if (f_read(&self->file->fp, self->row_cache, self->stride, &bytes_read) != FR_OK) {
-            self->cached_row = UINT32_MAX;
-            return 0;
-        }
-        self->cached_row = row;
-    }
-
-    uint32_t byte_offset = (pixels_per_byte == 0)
-        ? (uint32_t)x * bytes_per_pixel
-        : (uint32_t)x / pixels_per_byte;
-    if (byte_offset + bytes_per_pixel > self->stride) {
-        return 0;
+    uint32_t location;
+    if (pixels_per_byte == 0) {
+        location = self->data_offset + (self->height - y - 1) * self->stride + x * bytes_per_pixel;
+    } else {
+        location = self->data_offset + (self->height - y - 1) * self->stride + x / pixels_per_byte;
     }
     uint32_t pixel_data = 0;
-    memcpy(&pixel_data, self->row_cache + byte_offset, bytes_per_pixel);
-
-    {
-        uint32_t tmp = 0;
-        uint8_t red;
-        uint8_t green;
-        uint8_t blue;
-        if (bytes_per_pixel == 1) {
-            uint8_t offset = (x % pixels_per_byte) * self->bits_per_pixel;
-            uint8_t mask = (1 << self->bits_per_pixel) - 1;
-
-            return (pixel_data >> ((8 - self->bits_per_pixel) - offset)) & mask;
-        } else if (bytes_per_pixel == 2) {
-            if (self->g_bitmask == 0x07e0) { // 565
-                red = ((pixel_data & self->r_bitmask) >> 11);
-                green = ((pixel_data & self->g_bitmask) >> 5);
-                blue = ((pixel_data & self->b_bitmask) >> 0);
-            } else { // 555
-                red = ((pixel_data & self->r_bitmask) >> 10);
-                green = ((pixel_data & self->g_bitmask) >> 4);
-                blue = ((pixel_data & self->b_bitmask) >> 0);
+    #if CIRCUITPY_STORAGE_MAP_FILE
+    if (self->map_count > 0) {
+        // Byte by byte, so a pixel split across two runs reads right too. The cache can't
+        // help there: it shares memory with the run table.
+        for (uint8_t i = 0; i < bytes_per_pixel; i++) {
+            const uint8_t *p = map_at(self, location + i, 1);
+            if (p == NULL) {
+                return 0;
             }
-            tmp = (red << 19 | green << 10 | blue << 3);
-            return tmp;
-        } else if ((bytes_per_pixel == 4) && (self->bitfield_compressed)) {
-            return pixel_data & 0x00FFFFFF;
-        } else {
-            return pixel_data;
+            ((uint8_t *)&pixel_data)[i] = *p;
         }
+    } else
+    #endif
+    {
+        int errcode = 0;
+        if (location < self->cache_start || location + bytes_per_pixel > self->cache_start + self->cache_len) {
+            mp_stream_seek(self->file, location, MP_SEEK_SET, &errcode);
+            if (errcode != 0) {
+                return 0;
+            }
+            self->cache_start = location;
+            self->cache_len = mp_stream_rw(self->file, self->cache, sizeof(self->cache), &errcode, MP_STREAM_RW_ONCE);
+            if (errcode != 0 || self->cache_len < bytes_per_pixel) {
+                self->cache_len = 0;
+                return 0;
+            }
+        }
+        memcpy(&pixel_data, self->cache + (location - self->cache_start), bytes_per_pixel);
     }
-    return 0;
+    uint32_t tmp = 0;
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+    if (bytes_per_pixel == 1) {
+        uint8_t offset = (x % pixels_per_byte) * self->bits_per_pixel;
+        uint8_t mask = (1 << self->bits_per_pixel) - 1;
+
+        return (pixel_data >> ((8 - self->bits_per_pixel) - offset)) & mask;
+    } else if (bytes_per_pixel == 2) {
+        if (self->g_bitmask == 0x07e0) { // 565
+            red = ((pixel_data & self->r_bitmask) >> 11);
+            green = ((pixel_data & self->g_bitmask) >> 5);
+            blue = ((pixel_data & self->b_bitmask) >> 0);
+        } else { // 555
+            red = ((pixel_data & self->r_bitmask) >> 10);
+            green = ((pixel_data & self->g_bitmask) >> 4);
+            blue = ((pixel_data & self->b_bitmask) >> 0);
+        }
+        tmp = (red << 19 | green << 10 | blue << 3);
+        return tmp;
+    } else if ((bytes_per_pixel == 4) && (self->bitfield_compressed)) {
+        return pixel_data & 0x00FFFFFF;
+    } else {
+        return pixel_data;
+    }
 }
 
 uint16_t common_hal_displayio_ondiskbitmap_get_height(displayio_ondiskbitmap_t *self) {

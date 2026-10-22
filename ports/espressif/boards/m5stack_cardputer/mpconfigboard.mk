@@ -21,3 +21,6 @@ FROZEN_MPY_DIRS += $(TOP)/frozen/partition_disk
 
 CIRCUITPY_PARTITION_DISK = 1
 
+# Was a #define in mpconfigboard.h; upstream has since made this a make variable
+# with a -D of its own, which the header then redefined.
+CIRCUITPY_DISPLAY_AREA_BUFFER_SIZE = 4096

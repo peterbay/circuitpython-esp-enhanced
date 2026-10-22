@@ -550,11 +550,8 @@ static const int16_t pg_sin_q15_quad[91] = {
     32269, 32364, 32448, 32523, 32587, 32642, 32687, 32722, 32747, 32762,
     32767,
 };
-static int32_t pg_sin_q15(int deg) {
-    deg %= 360;
-    if (deg < 0) {
-        deg += 360;
-    }
+// deg must already be in 0..360 (360 == 0).
+static int32_t pg_sin_q15_reduced(int deg) {
     if (deg <= 90) {
         return pg_sin_q15_quad[deg];
     }
@@ -566,6 +563,13 @@ static int32_t pg_sin_q15(int deg) {
     }
     return -pg_sin_q15_quad[360 - deg];
 }
+static int32_t pg_sin_q15(int deg) {
+    deg %= 360;
+    if (deg < 0) {
+        deg += 360;
+    }
+    return pg_sin_q15_reduced(deg);
+}
 static int32_t pg_cos_q15(int deg) {
     return pg_sin_q15(deg + 90);
 }
@@ -574,10 +578,22 @@ static int32_t pg_cos_q15(int deg) {
 // DOUBLE-integrated over ~170 rows, which amplifies whole-degree quantization into visible pixels
 // (host-measured 9 px); one lerp per curvature eval brings the road within 1 px of the float original.
 static int32_t pg_sin_q15_lerp(int64_t deg_q16) {
-    int d0 = (int)(deg_q16 >> 16);
+    // Reduce once; d0 + 1 is then at most 360, which the table handles.
+    int d0 = (int)(deg_q16 >> 16) % 360;
+    if (d0 < 0) {
+        d0 += 360;
+    }
     int32_t frac = (int32_t)(deg_q16 & 0xFFFF);
-    int32_t a = pg_sin_q15(d0);
-    return a + (int32_t)(((int64_t)(pg_sin_q15(d0 + 1) - a) * frac) >> 16);
+    int32_t a = pg_sin_q15_reduced(d0);
+    // Adjacent entries differ by < 600 and frac < 2^16, so this fits in 32 bits.
+    return a + (((pg_sin_q15_reduced(d0 + 1) - a) * frac) >> 16);
+}
+
+// (s * amp) >> 15 with 32-bit multiplies. Exact for |s| <= 2^15 and any int32 amp.
+static inline int32_t pg_mulshr15(int32_t s, int32_t amp) {
+    uint32_t hi = (uint32_t)(amp >> 15) * (uint32_t)s;
+    int32_t lo = ((amp & 0x7FFF) * s) >> 15;
+    return (int32_t)(hi + (uint32_t)lo);
 }
 
 // One racing-road frame's curve pass: the bottom-up curvature accumulator + per-row integer edges
@@ -598,8 +614,8 @@ void picogame_road_edges(int16_t *rl, int16_t *rr, const int32_t *hw_q16, int n,
     for (int i = n - 1; i >= 0; i--) {
         if (cnt == 0) {
             int32_t d = dist + (drow - i) * wstep;
-            ck = (int32_t)(((int64_t)pg_sin_q15_lerp(((int64_t)d * f1) >> 4) * a1k) >> 15)
-                + (int32_t)(((int64_t)pg_sin_q15_lerp(((int64_t)d * f2) >> 4) * a2k) >> 15);
+            ck = pg_mulshr15(pg_sin_q15_lerp(((int64_t)d * f1) >> 4), a1k)
+                + pg_mulshr15(pg_sin_q15_lerp(((int64_t)d * f2) >> 4), a2k);
             cnt = cstep;
         }
         cnt--;
@@ -1060,6 +1076,12 @@ bool picogame_strip_begin(
     return true;
 }
 
+#if CIRCUITPY_PICOGAME_RGB444
+// The display currently switched to RGB444, or NULL. The strip path packs for it and
+// picogame_reset() restores it to RGB565 at the end of the program.
+static picogame_output_t *rgb444_display = NULL;
+#endif
+
 // --- output transport seam (busdisplay backend): the ONLY per-strip display ops the generic
 // picogame_render_region orchestrator below touches, so a non-CircuitPython port (MicroPython
 // framebuf/SPI) swaps just strip_begin + these two + set_invert/set_pixel_format. See __init__.h.
@@ -1077,6 +1099,14 @@ void picogame_render_region(
     int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     uint16_t background, int ox, int oy) {
 
+    #if CIRCUITPY_PICOGAME_RGB444
+    // RGB444 packs 2 px into 3 bytes, so widen the region to even x bounds.
+    bool rgb444 = (display == rgb444_display);
+    if (rgb444) {
+        x0 &= ~1;
+        x1 = (x1 + 1) & ~1;
+    }
+    #endif
     int region_w, strip_h;
     int cx0 = x0, cy0 = y0, cx1 = x1, cy1 = y1;   // strip_begin clamps these to the panel in place
     if (!picogame_strip_begin(display, &cx0, &cy0, &cx1, &cy1, buffer_pixels, &region_w, &strip_h)) {
@@ -1085,7 +1115,13 @@ void picogame_render_region(
     for (int sy = cy0; sy < cy1; sy += strip_h) {
         int sh = picogame_imin(strip_h, cy1 - sy);
         mp_obj_t exc = picogame_blit_strip_layers(buffer, region_w, sy, sh, cx0, items, kinds, n, background, ox, oy);
-        picogame_out_strip_send(display, (uint8_t *)buffer, region_w * sh * 2);
+        size_t nbytes = (size_t)region_w * sh * 2;
+        #if CIRCUITPY_PICOGAME_RGB444
+        if (rgb444) {
+            nbytes = picogame_pack_rgb444(buffer, (size_t)region_w * sh);   // in place, 3/4 the bytes
+        }
+        #endif
+        picogame_out_strip_send(display, (uint8_t *)buffer, nbytes);
         if (exc != MP_OBJ_NULL) {                 // a StripDraw callback raised a BaseException: close the
             picogame_out_strip_end(display);      // bus, then re-raise (Ctrl-C / reload)
             nlr_raise(MP_OBJ_TO_PTR(exc));
@@ -1113,6 +1149,7 @@ void picogame_set_invert(picogame_output_t *display, bool on) {
 // Set the panel pixel format (COLMOD 0x3A): rgb444 -> 12-bit RGB444 (0x53), else 16-bit RGB565
 // (0x55). Asserting it on every Display construct also recovers from a previous program that left
 // the panel in the other format (survives soft reset).
+
 void picogame_set_pixel_format(picogame_output_t *display, bool rgb444) {
     uint8_t cmd = 0x3A;
     uint8_t param = rgb444 ? 0x53 : 0x55;
@@ -1122,6 +1159,20 @@ void picogame_set_pixel_format(picogame_output_t *display, bool rgb444) {
     display->bus.send(display->bus.bus, DISPLAY_COMMAND, CHIP_SELECT_TOGGLE_EVERY_BYTE, &cmd, 1);
     display->bus.send(display->bus.bus, DISPLAY_DATA, CHIP_SELECT_UNTOUCHED, &param, 1);
     displayio_display_bus_end_transaction(&display->bus);
+    rgb444_display = rgb444 ? display : NULL;
+}
+
+// Called at the end of a program, before reset_displays() takes the bus away.
+void picogame_reset(void) {
+    if (rgb444_display == NULL) {
+        return;
+    }
+    // A released display has a None bus.
+    if (mp_obj_get_type(rgb444_display->bus.bus) == &mp_type_NoneType) {
+        rgb444_display = NULL;
+        return;
+    }
+    picogame_set_pixel_format(rgb444_display, false);   // clears rgb444_display
 }
 
 // Pack a strip of `npix` (must be even) WIRE-order RGB565 pixels IN-PLACE to ST7789 12-bit RGB444

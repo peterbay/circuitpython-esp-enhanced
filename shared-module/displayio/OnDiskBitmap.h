@@ -11,8 +11,6 @@
 
 #include "py/obj.h"
 
-#include "extmod/vfs_fat.h"
-
 typedef struct {
     mp_obj_base_t base;
     // CIRCUITPY-CHANGE: width, height and the data offset come out of a 32 bit
@@ -27,12 +25,7 @@ typedef struct {
     uint32_t r_bitmask;
     uint32_t g_bitmask;
     uint32_t b_bitmask;
-    // CIRCUITPY-CHANGE: one row of the file, so that get_pixel does not seek and
-    // read per pixel. cached_row holds the file row currently in it, counted the
-    // way get_pixel counts, or UINT32_MAX when nothing is cached.
-    uint8_t *row_cache;
-    uint32_t cached_row;
-    pyb_file_obj_t *file;
+    mp_obj_t file;
     union {
         mp_obj_base_t *pixel_shader_base;
         struct displayio_palette *palette;
@@ -40,4 +33,27 @@ typedef struct {
     };
     bool bitfield_compressed;
     uint8_t bits_per_pixel;
+    // The last bytes read from the file. Pixels are read along rows, so most reads hit it.
+    uint8_t cache_len;
+    #if CIRCUITPY_STORAGE_MAP_FILE
+    // Flash runs the pixels are read from instead of the cache; 0 = read through the cache.
+    uint8_t map_count;
+    // 8-bit file with every row inside one run, so TileGrid can read whole rows.
+    bool rows_mapped;
+    #endif
+    uint32_t cache_start;
+    union {
+        uint8_t cache[64];
+        #if CIRCUITPY_STORAGE_MAP_FILE
+        struct {
+            const uint8_t *addr;
+            uint32_t len;
+        } map[8];
+        #endif
+    };
 } displayio_ondiskbitmap_t;
+
+#if CIRCUITPY_STORAGE_MAP_FILE
+// Row y of an 8-bit file in flash, or NULL if it spans two runs or the file isn't mapped.
+const uint8_t *displayio_ondiskbitmap_row(displayio_ondiskbitmap_t *self, int16_t y);
+#endif

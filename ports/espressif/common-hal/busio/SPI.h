@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "py/mpconfig.h"
+#include "supervisor/shared/async_flag.h"
 #include "driver/spi_master.h"
 #include "shared-bindings/microcontroller/Pin.h"
 
@@ -24,13 +26,11 @@ typedef struct {
     uint32_t baudrate;            // Actual frequency, reported by the frequency property.
     uint32_t requested_baudrate;  // Value passed to configure(); used for the cache-hit check.
 
-    #if CIRCUITPY_DISPLAY_DOUBLE_BUFFER
-    // CIRCUITPY-CHANGE: the driver keeps the pointer to a queued transaction
-    // until its result is collected, so the descriptor cannot live on the stack
-    // of the call that queued it.
-    spi_transaction_t async_transaction;
-    bool async_pending;
-    #endif
 
     SemaphoreHandle_t mutex;
+    #if CIRCUITPY_BUSIO_SPI_ASYNC
+    spi_transaction_t async_trans[2];   // queued by write_start, collected by end
+    uint8_t async_count;
+    circuitpy_async_flag_t *async_done;
+    #endif
 } busio_spi_obj_t;

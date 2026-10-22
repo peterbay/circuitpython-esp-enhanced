@@ -8,6 +8,10 @@
 #include "supervisor/filesystem.h"
 #include "supervisor/port.h"
 #include "supervisor/shared/stack.h"
+#if CIRCUITPY_USB_HOST
+#include "supervisor/usb.h"
+#include "tusb.h"
+#endif
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -17,6 +21,12 @@
 #endif
 
 void port_background_tick(void) {
+    #if CIRCUITPY_USB_HOST
+    // Enumeration delays need polling even when no new USB IRQ arrives.
+    if (tuh_task_event_ready()) {
+        usb_background_schedule();
+    }
+    #endif
     // Yield with zero delay in case FreeRTOS wants to switch to something else.
     port_task_yield();
 }

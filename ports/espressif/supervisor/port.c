@@ -24,6 +24,7 @@
 #endif
 
 #include "esp_mac.h"
+#include "esp_memory_utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -35,6 +36,9 @@
 #include "common-hal/busio/SPI.h"
 #include "common-hal/busio/UART.h"
 #include "common-hal/dualbank/__init__.h"
+#if CIRCUITPY_HARDWAREKEY
+#include "common-hal/hardwarekey/__init__.h"
+#endif
 #include "common-hal/ps2io/Ps2.h"
 #include "common-hal/watchdog/WatchDogTimer.h"
 #include "common-hal/socketpool/Socket.h"
@@ -72,7 +76,7 @@
 #include "soc/lp_aon_reg.h"
 #define CP_SAVED_WORD_REGISTER LP_AON_STORE0_REG
 #else
-#ifdef CONFIG_IDF_TARGET_ESP32P4
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32S31)
 #include "soc/lp_system_reg.h"
 #define CP_SAVED_WORD_REGISTER LP_SYSTEM_REG_LP_STORE15_REG
 
@@ -328,6 +332,12 @@ safe_mode_t port_init(void) {
 
     _never_reset_spi_ram_flash();
 
+    #if CIRCUITPY_HARDWAREKEY
+    // Populate board.EFUSE_KEY* from the eFuse key blocks. eFuse reads and the
+    // PSA key import need no filesystem or VM, so this is safe here.
+    espressif_hardwarekey_init();
+    #endif
+
     esp_reset_reason_t reason = esp_reset_reason();
     switch (reason) {
         case ESP_RST_BROWNOUT:
@@ -357,7 +367,13 @@ void port_heap_init(void) {
 void *port_malloc(size_t size, bool dma_capable) {
     if (dma_capable) {
         // SPIRAM is not DMA-capable, so don't bother to ask for it.
+        #if defined(SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE) && SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
+        // Cache maintenance must not touch memory outside this allocation.
+        size = (size + CONFIG_CACHE_L1_CACHE_LINE_SIZE - 1) & ~(CONFIG_CACHE_L1_CACHE_LINE_SIZE - 1);
+        return heap_caps_aligned_alloc(CONFIG_CACHE_L1_CACHE_LINE_SIZE, size, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
+        #else
         return heap_caps_malloc(size, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
+        #endif
     }
 
     void *ptr = NULL;
@@ -370,6 +386,22 @@ void *port_malloc(size_t size, bool dma_capable) {
     }
     return ptr;
 }
+
+#if !CIRCUITPY_ALL_MEMORY_DMA_CAPABLE
+bool port_buffer_is_dma_capable(const void *ptr, size_t len) {
+    if (len == 0 || !esp_ptr_dma_capable(ptr) ||
+        !esp_ptr_dma_capable((const uint8_t *)ptr + len - 1)) {
+        return false;
+    }
+    #if defined(SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE) && SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
+    // Cache maintenance must stay inside the caller's buffer at both ends.
+    return ((uintptr_t)ptr % CONFIG_CACHE_L1_CACHE_LINE_SIZE) == 0 &&
+           (len % CONFIG_CACHE_L1_CACHE_LINE_SIZE) == 0;
+    #else
+    return true;
+    #endif
+}
+#endif
 
 void port_free(void *ptr) {
     heap_caps_free(ptr);

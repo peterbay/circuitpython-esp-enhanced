@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include "extmod/vfs_fat.h"
 #include "py/obj.h"
 
 #include "shared-module/audiocore/__init__.h"
@@ -29,7 +28,7 @@ typedef struct {
     uint32_t bytes_remaining;
 
     uint32_t len;
-    pyb_file_obj_t *file;
+    mp_obj_t file;
 
     uint32_t read_count;
     uint32_t left_read_count;
