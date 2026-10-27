@@ -35,6 +35,8 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_chip_info), MP_ROM_PTR(&espidf_chip_info_obj) },
     { MP_ROM_QSTR(MP_QSTR_app_description), MP_ROM_PTR(&espidf_app_description_obj) },
     { MP_ROM_QSTR(MP_QSTR_efuse_user_data), MP_ROM_PTR(&espidf_efuse_user_data_obj) },
+
+    { MP_ROM_QSTR(MP_QSTR_Timer), MP_ROM_PTR(&espidf_timer_type) },
 };
 static MP_DEFINE_CONST_MAP(espidf_extended_globals, espidf_extended_globals_table);
 
@@ -53,3 +55,7 @@ void espidf_extended_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
 }
 
 MP_REGISTER_MODULE_DELEGATION(espidf_module, espidf_extended_attr);
+
+void espidf_extended_reset(void) {
+    espidf_timer_reset();
+}

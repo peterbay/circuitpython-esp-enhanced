@@ -93,6 +93,10 @@
 #include "soc/pcr_reg.h"
 #endif
 
+#if CIRCUITPY_ESPIDF
+#include "bindings/espidf/extended.h"
+#endif
+
 #if CIRCUITPY_IEEE802154
 #include "bindings/ieee802154/Radio.h"
 #endif
@@ -523,6 +527,10 @@ void reset_port(void) {
 
     #if CIRCUITPY_RTC
     rtc_reset();
+    #endif
+
+    #if CIRCUITPY_ESPIDF
+    espidf_extended_reset();
     #endif
 
     #if CIRCUITPY_IEEE802154
