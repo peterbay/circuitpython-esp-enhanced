@@ -38,7 +38,9 @@
 #include "services/gatt/ble_svc_gatt.h"
 
 #include "bindings/espidf/__init__.h"
-// CIRCUITPY-CHANGE: reassembled extended advertisements, Coded PHY scanning.
+// CIRCUITPY-CHANGE: reassembled extended advertisements, Coded PHY scanning
+// and advertising.
+#include "common-hal/_bleio/extended_adv.h"
 #include "common-hal/_bleio/extended_scan.h"
 #include "common-hal/_bleio/Connection.h"
 
@@ -636,7 +638,10 @@ uint32_t _common_hal_bleio_adapter_start_advertising(bleio_adapter_obj_t *self,
 
     #if MYNEWT_VAL(BLE_EXT_ADV)
     bool extended = advertising_data_len > BLE_ADV_LEGACY_DATA_MAX_LEN ||
-        scan_response_data_len > BLE_ADV_LEGACY_DATA_MAX_LEN;
+        scan_response_data_len > BLE_ADV_LEGACY_DATA_MAX_LEN ||
+        // CIRCUITPY-CHANGE: legacy advertisements exist on the 1M PHY only.
+        bleio_extended_adv_primary_phy != BLE_HCI_LE_PHY_1M ||
+        bleio_extended_adv_secondary_phy != BLE_HCI_LE_PHY_1M;
 
     bool scannable = scan_response_data_len > 0;
     bool legacy_pdu = !extended && !anonymous;
@@ -660,8 +665,9 @@ uint32_t _common_hal_bleio_adapter_start_advertising(bleio_adapter_obj_t *self,
         .own_addr_type = own_addr_type,
         .peer = peer,
         .filter_policy = BLE_HCI_CONN_FILT_NO_WL,
-        .primary_phy = BLE_HCI_LE_PHY_1M,
-        .secondary_phy = BLE_HCI_LE_PHY_1M,
+        // CIRCUITPY-CHANGE: chosen with espidf.ble_advertising_phy().
+        .primary_phy = bleio_extended_adv_primary_phy,
+        .secondary_phy = bleio_extended_adv_secondary_phy,
         .tx_power = tx_power,
         .sid = 0,
     };

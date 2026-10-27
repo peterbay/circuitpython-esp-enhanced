@@ -76,4 +76,5 @@ endif
 # on the Coded PHY too; see common-hal/_bleio/extended_scan.c.
 ifneq ($(CIRCUITPY_BLEIO_NATIVE),0)
 SRC_C += common-hal/_bleio/extended_scan.c
+SRC_C += common-hal/_bleio/extended_adv.c
 endif

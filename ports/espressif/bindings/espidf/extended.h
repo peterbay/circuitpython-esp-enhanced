@@ -38,3 +38,8 @@ extern const mp_obj_fun_builtin_fixed_t espidf_efuse_user_data_obj;
 // extended_timer.c
 extern const mp_obj_type_t espidf_timer_type;
 void espidf_timer_reset(void);
+
+// extended_ble.c
+#if CIRCUITPY_BLEIO_NATIVE
+extern const mp_obj_fun_builtin_var_t espidf_ble_advertising_phy_obj;
+#endif

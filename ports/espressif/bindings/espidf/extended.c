@@ -11,6 +11,10 @@
 
 #include "esp_heap_caps.h"
 
+#if CIRCUITPY_BLEIO_NATIVE
+#include "common-hal/_bleio/extended_adv.h"
+#endif
+
 extern const mp_obj_module_t espidf_module;
 
 static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
@@ -37,6 +41,10 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_efuse_user_data), MP_ROM_PTR(&espidf_efuse_user_data_obj) },
 
     { MP_ROM_QSTR(MP_QSTR_Timer), MP_ROM_PTR(&espidf_timer_type) },
+
+    #if CIRCUITPY_BLEIO_NATIVE
+    { MP_ROM_QSTR(MP_QSTR_ble_advertising_phy), MP_ROM_PTR(&espidf_ble_advertising_phy_obj) },
+    #endif
 };
 static MP_DEFINE_CONST_MAP(espidf_extended_globals, espidf_extended_globals_table);
 
@@ -58,4 +66,9 @@ MP_REGISTER_MODULE_DELEGATION(espidf_module, espidf_extended_attr);
 
 void espidf_extended_reset(void) {
     espidf_timer_reset();
+    #if CIRCUITPY_BLEIO_NATIVE
+    // Otherwise the BLE workflow's own advertising would carry on in whatever
+    // mode the program left.
+    bleio_extended_adv_reset();
+    #endif
 }
