@@ -13,6 +13,11 @@ if(CIRCUITPY_ESP_HOSTED)
     list(APPEND COMPONENTS esp-hosted)
 endif()
 
+# CIRCUITPY-CHANGE: this fork's modules; the switches are exported by fork.mk.
+if("$ENV{CIRCUITPY_IEEE802154}" STREQUAL "1")
+    list(APPEND COMPONENTS esp_hal_ieee802154 ieee802154)
+endif()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 set(ENV{ESP_IDF_VERSION} "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}")
 project(circuitpython)

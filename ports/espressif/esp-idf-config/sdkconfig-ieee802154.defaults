@@ -1,0 +1,21 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# FreeRTOS
+#
+# CIRCUITPY-CHANGE: needed by the ieee802154 module, see fork.mk. With
+# CONFIG_PM_ENABLE on, which CircuitPython needs for a settable CPU frequency,
+# the driver's ieee802154_sleep_init() initialises, allocates and then attaches
+# its sleep retention module -- but the allocation callback only creates the
+# retention entries under CONFIG_FREERTOS_USE_TICKLESS_IDLE. Without it nothing
+# is created, sleep_retention_module_attach() refuses a module that was never
+# created, and esp_ieee802154_enable() returns ESP_FAIL. Every Radio() then
+# raises 0xffffffff. ESP-IDF 6.0 had no attach step; 6.1 and master do.
+#
+# Tickless idle only stops the tick while the CPU idles. It does not enter light
+# sleep unless esp_pm_configure() asks for it, which CircuitPython does not.
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+# end of FreeRTOS
+
+# end of Espressif IoT Development Framework Configuration
