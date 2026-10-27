@@ -97,6 +97,10 @@
 #include "bindings/ieee802154/Radio.h"
 #endif
 
+#if CIRCUITPY_ZIGBEE
+#include "bindings/zigbee/Stack.h"
+#endif
+
 #include "bootloader_flash_config.h"
 
 #include "esp_debug_helpers.h"
@@ -523,6 +527,10 @@ void reset_port(void) {
 
     #if CIRCUITPY_IEEE802154
     ieee802154_reset();
+    #endif
+
+    #if CIRCUITPY_ZIGBEE
+    zigbee_reset();
     #endif
 
     #if CIRCUITPY_SOCKETPOOL

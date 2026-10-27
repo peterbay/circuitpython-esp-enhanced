@@ -6,9 +6,11 @@
 
 # Modules this fork adds to the espressif port. They live here rather than in
 # the Makefile so that an upstream merge meets as few changed lines as possible:
-# the Makefile includes this file once, appends FORK_IDF_COMPONENTS_LINK to its
-# component list and puts FORK_SDKCONFIGS just before the board's sdkconfig, and
-# CMakeLists.txt reads the exported switches.
+# the Makefile includes this file once, appends FORK_IDF_COMPONENTS_LINK and
+# FORK_BINARY_BLOBS to its own lists and puts FORK_SDKCONFIGS just before the
+# board's sdkconfig, and CMakeLists.txt reads the exported switches. Nothing
+# here may add to BINARY_BLOBS directly: the Makefile assigns it with "=" after
+# this file is included, and anything added before is lost.
 #
 # The sdkconfig header is regenerated only when the board files or
 # CMakeLists.txt change, not when a fragment listed here does: after editing
@@ -37,14 +39,35 @@ SRC_C += $(wildcard bindings/ieee802154/*.c)
 # esp_hal_ieee802154 carries ieee802154_periph, the peripheral descriptor the
 # driver dereferences on enable; without it every entry point fails to link.
 FORK_IDF_COMPONENTS_LINK += ieee802154 esp_hal_ieee802154
-BINARY_BLOBS += esp-idf/components/esp_phy/lib/$(IDF_TARGET)/libbtbb.a
+FORK_BINARY_BLOBS += esp-idf/components/esp_phy/lib/$(IDF_TARGET)/libbtbb.a
 # Tickless idle, without which the driver cannot be enabled; see the fragment.
 # Appended without "+=": the list is ;-separated and must not gain spaces.
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ieee802154.defaults;
 endif
 
-# Zigbee, on the same radio. Not part of this fork yet; defined because
-# ieee802154's driver callbacks hand frames on to the Zigbee stack when it, not
-# a Radio, holds the radio.
+# Zigbee, on the same radio. The stack is Espressif's prebuilt esp-zigbee-lib,
+# vendored in esp-zigbee-lib/ with binaries for the esp32c5 only, so a board
+# turns this on itself. It costs about 230K of flash, more than the stock 2048K
+# app partition leaves: such a board also needs FLASH_SIZE_SDKCONFIG =
+# esp-idf-config/sdkconfig-flash-8MB-no-uf2-large-app.defaults.
 CIRCUITPY_ZIGBEE ?= 0
 CFLAGS += -DCIRCUITPY_ZIGBEE=$(CIRCUITPY_ZIGBEE)
+export CIRCUITPY_ZIGBEE
+
+ifneq ($(CIRCUITPY_ZIGBEE),0)
+ifeq ($(CIRCUITPY_IEEE802154),0)
+$(error CIRCUITPY_ZIGBEE needs CIRCUITPY_IEEE802154)
+endif
+INC += -isystem esp-zigbee-lib/include
+SRC_C += $(wildcard bindings/zigbee/*.c)
+# Three prebuilt archives. The role is fixed at link time, and zczr is the one
+# to take: its symbols are a strict superset of zed's, and
+# ezb_nwk_set_device_type() then picks coordinator, router or end device at run
+# time. Linking zed as well is not an option -- they collide on every symbol
+# they share, which is all of zed's.
+FORK_IDF_COMPONENTS_LINK += esp-zigbee-lib nvs_flash
+FORK_BINARY_BLOBS += esp-zigbee-lib/lib/$(IDF_TARGET)/libesp-zigbee.release.a \
+	esp-zigbee-lib/lib/$(IDF_TARGET)/libesp-zigbee-core.zczr.release.a \
+	esp-zigbee-lib/lib/$(IDF_TARGET)/libesp-zigbee-idf.native.release.a
+FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-zigbee.defaults;
+endif

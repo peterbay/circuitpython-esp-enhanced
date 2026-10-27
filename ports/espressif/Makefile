@@ -1037,8 +1037,9 @@ CXX_EXCEPTION_WRAPS = \
 LDFLAGS += $(foreach f,$(CXX_EXCEPTION_WRAPS),-Wl,--wrap=$(f))
 
 ESP_IDF_COMPONENTS_LINK = $(IDF_TARGET_ARCH) $(CHIP_COMPONENTS) app_update bootloader_support driver esp_driver_dma esp_driver_gpio esp_driver_gptimer esp_driver_i2c esp_driver_ledc esp_driver_spi esp_driver_uart efuse esp_adc esp_app_format esp_common esp_event esp_gdbstub esp_hal_ana_conv esp_hal_clock esp_hal_gpio esp_hal_gpspi esp_hal_i2c esp_hal_ledc esp_hal_mspi esp_hal_security esp_hal_timg esp_hal_uart esp_hal_wdt esp_hw_support esp_mm esp_partition esp_pm esp_ringbuf esp_rom esp_system esp_timer freertos hal heap log esp_libc nvs_flash nvs_sec_provider pthread soc spi_flash vfs esp_stdio cxx
-# CIRCUITPY-CHANGE: the components this fork's modules need, see fork.mk.
+# CIRCUITPY-CHANGE: the components and archives this fork's modules need, see fork.mk.
 ESP_IDF_COMPONENTS_LINK += $(FORK_IDF_COMPONENTS_LINK)
+BINARY_BLOBS += $(FORK_BINARY_BLOBS)
 ifneq ($(IDF_TARGET),esp32)
 ESP_IDF_COMPONENTS_LINK += esp_hal_systimer
 endif

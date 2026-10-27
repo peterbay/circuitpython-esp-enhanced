@@ -1,0 +1,39 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Zigbee
+#
+# CIRCUITPY-CHANGE: the zigbee module, see fork.mk. ZCZR rather than ZED because
+# its symbols are a superset of the end-device library's, so this one build
+# covers coordinator, router and end device, chosen at run time. The radio is
+# the chip's own rather than a co-processor over spinel.
+CONFIG_ZB_ENABLED=y
+CONFIG_ZB_ZCZR=y
+CONFIG_ZB_RADIO_NATIVE=y
+# end of Zigbee
+
+#
+# mbedTLS
+#
+# CIRCUITPY-CHANGE: Zigbee secures every frame with AES-CCM*, and without this
+# it cannot secure any of them. The PSA dispatcher hands an AEAD request to the
+# ESP hardware driver, which accepts GCM and answers PSA_ERROR_NOT_SUPPORTED
+# for everything else; this switch is what lets the dispatcher fall through to
+# the software implementation instead of returning that error. The name is
+# misleading -- AES-CCM is neither GCM nor a non-AES cipher, but it takes the
+# same path. CircuitPython turns the option off in its shared defaults.
+#
+# Measured, with it off: secur_secure_msg() returns -1 for every frame from the
+# moment the network is formed, so a Trust Center builds the Transport Key for
+# a joining device, fails to encrypt it, sends nothing, and reports the join as
+# "ignore" -- with no log line anywhere to say why.
+CONFIG_MBEDTLS_GCM_SUPPORT_NON_AES_CIPHER=y
+# end of mbedTLS
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration

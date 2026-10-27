@@ -1,0 +1,12 @@
+# Name,             Type,   SubType,    Offset,     Size
+# bootloader,       app,    boot,       0x1000/0x0, 28/32K
+# partition_table,  data,   table,      0x8000,     4K
+# 2816K rather than the usual 2048K app partitions, for builds that do not fit
+# otherwise -- BLE alone costs about 380K, and the Zigbee stack about 230K on
+# top of that. An app partition offset has to sit on a 64K boundary, which 2816K
+# keeps. The partitions add up to exactly the flash that is left.
+nvs,                data,   nvs,        0x9000,     20K
+otadata,            data,   ota,        0xe000,     8K
+ota_0,              app,    ota_0,      0x10000,    2816K
+ota_1,              app,    ota_1,      0x2D0000,   2816K
+user_fs,            data,   fat,        0x590000,   2496K
