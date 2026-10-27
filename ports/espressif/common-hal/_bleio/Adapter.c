@@ -38,6 +38,8 @@
 #include "services/gatt/ble_svc_gatt.h"
 
 #include "bindings/espidf/__init__.h"
+// CIRCUITPY-CHANGE: reassembled extended advertisements, Coded PHY scanning.
+#include "common-hal/_bleio/extended_scan.h"
 #include "common-hal/_bleio/Connection.h"
 
 #include "esp_bt.h"
@@ -285,17 +287,8 @@ static int _scan_event(struct ble_gap_event *event, void *scan_results_in) {
             disc->length_data);
     } else {
         #if MYNEWT_VAL(BLE_EXT_ADV)
-        // Extended advertisement
-        struct ble_gap_ext_disc_desc *disc = &event->ext_disc;
-        shared_module_bleio_scanresults_append(scan_results,
-            supervisor_ticks_ms64(),
-            (disc->props & BLE_HCI_ADV_CONN_MASK) != 0,
-            (disc->props & BLE_HCI_ADV_SCAN_MASK) != 0,
-            disc->rssi,
-            disc->addr.val,
-            disc->addr.type,
-            disc->data,
-            disc->length_data);
+        // CIRCUITPY-CHANGE: see extended_scan.c.
+        bleio_extended_scan_report(scan_results, &event->ext_disc);
         #endif
     }
 
@@ -316,7 +309,8 @@ mp_obj_t common_hal_bleio_adapter_start_scan(bleio_adapter_obj_t *self, uint8_t 
     // size_t max_packet_size = extended ? BLE_HCI_MAX_EXT_ADV_DATA_LEN : BLE_HCI_MAX_ADV_DATA_LEN;
 
     uint8_t own_addr_type;
-    struct ble_gap_disc_params disc_params;
+    // CIRCUITPY-CHANGE: zeroed; disable_observer_mode was left uninitialised.
+    struct ble_gap_disc_params disc_params = {0};
 
     /* Figure out address to use while advertising (no privacy for now) */
     int privacy = 0;
@@ -334,10 +328,21 @@ mp_obj_t common_hal_bleio_adapter_start_scan(bleio_adapter_obj_t *self, uint8_t 
         duration_ms = BLE_HS_FOREVER;
     }
 
+    #if MYNEWT_VAL(BLE_EXT_ADV)
+    // CIRCUITPY-CHANGE: see extended_scan.c.
+    bleio_extended_scan_prepare(extended);
+    #endif
+
     int tries = 5;
     int status;
     // BLE_HS_EBUSY may occasionally occur, indicating something has not finished. Retry a few times if so.
     do {
+        #if MYNEWT_VAL(BLE_EXT_ADV)
+        if (extended) {
+            status = bleio_extended_scan_start(own_addr_type, duration_ms, &disc_params,
+                _scan_event, self->scan_results);
+        } else
+        #endif
         status = ble_gap_disc(own_addr_type, duration_ms, &disc_params,
             _scan_event, self->scan_results);
         if (status != BLE_HS_EBUSY) {

@@ -71,3 +71,9 @@ FORK_BINARY_BLOBS += esp-zigbee-lib/lib/$(IDF_TARGET)/libesp-zigbee.release.a \
 	esp-zigbee-lib/lib/$(IDF_TARGET)/libesp-zigbee-idf.native.release.a
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-zigbee.defaults;
 endif
+
+# _bleio: extended advertisements reassembled from their fragments, and scanning
+# on the Coded PHY too; see common-hal/_bleio/extended_scan.c.
+ifneq ($(CIRCUITPY_BLEIO_NATIVE),0)
+SRC_C += common-hal/_bleio/extended_scan.c
+endif
