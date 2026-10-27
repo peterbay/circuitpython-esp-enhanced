@@ -13,7 +13,7 @@
 //|     """The sender's mac address (length = 6 bytes)."""
 //|
 //|     msg: ReadableBuffer
-//|     """The message sent by the peer (length <= 250 bytes)."""
+//|     """The message sent by the peer (length <= 1470 bytes)."""
 //|
 //|     rssi: int
 //|     """The received signal strength indication (in dBm from -127 to 0)."""

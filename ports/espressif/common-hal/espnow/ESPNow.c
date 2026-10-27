@@ -26,11 +26,19 @@
 
 // TODO: deinit wifi?
 
+// CIRCUITPY-CHANGE: ESP-NOW v2, which this ESP-IDF speaks, carries up to 1470
+// bytes; v1 carried 250, and a v1 receiver truncates or drops anything longer.
+#ifdef ESP_NOW_MAX_DATA_LEN_V2
+#define ESPNOW_MAX_MSG_LEN ESP_NOW_MAX_DATA_LEN_V2
+#else
+#define ESPNOW_MAX_MSG_LEN ESP_NOW_MAX_DATA_LEN
+#endif
+
 // The min/max length of an espnow packet (bytes)
 #define MIN_PACKET_LEN (sizeof(espnow_packet_t))
-#define MAX_PACKET_LEN (sizeof(espnow_packet_t) + ESP_NOW_MAX_DATA_LEN)
+#define MAX_PACKET_LEN (sizeof(espnow_packet_t) + ESPNOW_MAX_MSG_LEN)
 
-// Enough for 2 full-size packets: 2 * (6 + 7 + 250) = 526 bytes
+// Enough for 2 full-size packets: 2 * (6 + 8 + 1470) = 2968 bytes
 // Will allocate an additional 7 bytes for buffer overhead
 #define DEFAULT_RECV_BUFFER_SIZE (2 * MAX_PACKET_LEN)
 
@@ -41,7 +49,9 @@
 // Use this for peeking at the header of the next packet in the buffer.
 typedef struct {
     uint8_t magic;              // = ESPNOW_MAGIC
-    uint8_t msg_len;            // Length of the message
+    // CIRCUITPY-CHANGE: 16 bits. A v2 message longer than 255 bytes was stored
+    // with its length truncated, which left every later read misaligned.
+    uint16_t msg_len;           // Length of the message
     uint32_t time_ms;           // Timestamp (ms) when packet is received
     int8_t rssi;                // RSSI value (dBm) (-127 to 0)
 } __attribute__((packed)) espnow_header_t;
@@ -49,7 +59,7 @@ typedef struct {
 typedef struct {
     espnow_header_t header;     // The header
     uint8_t peer[6];            // Peer address
-    uint8_t msg[0];             // Message is up to 250 bytes
+    uint8_t msg[0];             // Message is up to ESPNOW_MAX_MSG_LEN bytes
 } __attribute__((packed)) espnow_packet_t;
 
 // --- The ESP-NOW send and recv callback routines ---
@@ -194,22 +204,26 @@ mp_obj_t common_hal_espnow_read(espnow_obj_t *self) {
         mp_arg_error_invalid(MP_QSTR_buffer);
     }
 
-    uint8_t msg_len = header.msg_len;
+    uint16_t msg_len = header.msg_len;
 
     uint8_t mac_buf[ESP_NOW_ETH_ALEN];
-    uint8_t msg_buf[msg_len];
+    // CIRCUITPY-CHANGE: read straight into the bytes object rather than a
+    // 1.5K array on the stack.
+    vstr_t msg;
+    vstr_init_len(&msg, msg_len);
 
     // Check the message packet header format and read the message data
     if (header.magic != ESPNOW_MAGIC ||
-        msg_len > ESP_NOW_MAX_DATA_LEN ||
+        msg_len > ESPNOW_MAX_MSG_LEN ||
         ringbuf_get_n(self->recv_buffer, mac_buf, ESP_NOW_ETH_ALEN) != ESP_NOW_ETH_ALEN ||
-        ringbuf_get_n(self->recv_buffer, msg_buf, msg_len) != msg_len) {
+        ringbuf_get_n(self->recv_buffer, (uint8_t *)msg.buf, msg_len) != msg_len) {
+        vstr_clear(&msg);
         mp_arg_error_invalid(MP_QSTR_buffer);
     }
 
     mp_obj_t elems[4] = {
         mp_obj_new_bytes(mac_buf, ESP_NOW_ETH_ALEN),
-        mp_obj_new_bytes(msg_buf, msg_len),
+        mp_obj_new_bytes_from_vstr(&msg),
         MP_OBJ_NEW_SMALL_INT(header.rssi),
         mp_obj_new_int(header.time_ms),
     };

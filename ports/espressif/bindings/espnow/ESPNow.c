@@ -34,10 +34,10 @@ static void espnow_check_for_deinit(espnow_obj_t *self) {
 //| class ESPNow:
 //|     """Provides access to the ESP-NOW protocol."""
 //|
-//|     def __init__(self, buffer_size: int = 526, phy_rate: int = 0) -> None:
+//|     def __init__(self, buffer_size: int = 2968, phy_rate: int = 0) -> None:
 //|         """Allocate and initialize `ESPNow` instance as a singleton.
 //|
-//|         :param int buffer_size: The size of the internal ring buffer. Default: 526 bytes.
+//|         :param int buffer_size: The size of the internal ring buffer. Default: 2968 bytes, two messages of the 1470 bytes ESP-NOW v2 allows.
 //|         :param int phy_rate: The ESP-NOW physical layer rate. Default: 1 Mbps.
 //|             `wifi_phy_rate_t <https://docs.espressif.com/projects/esp-idf/en/release-v4.4/esp32/api-reference/network/esp_wifi.html#_CPPv415wifi_phy_rate_t>`_
 //|
@@ -48,7 +48,7 @@ static void espnow_check_for_deinit(espnow_obj_t *self) {
 static mp_obj_t espnow_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum { ARG_buffer_size, ARG_phy_rate };
     static const mp_arg_t allowed_args[] = {
-        { MP_QSTR_buffer_size,  MP_ARG_INT, { .u_int = 526 } },
+        { MP_QSTR_buffer_size,  MP_ARG_INT, { .u_int = 2968 } },
         { MP_QSTR_phy_rate,     MP_ARG_INT, { .u_int = WIFI_PHY_RATE_1M_L } },
     };
 
@@ -108,7 +108,7 @@ static MP_DEFINE_CONST_FUN_OBJ_1(espnow_deinit_obj, espnow_deinit);
 //|
 //|         This blocks until a timeout of ``2`` seconds if the ESP-NOW internal buffers are full.
 //|
-//|         :param ReadableBuffer message: The message to send (length <= 250 bytes).
+//|         :param ReadableBuffer message: The message to send (length <= 1470 bytes; a receiver still on ESP-NOW v1 gets at most 250 of them).
 //|         :param Peer peer: Send message to this peer. If `None`, send to all registered peers.
 //|         """
 //|         ...
