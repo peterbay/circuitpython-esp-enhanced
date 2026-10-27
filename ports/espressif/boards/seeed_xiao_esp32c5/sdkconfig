@@ -1,0 +1,19 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Console
+#
+# Off, so that CircuitPython's REPL owns the USB Serial/JTAG controller. For
+# bring-up, put CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y here and build with
+# CIRCUITPY_ESP_USB_SERIAL_JTAG=0: that hands the peripheral to the ESP-IDF
+# console instead, which prints the boot log and any panic backtrace over the
+# same cable. There is no USB OTG on this part for either to clash with.
+# end of Console
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration
