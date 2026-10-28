@@ -20,6 +20,10 @@ void espidf_extended_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest);
 // still holds that points into the Python heap, before the heap goes.
 void espidf_extended_reset(void);
 
+// Accepts a str as its UTF-8 bytes, or anything with a buffer; raises TypeError
+// naming the argument otherwise.
+void espidf_get_bytes(mp_obj_t obj, qstr arg, mp_buffer_info_t *bufinfo);
+
 // extended_system.c
 extern const mp_obj_fun_builtin_fixed_t espidf_cycles_obj;
 extern const mp_obj_fun_builtin_fixed_t espidf_get_time_us_obj;
@@ -47,6 +51,12 @@ extern const mp_obj_type_t espidf_partition_type;
 extern const mp_obj_fun_builtin_fixed_t espidf_partitions_obj;
 extern const mp_obj_fun_builtin_fixed_t espidf_running_partition_obj;
 void espidf_partition_reset(void);
+
+// extended_crypto.c
+extern const mp_obj_fun_builtin_var_t espidf_pbkdf2_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_hmac_sha256_obj;
+extern const mp_obj_fun_builtin_var_t espidf_aes_gcm_encrypt_obj;
+extern const mp_obj_fun_builtin_var_t espidf_aes_gcm_decrypt_obj;
 
 // extended_ble.c
 #if CIRCUITPY_BLEIO_NATIVE

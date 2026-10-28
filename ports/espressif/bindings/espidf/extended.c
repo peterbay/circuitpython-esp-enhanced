@@ -45,6 +45,10 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_Partition), MP_ROM_PTR(&espidf_partition_type) },
     { MP_ROM_QSTR(MP_QSTR_partitions), MP_ROM_PTR(&espidf_partitions_obj) },
     { MP_ROM_QSTR(MP_QSTR_running_partition), MP_ROM_PTR(&espidf_running_partition_obj) },
+    { MP_ROM_QSTR(MP_QSTR_pbkdf2), MP_ROM_PTR(&espidf_pbkdf2_obj) },
+    { MP_ROM_QSTR(MP_QSTR_hmac_sha256), MP_ROM_PTR(&espidf_hmac_sha256_obj) },
+    { MP_ROM_QSTR(MP_QSTR_aes_gcm_encrypt), MP_ROM_PTR(&espidf_aes_gcm_encrypt_obj) },
+    { MP_ROM_QSTR(MP_QSTR_aes_gcm_decrypt), MP_ROM_PTR(&espidf_aes_gcm_decrypt_obj) },
 
     #if CIRCUITPY_BLEIO_NATIVE
     { MP_ROM_QSTR(MP_QSTR_ble_advertising_phy), MP_ROM_PTR(&espidf_ble_advertising_phy_obj) },
@@ -67,6 +71,20 @@ void espidf_extended_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
 }
 
 MP_REGISTER_MODULE_DELEGATION(espidf_module, espidf_extended_attr);
+
+void espidf_get_bytes(mp_obj_t obj, qstr arg, mp_buffer_info_t *bufinfo) {
+    if (mp_obj_is_str(obj)) {
+        size_t len;
+        const char *s = mp_obj_str_get_data(obj, &len);
+        bufinfo->buf = (void *)s;
+        bufinfo->len = len;
+        bufinfo->typecode = 'B';
+        return;
+    }
+    if (!mp_get_buffer(obj, bufinfo, MP_BUFFER_READ)) {
+        mp_raise_TypeError_varg(MP_ERROR_TEXT("%q must be a string or buffer"), arg);
+    }
+}
 
 void espidf_extended_reset(void) {
     espidf_timer_reset();
