@@ -19,6 +19,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#if CIRCUITPY_ESP_USB_SERIAL_JTAG
+#include "supervisor/usb_serial_jtag.h"
+#endif
+
 void port_background_tick(void) {
     #if CIRCUITPY_USB_HOST
     // Enumeration delays need polling even when no new USB IRQ arrives.
@@ -33,6 +37,13 @@ void port_background_tick(void) {
 void port_background_task(void) {
     #if CIRCUITPY_AUDIOPWMIO
     audiopwmout_background();
+    #endif
+    #if CIRCUITPY_ESP_USB_SERIAL_JTAG
+    // CIRCUITPY-CHANGE: pick up console input the receive interrupt missed.
+    // Runs from the VM loop rather than the tick, because the tick timer is only
+    // started when something asks for it, while this runs for as long as Python
+    // code does. See usb_serial_jtag_rx_tick() for what it is recovering from.
+    usb_serial_jtag_rx_tick();
     #endif
 }
 
