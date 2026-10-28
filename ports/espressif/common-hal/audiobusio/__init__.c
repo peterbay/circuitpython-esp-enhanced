@@ -53,17 +53,37 @@ static void i2s_fill_buffer(i2s_t *self) {
                 audiosample_get_buffer(self->sample, false, 0,
                     &self->sample_data, &sample_buffer_length);
             self->sample_end = self->sample_data + sample_buffer_length;
-            if (get_buffer_result == GET_BUFFER_ERROR || sample_buffer_length == 0) {
+            if (get_buffer_result == GET_BUFFER_ERROR) {
                 self->stopping = true;
                 break;
             }
             if (get_buffer_result == GET_BUFFER_DONE) {
                 if (self->loop) {
+                    // CIRCUITPY-CHANGE: a decoder may report DONE with an empty final
+                    // buffer -- MP3Decoder does that whenever the stream does not end
+                    // on a frame boundary -- and the zero-length test used to run ahead
+                    // of this one, so it stopped the playback that was about to be
+                    // rewound and loop=True never restarted an MP3. Rewind first, fetch
+                    // again if there was nothing left, and give up only once the sample
+                    // has come up empty twice running.
                     audiosample_reset_buffer(self->sample, false, 0);
+                    if (sample_buffer_length == 0) {
+                        get_buffer_result = audiosample_get_buffer(self->sample, false, 0,
+                            &self->sample_data, &sample_buffer_length);
+                        self->sample_end = self->sample_data + sample_buffer_length;
+                        if (get_buffer_result == GET_BUFFER_ERROR) {
+                            self->stopping = true;
+                            break;
+                        }
+                    }
                 } else {
                     // Output this final buffer before stopping; don't fetch again.
                     self->last_buffer = true;
                 }
+            }
+            if (sample_buffer_length == 0) {
+                self->stopping = true;
+                break;
             }
         }
         size_t sample_bytecount = self->sample_end - self->sample_data;
