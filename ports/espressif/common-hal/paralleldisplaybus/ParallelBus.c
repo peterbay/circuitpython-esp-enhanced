@@ -49,7 +49,9 @@ void common_hal_paralleldisplaybus_parallelbus_construct_nonsequential(paralleld
     self->config.wr_gpio_num = common_hal_mcu_pin_number(write);   // write strobe
     self->config.clk_src = LCD_CLK_SRC_DEFAULT;
     self->config.bus_width = n_pins;
-    self->config.max_transfer_bytes = 512;
+    // CIRCUITPY-CHANGE: displayio sends a whole area buffer at once. ESP-IDF 6.1 rejects a
+    // transfer longer than this with ESP_ERR_INVALID_ARG; 6.0 only asserted, so 512 used to work.
+    self->config.max_transfer_bytes = CIRCUITPY_DISPLAY_AREA_BUFFER_SIZE;
     for (uint8_t i = 0; i < n_pins; i++) {
         self->config.data_gpio_nums[i] = common_hal_mcu_pin_number(data_pins[i]);
     }
