@@ -1,0 +1,5 @@
+{'channel_count': 0} ValueError: channel_count must be 1-2
+{'channel_count': 3} ValueError: channel_count must be 1-2
+{'channel_count': -1} ValueError: channel_count must be 1-2
+{'sample_rate': 0} ValueError: sample_rate must be >= 1
+0 192 True 255
