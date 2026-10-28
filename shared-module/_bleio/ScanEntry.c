@@ -45,12 +45,26 @@ bool bleio_scanentry_data_matches(const uint8_t *data, size_t len, const uint8_t
     while (i < prefixes_length) {
         uint8_t prefix_length = prefixes[i];
         i += 1;
+        // CIRCUITPY-CHANGE: a prefix that claims more bytes than remain made memcmp
+        // read past the end of the caller's buffer. No radio needed to reach it:
+        // prefixes=b"\xff\x01" declares a 255 byte prefix inside two bytes.
+        if (prefix_length > prefixes_length - i) {
+            return false;
+        }
         size_t j = 0;
         bool prefix_matched = false;
         while (j < len) {
             uint8_t structure_length = data[j];
             j += 1;
             if (structure_length == 0) {
+                break;
+            }
+            // CIRCUITPY-CHANGE: structure_length arrives off the air and was only
+            // compared against prefix_length, never against what the advertisement
+            // actually holds, so b"\x1f\x09" made memcmp read 30 bytes past a two
+            // byte packet. A structure that overruns the buffer is malformed; treat
+            // it as the end of the data, as a zero length already is.
+            if (structure_length > len - j) {
                 break;
             }
             if (structure_length >= prefix_length && memcmp(data + j, prefixes + i, prefix_length) == 0) {

@@ -40,6 +40,9 @@ size_t ringbuf_num_empty(ringbuf_t *r);
 size_t ringbuf_num_filled(ringbuf_t *r);
 size_t ringbuf_put_n(ringbuf_t *r, const uint8_t *buf, size_t bufsize);
 size_t ringbuf_get_n(ringbuf_t *r, uint8_t *buf, size_t bufsize);
+// CIRCUITPY-CHANGE: there was no way to look at buffered data without removing it, so a caller that
+// sizes an allocation from a buffered header had to consume that header first and could not undo it.
+size_t ringbuf_peek_n(ringbuf_t *r, size_t offset, uint8_t *buf, size_t bufsize);
 
 // Note: big-endian. Return -1 if can't read or write two bytes.
 int ringbuf_get16(ringbuf_t *r);
