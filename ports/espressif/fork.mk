@@ -124,3 +124,19 @@ CFLAGS += -DCIRCUITPY_PARTITION_DISK=$(CIRCUITPY_PARTITION_DISK)
 ifeq ($(CIRCUITPY_PARTITION_DISK),1)
 SRC_C += supervisor/partition_disk.c
 endif
+
+# usb_tmc: a USBTMC (USB488) instrument the host talks to with VISA. Compiled in
+# wherever there is a TinyUSB device stack, but presented to the host only after
+# usb_tmc.enable() in boot.py. TinyUSB's class switch is set here rather than in
+# tusb_config.h, which leaves it at 0 unless defined; usb_desc.c tests ours with
+# defined(), so other ports need nothing.
+CIRCUITPY_USB_TMC ?= $(CIRCUITPY_USB_DEVICE)
+CFLAGS += -DCIRCUITPY_USB_TMC=$(CIRCUITPY_USB_TMC)
+CIRCUITPY_USB_TMC_ENABLED_DEFAULT ?= 0
+CFLAGS += -DCIRCUITPY_USB_TMC_ENABLED_DEFAULT=$(CIRCUITPY_USB_TMC_ENABLED_DEFAULT)
+ifeq ($(CIRCUITPY_USB_TMC),1)
+SRC_PATTERNS += usb_tmc/%
+SRC_SHARED_MODULE_ALL += usb_tmc/__init__.c
+SRC_C += lib/tinyusb/src/class/usbtmc/usbtmc_device.c
+CFLAGS += -DCFG_TUD_USBTMC=1 -DCFG_TUD_USBTMC_ENABLE_488=1
+endif
