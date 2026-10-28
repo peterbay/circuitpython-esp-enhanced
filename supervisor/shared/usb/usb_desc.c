@@ -38,6 +38,11 @@
 #include "shared-module/usb_tmc/__init__.h"
 #define USB_TMC_IN_DESCRIPTOR 1
 #endif
+// CIRCUITPY-CHANGE: the USB network interface, see shared-module/usb_net.
+#if defined(CIRCUITPY_USB_NET) && CIRCUITPY_USB_NET
+#include "shared-module/usb_net/__init__.h"
+#define USB_NET_IN_DESCRIPTOR 1
+#endif
 
 #if CIRCUITPY_USB_AUDIO
 #include "shared-module/usb_audio/__init__.h"
@@ -195,6 +200,12 @@ static bool usb_build_configuration_descriptor(void) {
     }
     #endif
 
+    #ifdef USB_NET_IN_DESCRIPTOR // CIRCUITPY-CHANGE
+    if (usb_net_enabled()) {
+        total_descriptor_length += usb_net_descriptor_length();
+    }
+    #endif
+
     // Now we know how big the configuration descriptor will be, so we can allocate space for it.
     configuration_descriptor =
         (uint8_t *)port_malloc(total_descriptor_length,
@@ -295,6 +306,13 @@ static bool usb_build_configuration_descriptor(void) {
     #ifdef USB_TMC_IN_DESCRIPTOR // CIRCUITPY-CHANGE
     if (usb_tmc_enabled()) {
         descriptor_buf_remaining += usb_tmc_add_descriptor(
+            descriptor_buf_remaining, &descriptor_counts, &current_interface_string);
+    }
+    #endif
+
+    #ifdef USB_NET_IN_DESCRIPTOR // CIRCUITPY-CHANGE
+    if (usb_net_enabled()) {
+        descriptor_buf_remaining += usb_net_add_descriptor(
             descriptor_buf_remaining, &descriptor_counts, &current_interface_string);
     }
     #endif

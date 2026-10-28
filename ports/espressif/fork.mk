@@ -140,3 +140,30 @@ SRC_SHARED_MODULE_ALL += usb_tmc/__init__.c
 SRC_C += lib/tinyusb/src/class/usbtmc/usbtmc_device.c
 CFLAGS += -DCFG_TUD_USBTMC=1 -DCFG_TUD_USBTMC_ENABLE_488=1
 endif
+
+# usb_net: an Ethernet adapter over USB, with DHCP and DNS on the board, so a
+# browser on the host reaches a server on the board by name. Wired like usb_tmc:
+# compiled wherever there is a TinyUSB device stack and wifi (the netif lives in
+# lwIP), presented only after usb_net.enable() in boot.py. The class is CDC-NCM;
+# CIRCUITPY_USB_NET_RNDIS = 1 builds RNDIS instead, which Windows binds but does
+# not start for this device. TinyUSB's two drivers define the same symbols, so
+# exactly one is built. The port brings the netif up from post_usb_init(), a weak
+# hook in usb.c.
+CIRCUITPY_USB_NET ?= $(call enable-if-all,$(CIRCUITPY_USB_DEVICE) $(CIRCUITPY_WIFI))
+CFLAGS += -DCIRCUITPY_USB_NET=$(CIRCUITPY_USB_NET)
+CIRCUITPY_USB_NET_ENABLED_DEFAULT ?= 0
+CFLAGS += -DCIRCUITPY_USB_NET_ENABLED_DEFAULT=$(CIRCUITPY_USB_NET_ENABLED_DEFAULT)
+CIRCUITPY_USB_NET_RNDIS ?= 0
+CFLAGS += -DCIRCUITPY_USB_NET_RNDIS=$(CIRCUITPY_USB_NET_RNDIS)
+ifeq ($(CIRCUITPY_USB_NET),1)
+SRC_PATTERNS += usb_net/%
+SRC_SHARED_MODULE_ALL += usb_net/__init__.c
+SRC_C += supervisor/usb_net_netif.c
+ifeq ($(CIRCUITPY_USB_NET_RNDIS),1)
+SRC_C += lib/tinyusb/src/class/net/ecm_rndis_device.c lib/tinyusb/lib/networking/rndis_reports.c
+CFLAGS += -isystem $(TOP)/lib/tinyusb/lib/networking -DCFG_TUD_ECM_RNDIS=1
+else
+SRC_C += lib/tinyusb/src/class/net/ncm_device.c
+CFLAGS += -DCFG_TUD_NCM=1
+endif
+endif
