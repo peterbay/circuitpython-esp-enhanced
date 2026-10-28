@@ -22,3 +22,6 @@ CIRCUITPY_ZIGBEE = 1
 
 # Channel state information on a Wi-Fi 6 part, see espidf.CSI.
 CIRCUITPY_ESPIDF_CSI = 1
+
+# TrueType text, see ttfrast.
+CIRCUITPY_TTFRAST = 1

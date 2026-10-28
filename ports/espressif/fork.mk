@@ -93,3 +93,14 @@ CFLAGS += -DCIRCUITPY_ESPIDF_CSI=$(CIRCUITPY_ESPIDF_CSI)
 ifneq ($(CIRCUITPY_ESPIDF_CSI),0)
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-csi.defaults;
 endif
+
+# ttfrast, TrueType glyphs rasterised from the outline, a shared module. It is
+# wired in here rather than in py/circuitpy_defns.mk: SRC_SHARED_MODULE is a
+# filter of SRC_PATTERNS over SRC_SHARED_MODULE_ALL, expanded only when used,
+# so adding to both after the defns are read is enough. Off unless a board asks.
+CIRCUITPY_TTFRAST ?= 0
+CFLAGS += -DCIRCUITPY_TTFRAST=$(CIRCUITPY_TTFRAST)
+ifeq ($(CIRCUITPY_TTFRAST),1)
+SRC_PATTERNS += ttfrast/%
+SRC_SHARED_MODULE_ALL += ttfrast/__init__.c ttfrast/Label.c
+endif
