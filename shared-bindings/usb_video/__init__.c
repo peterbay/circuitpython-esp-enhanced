@@ -48,12 +48,36 @@
 //|
 //|
 
-//| def enable_framebuffer(width: int, height: int) -> None:
+//| def enable_framebuffer(
+//|     width: int,
+//|     height: int,
+//|     *,
+//|     jpeg_quality: Optional[int] = None,
+//| ) -> None:
 //|     """Enable a USB video framebuffer, setting the given width & height
 //|
 //|     This function may only be used from ``boot.py``.
 //|
 //|     Width is rounded up to a multiple of 2.
+//|
+//|     With ``jpeg_quality`` left at `None` the frame is sent uncompressed, as
+//|     YUY2. Two bytes a pixel is more than a full speed USB link can carry
+//|     many times a second, so this limits both the frame rate and how large a
+//|     picture is possible.
+//|
+//|     Giving ``jpeg_quality`` a value from 1 to 100 streams MJPEG instead,
+//|     which is several times smaller for the same picture. Higher is better
+//|     and larger; around 90 the ringing that JPEG puts along the sharp edges
+//|     of drawn graphics stops being measurable. Not every board can compress:
+//|     asking for it where nothing can raises `NotImplementedError`.
+//|
+//|     Compressing takes the picture in bands of eight rows, so ``height`` must
+//|     be a multiple of 8 when ``jpeg_quality`` is given.
+//|
+//|     Two compressed frames are kept, so that one can go out while the next is
+//|     being made. There is no single-buffered option: sharing one buffer means
+//|     the encoder writes it while USB is reading it, and every other frame
+//|     goes out torn.
 //|
 //|     After boot.py completes, the framebuffer will be allocated. Total storage
 //|     of 4×``width``×``height`` bytes is required, reducing the amount available
@@ -63,10 +87,11 @@
 //|
 
 static mp_obj_t usb_video_enable_framebuffer(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
-    enum { ARG_width, ARG_height };
+    enum { ARG_width, ARG_height, ARG_jpeg_quality };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_width, MP_ARG_REQUIRED | MP_ARG_INT, { .u_int = 0 } },
         { MP_QSTR_height, MP_ARG_REQUIRED | MP_ARG_INT, { .u_int = 0 } },
+        { MP_QSTR_jpeg_quality, MP_ARG_KW_ONLY | MP_ARG_OBJ, { .u_obj = mp_const_none } },
     };
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
@@ -74,7 +99,36 @@ static mp_obj_t usb_video_enable_framebuffer(size_t n_args, const mp_obj_t *pos_
     // (but note that most devices will not be able to allocate this much memory.
     uint32_t width = mp_arg_validate_int_range(args[ARG_width].u_int, 0, 32767, MP_QSTR_width);
     uint32_t height = mp_arg_validate_int_range(args[ARG_height].u_int, 0, 32767, MP_QSTR_height);
-    if (!shared_module_usb_video_enable(width, height)) {
+
+    // CIRCUITPY-CHANGE: zero means uncompressed, which is what the module did
+    // before this argument existed.
+    mp_int_t jpeg_quality = 0;
+    if (args[ARG_jpeg_quality].u_obj != mp_const_none) {
+        jpeg_quality = mp_arg_validate_int_range(
+            mp_obj_get_int(args[ARG_jpeg_quality].u_obj), 1, 100, MP_QSTR_jpeg_quality);
+        if (!shared_module_usb_video_jpeg_available()) {
+            mp_raise_NotImplementedError(MP_ERROR_TEXT("JPEG encoding not available"));
+        }
+        // CIRCUITPY-CHANGE: the encoder takes the picture in bands of eight
+        // rows, so a height that is not a whole number of them cannot be
+        // compressed as it is drawn. Said here, because the alternative was a
+        // MemoryError from the uncompressed path further in, which names a size
+        // and not the reason.
+        if (height % 8 != 0) {
+            mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be multiple of 8."), MP_QSTR_height);
+        }
+        // CIRCUITPY-CHANGE: the encoder ignores the output size it is handed and
+        // writes past the end rather than reporting that the frame did not fit,
+        // so a picture that could outgrow the buffer has to be refused before
+        // anything is allocated. Measured against white noise, which is the
+        // worst case for JPEG, 4:2:2 costs 2.7 bytes a pixel at quality 100;
+        // three leaves a margin, and the kilobyte covers the headers.
+        if ((size_t)width * height * 3 + 1024 > CIRCUITPY_USB_VIDEO_JPEG_FRAME_BYTES) {
+            mp_raise_ValueError(MP_ERROR_TEXT("Frame too large to compress"));
+        }
+    }
+
+    if (!shared_module_usb_video_enable(width, height, jpeg_quality)) {
         mp_raise_RuntimeError(MP_ERROR_TEXT("Cannot change USB devices now"));
     }
 

@@ -167,3 +167,23 @@ SRC_C += lib/tinyusb/src/class/net/ncm_device.c
 CFLAGS += -DCFG_TUD_NCM=1
 endif
 endif
+
+# usb_video MJPEG: the encoder is Espressif's prebuilt esp_new_jpeg, vendored in
+# esp_new_jpeg/ with a library for the esp32s3 only. It is not an IDF component:
+# its headers and one archive are all that is used, so a board that does not
+# stream MJPEG pays nothing. The switch and the frame-buffer size live in
+# supervisor/supervisor.mk with the rest of usb_video; a board or the make
+# command line sets CIRCUITPY_USB_VIDEO=1 CIRCUITPY_USB_VIDEO_JPEG=1.
+#
+# PSRAM is a requirement, not a preference. The encoder writes past the end of
+# the output buffer instead of reporting that a frame did not fit, so the buffer
+# has to be larger than any frame it can produce -- two of
+# CIRCUITPY_USB_VIDEO_JPEG_FRAME_BYTES -- far more internal RAM than a board has.
+ifeq ($(CIRCUITPY_USB_VIDEO_JPEG),1)
+ifeq ($(CIRCUITPY_ESP_PSRAM_SIZE),0)
+$(error CIRCUITPY_USB_VIDEO_JPEG needs a board with PSRAM)
+endif
+SRC_C += supervisor/usb_video_jpeg.c
+CFLAGS += -I$(CURDIR)/esp_new_jpeg/include
+FORK_BINARY_BLOBS += esp_new_jpeg/lib/$(IDF_TARGET)/libesp_new_jpeg.a
+endif

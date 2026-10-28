@@ -15,3 +15,7 @@ void shared_module_usb_video_uvcframebuffer_get_bufinfo(usb_video_uvcframebuffer
 void shared_module_usb_video_uvcframebuffer_refresh(usb_video_uvcframebuffer_obj_t *self);
 int shared_module_usb_video_uvcframebuffer_get_width(usb_video_uvcframebuffer_obj_t *self);
 int shared_module_usb_video_uvcframebuffer_get_height(usb_video_uvcframebuffer_obj_t *self);
+// CIRCUITPY-CHANGE: the streaming path, see the framebuffer protocol.
+int shared_module_usb_video_uvcframebuffer_get_rows_per_buffer(usb_video_uvcframebuffer_obj_t *self);
+void shared_module_usb_video_uvcframebuffer_write_rows(usb_video_uvcframebuffer_obj_t *self, uint16_t y, uint16_t rows, const void *data);
+void shared_module_usb_video_uvcframebuffer_deinit(usb_video_uvcframebuffer_obj_t *self);

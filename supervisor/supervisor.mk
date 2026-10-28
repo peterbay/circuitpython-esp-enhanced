@@ -179,7 +179,29 @@ ifeq ($(CIRCUITPY_TINYUSB),1)
       shared-module/usb_video/USBFramebuffer.c \
       lib/tinyusb/src/class/video/video_device.c \
 
-    CFLAGS += -DCFG_TUD_VIDEO=1 -DCFG_TUD_VIDEO_STREAMING=1 -DCFG_TUD_VIDEO_STREAMING_EP_BUFSIZE=256 -DCFG_TUD_VIDEO_STREAMING_BULK=1
+    # CIRCUITPY-CHANGE: bulk UVC streaming is an extension that Linux hosts
+    # accept and Windows does not -- there, only isochronous works. It stays the
+    # default so nothing changes for the ports this module was written on, but a
+    # board can ask for isochronous instead.
+    CIRCUITPY_USB_VIDEO_BULK ?= 1
+    # The isochronous endpoint's packet size, which is what caps the frame rate:
+    # one packet goes out per USB frame, so 256 bytes is 256 kB/s. Full speed
+    # allows up to 1023.
+    CIRCUITPY_USB_VIDEO_EP_BUFSIZE ?= 256
+    # Stream MJPEG instead of uncompressed YUY2. Only a port that provides
+    # usb_video_jpeg_init/encode/deinit can turn this on.
+    CIRCUITPY_USB_VIDEO_JPEG ?= 0
+    # Room for one compressed frame, per buffer. Not a tuning knob: esp_new_jpeg
+    # ignores the output size it is handed and writes past the end rather than
+    # report that a frame did not fit, so the buffer has to hold any frame the
+    # encoder can produce. Against white noise, the worst case, 4:2:2 costs 0.50
+    # bytes a pixel at quality 40, 1.34 at 92 and 2.70 at 100, so 300 KiB covers
+    # every quality up to 320x240. Two of these are allocated.
+    CIRCUITPY_USB_VIDEO_JPEG_FRAME_BYTES ?= 307200
+    # The one frame rate the descriptor advertises: a ceiling for the host, and
+    # an uncompressed stream that cannot keep up makes the host refuse to start.
+    CIRCUITPY_USB_VIDEO_FRAME_RATE ?= 10
+    CFLAGS += -DCFG_TUD_VIDEO=1 -DCFG_TUD_VIDEO_STREAMING=1 -DCFG_TUD_VIDEO_STREAMING_EP_BUFSIZE=$(CIRCUITPY_USB_VIDEO_EP_BUFSIZE) -DCFG_TUD_VIDEO_STREAMING_BULK=$(CIRCUITPY_USB_VIDEO_BULK) -DCIRCUITPY_USB_VIDEO_JPEG=$(CIRCUITPY_USB_VIDEO_JPEG) -DCIRCUITPY_USB_VIDEO_JPEG_FRAME_BYTES=$(CIRCUITPY_USB_VIDEO_JPEG_FRAME_BYTES) -DDEFAULT_FRAME_RATE=$(CIRCUITPY_USB_VIDEO_FRAME_RATE)
   endif
 
   ifeq ($(CIRCUITPY_USB_AUDIO), 1)

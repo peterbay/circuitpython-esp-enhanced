@@ -99,7 +99,7 @@ static void usb_video_uvcframebuffer_swapbuffers(mp_obj_t self_in, uint8_t *dirt
 }
 
 static void usb_video_uvcframebuffer_deinit_proto(mp_obj_t self_in) {
-    /* NOTHING */
+    shared_module_usb_video_uvcframebuffer_deinit(self_in);
 }
 
 static int usb_video_uvcframebuffer_get_width_proto(mp_obj_t self_in) {
@@ -118,6 +118,15 @@ static bool usb_video_uvcframebuffer_get_reverse_pixels_in_word_proto(mp_obj_t s
     return true;
 }
 
+// CIRCUITPY-CHANGE: when the frame is compressed as it is drawn there is no
+// whole-frame buffer, only a band at a time. Zero here means the old way.
+static int usb_video_uvcframebuffer_get_rows_per_buffer_proto(mp_obj_t self_in) {
+    return shared_module_usb_video_uvcframebuffer_get_rows_per_buffer(self_in);
+}
+
+static void usb_video_uvcframebuffer_write_rows_proto(mp_obj_t self_in, uint16_t y, uint16_t rows, const void *data) {
+    shared_module_usb_video_uvcframebuffer_write_rows(self_in, y, rows, data);
+}
 
 static const framebuffer_p_t usb_video_uvcframebuffer_proto = {
     MP_PROTO_IMPLEMENT(MP_QSTR_protocol_framebuffer)
@@ -128,6 +137,8 @@ static const framebuffer_p_t usb_video_uvcframebuffer_proto = {
     .swapbuffers = usb_video_uvcframebuffer_swapbuffers,
     .deinit = usb_video_uvcframebuffer_deinit_proto,
     .get_reverse_pixels_in_word = usb_video_uvcframebuffer_get_reverse_pixels_in_word_proto,
+    .get_rows_per_buffer = usb_video_uvcframebuffer_get_rows_per_buffer_proto,
+    .write_rows = usb_video_uvcframebuffer_write_rows_proto,
 };
 
 static mp_int_t usb_video_uvcframebuffer_get_buffer(mp_obj_t self_in, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
