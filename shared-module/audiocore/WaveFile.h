@@ -12,6 +12,9 @@
 
 typedef struct {
     audiosample_base_t base;
+    // CIRCUITPY-CHANGE: see RawSample.h. A caller-supplied buffer was kept only as a
+    // raw pointer, so a sliced memoryview could be collected out from under playback.
+    mp_obj_t buffer_obj;
     uint8_t *buffer;
     uint32_t buffer_length;
     uint8_t *second_buffer;

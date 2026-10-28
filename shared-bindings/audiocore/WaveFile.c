@@ -74,6 +74,9 @@ static mp_obj_t audioio_wavefile_make_new(const mp_obj_type_t *type, size_t n_ar
     }
 
     audioio_wavefile_obj_t *self = mp_obj_malloc_with_finaliser(audioio_wavefile_obj_t, &audioio_wavefile_type);
+    // CIRCUITPY-CHANGE: keep the caller's buffer object, not just the pointer into
+    // it, so the collector cannot reclaim it while it is being filled and played.
+    self->buffer_obj = (n_args >= 2) ? args[1] : MP_OBJ_NULL;
     common_hal_audioio_wavefile_construct(self, arg,
         buffer, buffer_size);
 

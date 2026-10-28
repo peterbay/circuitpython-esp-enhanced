@@ -1,0 +1,11 @@
+plain 16000 0 [32, 33, 34, 35, 36, 37, 38, 39]
+LIST before fmt 16000 0 [32, 33, 34, 35, 36, 37, 38, 39]
+odd JUNK before fmt 16000 0 [32, 33, 34, 35, 36, 37, 38, 39]
+odd chunk after fmt 16000 0 [32, 33, 34, 35, 36, 37, 38, 39]
+data before fmt ValueError: Invalid file
+short fmt ValueError: Invalid format chunk size
+no channels ValueError: Format not supported
+no bits ValueError: Format not supported
+12 bits ValueError: Format not supported
+rate 0 ValueError: Format not supported
+16-bit pad 0 [17, 34, 51, 68, 85, 102, 0, 0]
