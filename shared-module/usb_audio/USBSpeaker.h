@@ -37,6 +37,19 @@
 #define USB_AUDIO_SPEAKER_OUT_PACKET_SIZE ((USB_AUDIO_MAX_SAMPLE_RATE / 1000 + 1) * USB_AUDIO_SPEAKER_BYTES_PER_FRAME)
 #define USB_AUDIO_SPEAKER_RING_SIZE (16 * USB_AUDIO_SPEAKER_OUT_PACKET_SIZE)
 
+// Where the rate adaptation in get_buffer() holds the ring, and how far off it
+// has to be before a correction is made. Both in bytes, like ring_count. Half
+// the ring leaves equal room to absorb a host that is ahead or behind; the
+// hysteresis is one USB packet, which is the granularity the level arrives in.
+#define USB_AUDIO_SPEAKER_RING_TARGET (USB_AUDIO_SPEAKER_RING_SIZE / 2)
+#define USB_AUDIO_SPEAKER_RING_HYSTERESIS (USB_AUDIO_SPEAKER_OUT_PACKET_SIZE)
+
+// Most frames of correction one block may carry. One is not enough: a block is
+// 128 frames and the nRF52 running 15873 Hz against a 16000 Hz host needs 127
+// frames a second given back, which is very nearly one per block already, and
+// leaves nothing over for catching up.
+#define USB_AUDIO_SPEAKER_MAX_ADJUST (4)
+
 typedef struct usb_audio_usbspeaker_obj {
     // First member so the object can be used directly as an audiosample source.
     audiosample_base_t base;
@@ -53,6 +66,13 @@ typedef struct usb_audio_usbspeaker_obj {
     // Owned double-buffer returned to the output backend by get_buffer().
     uint8_t output_buffer[USB_AUDIO_SPEAKER_OUTPUT_BUFFER_SIZE];
     uint8_t output_index;  // 0 or 1: which half get_buffer() fills next
+
+    // Low-passed ring_count, in bytes, kept by get_buffer() and used to decide
+    // how many frames of rate correction a block needs. The raw level is no use
+    // on its own: it drops by a whole block each time one is pulled and is
+    // refilled in USB-packet bursts between, which swamps the steady few-hundred
+    // bytes a second of drift that actually has to be corrected.
+    int32_t ring_level_avg;
 } usb_audio_usbspeaker_obj_t;
 
 // audiosample protocol implementation. Not exposed to Python because get_buffer()
