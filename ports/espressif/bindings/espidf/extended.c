@@ -51,6 +51,9 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_Partition), MP_ROM_PTR(&espidf_partition_type) },
     { MP_ROM_QSTR(MP_QSTR_partitions), MP_ROM_PTR(&espidf_partitions_obj) },
     { MP_ROM_QSTR(MP_QSTR_running_partition), MP_ROM_PTR(&espidf_running_partition_obj) },
+    #if CIRCUITPY_PARTITION_DISK
+    { MP_ROM_QSTR(MP_QSTR_expose_partition), MP_ROM_PTR(&espidf_expose_partition_obj) },
+    #endif
     { MP_ROM_QSTR(MP_QSTR_pbkdf2), MP_ROM_PTR(&espidf_pbkdf2_obj) },
     { MP_ROM_QSTR(MP_QSTR_hmac_sha256), MP_ROM_PTR(&espidf_hmac_sha256_obj) },
     { MP_ROM_QSTR(MP_QSTR_aes_gcm_encrypt), MP_ROM_PTR(&espidf_aes_gcm_encrypt_obj) },

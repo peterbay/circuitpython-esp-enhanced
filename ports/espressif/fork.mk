@@ -113,3 +113,14 @@ CFLAGS += -DCIRCUITPY_HASHLIB_EXTENDED=$(CIRCUITPY_HASHLIB_EXTENDED)
 ifeq ($(CIRCUITPY_HASHLIB_EXTENDED),1)
 SRC_SHARED_MODULE_ALL += hashlib/extended.c
 endif
+
+# espidf.expose_partition(): a flash partition as a FAT filesystem and a second
+# USB drive. Needs the TinyUSB device stack, so it follows CIRCUITPY_USB_DEVICE
+# (the S2, S3 and P4). supervisor/shared/usb/usb_msc_flash.c tests the switch with
+# defined(), so other ports need nothing. The pure Python partition_disk module in
+# frozen/partition_disk works on any board, USB or not.
+CIRCUITPY_PARTITION_DISK ?= $(CIRCUITPY_USB_DEVICE)
+CFLAGS += -DCIRCUITPY_PARTITION_DISK=$(CIRCUITPY_PARTITION_DISK)
+ifeq ($(CIRCUITPY_PARTITION_DISK),1)
+SRC_C += supervisor/partition_disk.c
+endif

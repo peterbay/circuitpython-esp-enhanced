@@ -51,6 +51,9 @@ extern const mp_obj_type_t espidf_partition_type;
 extern const mp_obj_fun_builtin_fixed_t espidf_partitions_obj;
 extern const mp_obj_fun_builtin_fixed_t espidf_running_partition_obj;
 void espidf_partition_reset(void);
+#if CIRCUITPY_PARTITION_DISK
+extern const mp_obj_fun_builtin_var_t espidf_expose_partition_obj;
+#endif
 
 // extended_crypto.c
 extern const mp_obj_fun_builtin_var_t espidf_pbkdf2_obj;

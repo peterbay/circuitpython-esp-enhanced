@@ -25,3 +25,6 @@ CIRCUITPY_ESPIDF_CSI = 1
 
 # TrueType text, see ttfrast.
 CIRCUITPY_TTFRAST = 1
+
+# A FAT filesystem on a spare partition (ota_1, 2816K), see partition_disk.py.
+FROZEN_MPY_DIRS += $(TOP)/frozen/partition_disk

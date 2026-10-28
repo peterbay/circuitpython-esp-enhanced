@@ -47,7 +47,18 @@
 #define EMMC_COUNT 0
 #endif
 
-#define LUN_COUNT (1 + SAVES_COUNT + SDCARD_COUNT + EMMC_COUNT)
+// CIRCUITPY-CHANGE: a partition exposed by espidf.expose_partition(), see
+// ports/espressif/supervisor/partition_disk.c. Only that port defines the switch.
+#if defined(CIRCUITPY_PARTITION_DISK) && CIRCUITPY_PARTITION_DISK
+#include "supervisor/partition_disk.h"
+
+#define PARTITION_DISK_COUNT 1
+#define PARTITION_DISK_LUN (1 + SAVES_COUNT + SDCARD_COUNT + EMMC_COUNT)
+#else
+#define PARTITION_DISK_COUNT 0
+#endif
+
+#define LUN_COUNT (1 + SAVES_COUNT + SDCARD_COUNT + EMMC_COUNT + PARTITION_DISK_COUNT)
 
 // The ellipsis range in the designated initializer of `ejected` is not standard C,
 // but it works in both gcc and clang.
@@ -197,6 +208,12 @@ static fs_user_mount_t *get_vfs(int lun) {
             ejected[EMMC_LUN] = false;
             locked[EMMC_LUN] = false;
         }
+    }
+    #endif
+    // CIRCUITPY-CHANGE: native and static, like the eMMC mount above.
+    #ifdef PARTITION_DISK_LUN
+    if (lun == PARTITION_DISK_LUN) {
+        return partition_disk_get_usermount();
     }
     #endif
     return NULL;

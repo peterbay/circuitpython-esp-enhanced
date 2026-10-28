@@ -20,6 +20,11 @@
 #include "esp_partition.h"
 #include "spi_flash_mmap.h"
 
+#if CIRCUITPY_PARTITION_DISK
+#include "py/mperrno.h"
+#include "supervisor/partition_disk.h"
+#endif
+
 // raw access to the flash partitions.
 //
 // The point of this is mmap(): it maps the partition into the data address space
@@ -298,3 +303,68 @@ static mp_obj_t espidf_running_partition(void) {
     return mp_obj_new_str(running->label, strlen(running->label));
 }
 MP_DEFINE_CONST_FUN_OBJ_0(espidf_running_partition_obj, espidf_running_partition);
+
+#if CIRCUITPY_PARTITION_DISK
+//| def expose_partition(
+//|     label: str, path: str = "/data", *, usb_writable: bool = False, format: bool = False
+//| ) -> None:
+//|     """Mount the FAT filesystem on a partition at ``path`` and make it a second USB
+//|     drive.
+//|
+//|     Call it from ``boot.py``: CircuitPython presents its USB drives to the host
+//|     after boot.py runs, so a drive added later is mounted for Python but never
+//|     seen by the host. The mount stays for code.py and across reloads, and calling
+//|     it again with the same arguments does nothing.
+//|
+//|     ``usb_writable`` picks the side that writes, because only one may write a FAT
+//|     filesystem at a time. False (the default) lets CircuitPython write -- for
+//|     logging -- and the host sees the drive read-only. True lets the host write and
+//|     CircuitPython sees it read-only.
+//|
+//|     ``format`` formats the partition first, destroying what was on it. Do it once.
+//|
+//|     Raises ValueError for an unknown partition, for the one the firmware runs
+//|     from and for the one holding CIRCUITPY, and OSError (ENODEV) when the
+//|     partition holds no filesystem yet."""
+//|     ...
+//|
+//|
+static mp_obj_t espidf_expose_partition(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum { ARG_label, ARG_path, ARG_usb_writable, ARG_format };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_label, MP_ARG_REQUIRED | MP_ARG_OBJ },
+        { MP_QSTR_path, MP_ARG_OBJ, { .u_obj = MP_ROM_NONE } },
+        { MP_QSTR_usb_writable, MP_ARG_KW_ONLY | MP_ARG_BOOL, { .u_bool = false } },
+        { MP_QSTR_format, MP_ARG_KW_ONLY | MP_ARG_BOOL, { .u_bool = false } },
+    };
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    const char *label = mp_obj_str_get_str(args[ARG_label].u_obj);
+    const char *path = args[ARG_path].u_obj == MP_ROM_NONE
+        ? "/data" : mp_obj_str_get_str(args[ARG_path].u_obj);
+
+    partition_disk_result_t result = PARTITION_DISK_OK;
+    if (!args[ARG_format].u_bool || partition_disk_format(label, &result)) {
+        partition_disk_mount(label, path, args[ARG_usb_writable].u_bool, &result);
+    }
+    switch (result) {
+        case PARTITION_DISK_OK:
+            return mp_const_none;
+        case PARTITION_DISK_NO_PARTITION:
+            mp_raise_ValueError(MP_ERROR_TEXT("no such partition"));
+        case PARTITION_DISK_PROTECTED:
+            mp_raise_ValueError(MP_ERROR_TEXT("partition in use by the firmware or CIRCUITPY"));
+        case PARTITION_DISK_BAD_PATH:
+            mp_raise_ValueError(MP_ERROR_TEXT("path must be absolute and short"));
+        case PARTITION_DISK_ALREADY_MOUNTED:
+            mp_raise_ValueError(MP_ERROR_TEXT("another partition is already exposed"));
+        case PARTITION_DISK_NO_FILESYSTEM:
+            mp_raise_OSError(MP_ENODEV);
+        case PARTITION_DISK_FORMAT_FAILED:
+        default:
+            mp_raise_OSError(MP_EIO);
+    }
+}
+MP_DEFINE_CONST_FUN_OBJ_KW(espidf_expose_partition_obj, 1, espidf_expose_partition);
+#endif
