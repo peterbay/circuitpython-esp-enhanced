@@ -14,6 +14,7 @@
 #if CIRCUITPY_BLEIO_NATIVE
 
 #include "common-hal/_bleio/extended_adv.h"
+#include "host/ble_gap.h"
 #include "nimble/hci_common.h"
 
 // The values follow the BLE_GAP_LE_PHY_*_MASK bits: 1 for 1M, 2 for 2M, 4 for
@@ -73,5 +74,27 @@ static mp_obj_t espidf_ble_advertising_phy(size_t n_args, const mp_obj_t *args) 
     return mp_obj_new_tuple(2, result);
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espidf_ble_advertising_phy_obj, 0, 2, espidf_ble_advertising_phy);
+
+//| def ble_prefer_phy(phy: int) -> None:
+//|     """Ask NimBLE to prefer a PHY for future BLE *connections* (not
+//|     advertising -- that is `ble_advertising_phy`). 1 for 1M, 2 for 2M, 4 for
+//|     Coded / long range. Existing connections are unaffected and the peer has to
+//|     agree."""
+//|     ...
+//|
+//|
+static mp_obj_t espidf_ble_prefer_phy(mp_obj_t phy_in) {
+    mp_int_t phy = mp_obj_get_int(phy_in);
+    if (phy != 1 && phy != 2 && phy != 4) {
+        mp_raise_ValueError(MP_ERROR_TEXT("phy must be 1, 2 or 4"));
+    }
+    // The masks happen to equal the values: 1M=0x01, 2M=0x02, Coded=0x04.
+    int rc = ble_gap_set_prefered_default_le_phy((uint8_t)phy, (uint8_t)phy);
+    if (rc != 0) {
+        mp_raise_ValueError(MP_ERROR_TEXT("could not set PHY"));
+    }
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(espidf_ble_prefer_phy_obj, espidf_ble_prefer_phy);
 
 #endif // CIRCUITPY_BLEIO_NATIVE

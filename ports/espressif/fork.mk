@@ -78,3 +78,9 @@ ifneq ($(CIRCUITPY_BLEIO_NATIVE),0)
 SRC_C += common-hal/_bleio/extended_scan.c
 SRC_C += common-hal/_bleio/extended_adv.c
 endif
+
+# espidf's Wi-Fi functions reach the EAP client, whose header lives in the
+# wpa_supplicant component the port already links.
+ifneq ($(CIRCUITPY_WIFI),0)
+INC += -isystem esp-idf/components/wpa_supplicant/esp_supplicant/include
+endif

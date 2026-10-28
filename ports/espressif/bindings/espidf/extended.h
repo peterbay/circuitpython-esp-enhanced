@@ -62,7 +62,22 @@ extern const mp_obj_fun_builtin_var_t espidf_aes_gcm_decrypt_obj;
 extern const mp_obj_type_t espidf_event_queue_type;
 void espidf_event_reset(void);
 
+// extended_wifi.c
+#if CIRCUITPY_WIFI
+extern const mp_obj_fun_builtin_var_t espidf_set_vendor_ie_obj;
+extern const mp_obj_fun_builtin_var_t espidf_eap_enable_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_eap_disable_obj;
+extern const mp_obj_fun_builtin_var_t espidf_smartconfig_start_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_smartconfig_result_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_smartconfig_stop_obj;
+extern const mp_obj_fun_builtin_var_t espidf_wifi_raw_tx_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_wifi_sleep_min_active_time_obj;
+void espidf_eap_reset(void);
+void espidf_smartconfig_reset(void);
+#endif
+
 // extended_ble.c
 #if CIRCUITPY_BLEIO_NATIVE
 extern const mp_obj_fun_builtin_var_t espidf_ble_advertising_phy_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_ble_prefer_phy_obj;
 #endif

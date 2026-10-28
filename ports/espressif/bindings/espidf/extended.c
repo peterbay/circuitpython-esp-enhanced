@@ -12,6 +12,11 @@
 #include "esp_event.h"
 #include "esp_heap_caps.h"
 
+#if CIRCUITPY_WIFI
+#include "esp_eap_client.h"
+#include "esp_smartconfig.h"
+#endif
+
 #if CIRCUITPY_BLEIO_NATIVE
 #include "common-hal/_bleio/extended_adv.h"
 #endif
@@ -61,6 +66,27 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
 
     #if CIRCUITPY_BLEIO_NATIVE
     { MP_ROM_QSTR(MP_QSTR_ble_advertising_phy), MP_ROM_PTR(&espidf_ble_advertising_phy_obj) },
+    { MP_ROM_QSTR(MP_QSTR_ble_prefer_phy), MP_ROM_PTR(&espidf_ble_prefer_phy_obj) },
+    #endif
+
+    #if CIRCUITPY_WIFI
+    { MP_ROM_QSTR(MP_QSTR_set_vendor_ie), MP_ROM_PTR(&espidf_set_vendor_ie_obj) },
+    { MP_ROM_QSTR(MP_QSTR_eap_enable), MP_ROM_PTR(&espidf_eap_enable_obj) },
+    { MP_ROM_QSTR(MP_QSTR_eap_disable), MP_ROM_PTR(&espidf_eap_disable_obj) },
+    { MP_ROM_QSTR(MP_QSTR_TTLS_PHASE2_EAP), MP_ROM_INT(ESP_EAP_TTLS_PHASE2_EAP) },
+    { MP_ROM_QSTR(MP_QSTR_TTLS_PHASE2_MSCHAPV2), MP_ROM_INT(ESP_EAP_TTLS_PHASE2_MSCHAPV2) },
+    { MP_ROM_QSTR(MP_QSTR_TTLS_PHASE2_MSCHAP), MP_ROM_INT(ESP_EAP_TTLS_PHASE2_MSCHAP) },
+    { MP_ROM_QSTR(MP_QSTR_TTLS_PHASE2_PAP), MP_ROM_INT(ESP_EAP_TTLS_PHASE2_PAP) },
+    { MP_ROM_QSTR(MP_QSTR_TTLS_PHASE2_CHAP), MP_ROM_INT(ESP_EAP_TTLS_PHASE2_CHAP) },
+    { MP_ROM_QSTR(MP_QSTR_smartconfig_start), MP_ROM_PTR(&espidf_smartconfig_start_obj) },
+    { MP_ROM_QSTR(MP_QSTR_smartconfig_result), MP_ROM_PTR(&espidf_smartconfig_result_obj) },
+    { MP_ROM_QSTR(MP_QSTR_smartconfig_stop), MP_ROM_PTR(&espidf_smartconfig_stop_obj) },
+    { MP_ROM_QSTR(MP_QSTR_SC_TYPE_ESPTOUCH), MP_ROM_INT(SC_TYPE_ESPTOUCH) },
+    { MP_ROM_QSTR(MP_QSTR_SC_TYPE_AIRKISS), MP_ROM_INT(SC_TYPE_AIRKISS) },
+    { MP_ROM_QSTR(MP_QSTR_SC_TYPE_ESPTOUCH_AIRKISS), MP_ROM_INT(SC_TYPE_ESPTOUCH_AIRKISS) },
+    { MP_ROM_QSTR(MP_QSTR_SC_TYPE_ESPTOUCH_V2), MP_ROM_INT(SC_TYPE_ESPTOUCH_V2) },
+    { MP_ROM_QSTR(MP_QSTR_wifi_raw_tx), MP_ROM_PTR(&espidf_wifi_raw_tx_obj) },
+    { MP_ROM_QSTR(MP_QSTR_wifi_sleep_min_active_time), MP_ROM_PTR(&espidf_wifi_sleep_min_active_time_obj) },
     #endif
 };
 static MP_DEFINE_CONST_MAP(espidf_extended_globals, espidf_extended_globals_table);
@@ -99,6 +125,10 @@ void espidf_extended_reset(void) {
     espidf_timer_reset();
     espidf_partition_reset();
     espidf_event_reset();
+    #if CIRCUITPY_WIFI
+    espidf_eap_reset();
+    espidf_smartconfig_reset();
+    #endif
     #if CIRCUITPY_BLEIO_NATIVE
     // Otherwise the BLE workflow's own advertising would carry on in whatever
     // mode the program left.
