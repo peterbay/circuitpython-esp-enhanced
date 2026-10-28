@@ -42,6 +42,9 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
 
     { MP_ROM_QSTR(MP_QSTR_Timer), MP_ROM_PTR(&espidf_timer_type) },
     { MP_ROM_QSTR(MP_QSTR_NVS), MP_ROM_PTR(&espidf_nvs_type) },
+    { MP_ROM_QSTR(MP_QSTR_Partition), MP_ROM_PTR(&espidf_partition_type) },
+    { MP_ROM_QSTR(MP_QSTR_partitions), MP_ROM_PTR(&espidf_partitions_obj) },
+    { MP_ROM_QSTR(MP_QSTR_running_partition), MP_ROM_PTR(&espidf_running_partition_obj) },
 
     #if CIRCUITPY_BLEIO_NATIVE
     { MP_ROM_QSTR(MP_QSTR_ble_advertising_phy), MP_ROM_PTR(&espidf_ble_advertising_phy_obj) },
@@ -67,6 +70,7 @@ MP_REGISTER_MODULE_DELEGATION(espidf_module, espidf_extended_attr);
 
 void espidf_extended_reset(void) {
     espidf_timer_reset();
+    espidf_partition_reset();
     #if CIRCUITPY_BLEIO_NATIVE
     // Otherwise the BLE workflow's own advertising would carry on in whatever
     // mode the program left.

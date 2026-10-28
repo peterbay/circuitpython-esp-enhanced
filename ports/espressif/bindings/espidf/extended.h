@@ -42,6 +42,12 @@ void espidf_timer_reset(void);
 // extended_nvs.c
 extern const mp_obj_type_t espidf_nvs_type;
 
+// extended_partition.c
+extern const mp_obj_type_t espidf_partition_type;
+extern const mp_obj_fun_builtin_fixed_t espidf_partitions_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_running_partition_obj;
+void espidf_partition_reset(void);
+
 // extended_ble.c
 #if CIRCUITPY_BLEIO_NATIVE
 extern const mp_obj_fun_builtin_var_t espidf_ble_advertising_phy_obj;
