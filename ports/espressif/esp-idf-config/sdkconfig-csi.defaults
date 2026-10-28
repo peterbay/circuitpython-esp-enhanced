@@ -1,0 +1,16 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Wi-Fi
+#
+# CIRCUITPY-CHANGE: channel state information, for espidf.CSI; see fork.mk.
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+# end of Wi-Fi
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration

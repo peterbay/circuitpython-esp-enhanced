@@ -76,6 +76,12 @@ void espidf_eap_reset(void);
 void espidf_smartconfig_reset(void);
 #endif
 
+// extended_csi.c
+#if CIRCUITPY_ESPIDF_CSI
+extern const mp_obj_type_t espidf_csi_type;
+void espidf_csi_reset(void);
+#endif
+
 // extended_ble.c
 #if CIRCUITPY_BLEIO_NATIVE
 extern const mp_obj_fun_builtin_var_t espidf_ble_advertising_phy_obj;

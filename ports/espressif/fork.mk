@@ -84,3 +84,12 @@ endif
 ifneq ($(CIRCUITPY_WIFI),0)
 INC += -isystem esp-idf/components/wpa_supplicant/esp_supplicant/include
 endif
+
+# espidf.CSI, channel state information from the Wi-Fi radio. Off unless a board
+# asks for it: the driver's CSI support costs flash and RAM everywhere it is
+# compiled in, whether or not anything listens.
+CIRCUITPY_ESPIDF_CSI ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_CSI=$(CIRCUITPY_ESPIDF_CSI)
+ifneq ($(CIRCUITPY_ESPIDF_CSI),0)
+FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-csi.defaults;
+endif
