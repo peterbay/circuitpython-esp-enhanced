@@ -5,6 +5,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "shared-bindings/hashlib/Hash.h"
+// CIRCUITPY-CHANGE: this fork's additions, see extended.c.
+#include "shared-bindings/hashlib/extended.h"
 
 #include "py/obj.h"
 #include "py/objproperty.h"
@@ -68,6 +70,7 @@ static const mp_rom_map_elem_t hashlib_hash_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_digest_size), MP_ROM_PTR(&hashlib_hash_digest_size_obj) },
     { MP_ROM_QSTR(MP_QSTR_update), MP_ROM_PTR(&hashlib_hash_update_obj) },
     { MP_ROM_QSTR(MP_QSTR_digest), MP_ROM_PTR(&hashlib_hash_digest_obj) },
+    HASHLIB_HASH_EXTENDED_LOCALS // CIRCUITPY-CHANGE
 };
 
 static MP_DEFINE_CONST_DICT(hashlib_hash_locals_dict, hashlib_hash_locals_dict_table);

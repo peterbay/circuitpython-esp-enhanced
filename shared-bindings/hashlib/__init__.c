@@ -11,6 +11,8 @@
 #include "py/runtime.h"
 #include "shared-bindings/hashlib/__init__.h"
 #include "shared-bindings/hashlib/Hash.h"
+// CIRCUITPY-CHANGE: this fork's additions, see extended.c.
+#include "shared-bindings/hashlib/extended.h"
 
 //| """Hashing related functions
 //|
@@ -55,6 +57,7 @@ static const mp_rom_map_elem_t hashlib_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_hashlib) },
 
     { MP_ROM_QSTR(MP_QSTR_new), MP_ROM_PTR(&hashlib_new_obj) },
+    HASHLIB_EXTENDED_GLOBALS // CIRCUITPY-CHANGE
 
     // Hash is deliberately omitted here because CPython doesn't expose the
     // object on `hashlib` only the internal `_hashlib`.

@@ -104,3 +104,12 @@ ifeq ($(CIRCUITPY_TTFRAST),1)
 SRC_PATTERNS += ttfrast/%
 SRC_SHARED_MODULE_ALL += ttfrast/__init__.c ttfrast/Label.c
 endif
+
+# hashlib: CPython's named constructors, hexdigest(), copy(), name, block_size
+# and md5/sha224/sha384/sha512, in hashlib/extended.c. Wired the same way as
+# ttfrast; the upstream tables take it in through one macro line each.
+CIRCUITPY_HASHLIB_EXTENDED ?= $(CIRCUITPY_HASHLIB_MBEDTLS)
+CFLAGS += -DCIRCUITPY_HASHLIB_EXTENDED=$(CIRCUITPY_HASHLIB_EXTENDED)
+ifeq ($(CIRCUITPY_HASHLIB_EXTENDED),1)
+SRC_SHARED_MODULE_ALL += hashlib/extended.c
+endif
