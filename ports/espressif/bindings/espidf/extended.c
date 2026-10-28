@@ -9,6 +9,7 @@
 
 #include "bindings/espidf/extended.h"
 
+#include "esp_event.h"
 #include "esp_heap_caps.h"
 
 #if CIRCUITPY_BLEIO_NATIVE
@@ -50,6 +51,14 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_aes_gcm_encrypt), MP_ROM_PTR(&espidf_aes_gcm_encrypt_obj) },
     { MP_ROM_QSTR(MP_QSTR_aes_gcm_decrypt), MP_ROM_PTR(&espidf_aes_gcm_decrypt_obj) },
 
+    { MP_ROM_QSTR(MP_QSTR_EventQueue), MP_ROM_PTR(&espidf_event_queue_type) },
+    { MP_ROM_QSTR(MP_QSTR_ANY_ID), MP_ROM_INT(ESP_EVENT_ANY_ID) },
+    #if CIRCUITPY_WIFI
+    { MP_ROM_QSTR(MP_QSTR_WIFI_EVENT), MP_ROM_QSTR(MP_QSTR_WIFI_EVENT) },
+    { MP_ROM_QSTR(MP_QSTR_IP_EVENT), MP_ROM_QSTR(MP_QSTR_IP_EVENT) },
+    { MP_ROM_QSTR(MP_QSTR_SC_EVENT), MP_ROM_QSTR(MP_QSTR_SC_EVENT) },
+    #endif
+
     #if CIRCUITPY_BLEIO_NATIVE
     { MP_ROM_QSTR(MP_QSTR_ble_advertising_phy), MP_ROM_PTR(&espidf_ble_advertising_phy_obj) },
     #endif
@@ -89,6 +98,7 @@ void espidf_get_bytes(mp_obj_t obj, qstr arg, mp_buffer_info_t *bufinfo) {
 void espidf_extended_reset(void) {
     espidf_timer_reset();
     espidf_partition_reset();
+    espidf_event_reset();
     #if CIRCUITPY_BLEIO_NATIVE
     // Otherwise the BLE workflow's own advertising would carry on in whatever
     // mode the program left.

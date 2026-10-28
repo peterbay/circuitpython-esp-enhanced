@@ -58,6 +58,10 @@ extern const mp_obj_fun_builtin_fixed_t espidf_hmac_sha256_obj;
 extern const mp_obj_fun_builtin_var_t espidf_aes_gcm_encrypt_obj;
 extern const mp_obj_fun_builtin_var_t espidf_aes_gcm_decrypt_obj;
 
+// extended_eventqueue.c
+extern const mp_obj_type_t espidf_event_queue_type;
+void espidf_event_reset(void);
+
 // extended_ble.c
 #if CIRCUITPY_BLEIO_NATIVE
 extern const mp_obj_fun_builtin_var_t espidf_ble_advertising_phy_obj;
