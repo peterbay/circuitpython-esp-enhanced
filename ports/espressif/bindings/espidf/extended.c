@@ -41,6 +41,7 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_efuse_user_data), MP_ROM_PTR(&espidf_efuse_user_data_obj) },
 
     { MP_ROM_QSTR(MP_QSTR_Timer), MP_ROM_PTR(&espidf_timer_type) },
+    { MP_ROM_QSTR(MP_QSTR_NVS), MP_ROM_PTR(&espidf_nvs_type) },
 
     #if CIRCUITPY_BLEIO_NATIVE
     { MP_ROM_QSTR(MP_QSTR_ble_advertising_phy), MP_ROM_PTR(&espidf_ble_advertising_phy_obj) },
