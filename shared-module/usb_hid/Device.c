@@ -195,8 +195,14 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     if (usb_hid_get_device_with_report_id(report_id, &hid_device, &id_idx)) {
         // Make sure buffer exists before trying to copy into it.
         if (hid_device->in_report_buffers[id_idx]) {
-            memcpy(buffer, hid_device->in_report_buffers[id_idx], reqlen);
-            return reqlen;
+            // CIRCUITPY-CHANGE: reqlen is the host's number. TinyUSB clamps the
+            // destination to CFG_TUD_HID_EP_BUFSIZE but nothing clamped the source,
+            // so an ordinary GET_REPORT with an oversized buffer read past the end of
+            // a report-sized block and sent the remainder -- Python heap contents --
+            // back to the host. Clamp to what the report actually holds.
+            uint16_t copy_len = MIN(reqlen, hid_device->in_report_lengths[id_idx]);
+            memcpy(buffer, hid_device->in_report_buffers[id_idx], copy_len);
+            return copy_len;
         }
     }
     return 0;
@@ -214,6 +220,15 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     // to implement.
     // So this callback is only going to see HID_REPORT_TYPE_OUTPUT.
     // HID_REPORT_TYPE_FEATURE is not used yet.
+    // CIRCUITPY-CHANGE: the second test used to start with "report_id == 0 ||", which
+    // is satisfied on its own. TinyUSB passes 0 for every report on the interrupt OUT
+    // endpoint, and the hidapi convention is to prefix the payload with a 0 byte, so
+    // when the heuristic below failed and buffer[0] was 0, report_id went back to 0
+    // and the copy ran with hid_device still NULL and id_idx never assigned --
+    // a write through a null pointer at an arbitrary offset, in the usbd task.
+    // Track whether a device was actually found instead of inferring it.
+    bool have_device = false;
+
     if (report_id == 0) {
         // This could be a report with a non-zero report ID in the first byte, or
         // it could be for report ID 0.
@@ -225,6 +240,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
             hid_device->out_report_buffers[id_idx] &&
             hid_device->out_report_lengths[id_idx] == bufsize) {
             // Use as is, with report_id 0.
+            have_device = true;
         } else {
             // No matching report ID 0, so use the first byte as the report ID.
             report_id = buffer[0];
@@ -233,13 +249,15 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         }
     }
 
-    // report_id might be changed due to parsing above, so test again.
-    if ((report_id == 0) ||
-        // Fetch the matching device if we don't already have the report_id 0 device.
-        (usb_hid_get_device_with_report_id(report_id, &hid_device, &id_idx) &&
-         hid_device &&
-         hid_device->out_report_buffers[id_idx] &&
-         hid_device->out_report_lengths[id_idx] == bufsize)) {
+    // report_id might be changed due to parsing above, so look again.
+    if (!have_device) {
+        have_device = usb_hid_get_device_with_report_id(report_id, &hid_device, &id_idx) &&
+            hid_device &&
+            hid_device->out_report_buffers[id_idx] &&
+            hid_device->out_report_lengths[id_idx] == bufsize;
+    }
+
+    if (have_device) {
         // If a report of the correct size has been read, save it in the proper OUT report buffer.
         memcpy(hid_device->out_report_buffers[id_idx], buffer, bufsize);
         hid_device->out_report_buffers_updated[id_idx] = true;
