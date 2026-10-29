@@ -104,6 +104,10 @@
 #include "bindings/ieee802154/Radio.h"
 #endif
 
+#if CIRCUITPY_ESPSDR
+#include "bindings/espsdr/Receiver.h"
+#endif
+
 #if CIRCUITPY_ZIGBEE
 #include "bindings/zigbee/Stack.h"
 #endif
@@ -538,6 +542,10 @@ void reset_port(void) {
 
     #if CIRCUITPY_IEEE802154
     ieee802154_reset();
+    #endif
+
+    #if CIRCUITPY_ESPSDR
+    espsdr_reset();
     #endif
 
     #if CIRCUITPY_ZIGBEE

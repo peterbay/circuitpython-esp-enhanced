@@ -187,3 +187,23 @@ SRC_C += supervisor/usb_video_jpeg.c
 CFLAGS += -I$(CURDIR)/esp_new_jpeg/include
 FORK_BINARY_BLOBS += esp_new_jpeg/lib/$(IDF_TARGET)/libesp_new_jpeg.a
 endif
+
+# espsdr: raw I/Q snapshots from the Wi-Fi receiver through the undocumented
+# dump engine ESP-SDR describes. ESP32-S3 only for now: the register addresses
+# and the reserved SRAM bank are per chip, and on the C5 CircuitPython's own
+# static data sits in the bank the engine writes. Off unless a board asks. The
+# manual gain call is in librftest, which the IDF links only for
+# CONFIG_ESP_PHY_ENABLE_CERT_TEST; added here instead, so the linker takes the
+# one object it needs and nothing else of the certification code comes along.
+CIRCUITPY_ESPSDR ?= 0
+CFLAGS += -DCIRCUITPY_ESPSDR=$(CIRCUITPY_ESPSDR)
+ifneq ($(CIRCUITPY_ESPSDR),0)
+ifneq ($(IDF_TARGET),esp32s3)
+$(error CIRCUITPY_ESPSDR is only implemented for the esp32s3)
+endif
+ifeq ($(CIRCUITPY_WIFI),0)
+$(error CIRCUITPY_ESPSDR needs CIRCUITPY_WIFI)
+endif
+SRC_C += $(wildcard bindings/espsdr/*.c)
+FORK_BINARY_BLOBS += esp-idf/components/esp_phy/lib/$(IDF_TARGET)/librftest.a
+endif
