@@ -98,6 +98,11 @@ extern const mp_obj_type_t espidf_parallel_in_type;
 void espidf_parlio_reset(void);
 #endif
 
+// extended_bitscrambler.c
+#if CIRCUITPY_ESPIDF_BITSCRAMBLER
+extern const mp_obj_fun_builtin_fixed_t espidf_bitscramble_obj;
+#endif
+
 // extended_etm.c
 #if CIRCUITPY_ESPIDF_ETM
 #include "esp_etm.h"

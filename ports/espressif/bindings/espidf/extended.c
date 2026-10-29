@@ -112,6 +112,10 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_PinLink), MP_ROM_PTR(&espidf_pinlink_type) },
     #endif
 
+    #if CIRCUITPY_ESPIDF_BITSCRAMBLER
+    { MP_ROM_QSTR(MP_QSTR_bitscramble), MP_ROM_PTR(&espidf_bitscramble_obj) },
+    #endif
+
     #if CIRCUITPY_ESPIDF_PARLIO
     { MP_ROM_QSTR(MP_QSTR_ParallelOut), MP_ROM_PTR(&espidf_parallel_out_type) },
     { MP_ROM_QSTR(MP_QSTR_ParallelIn), MP_ROM_PTR(&espidf_parallel_in_type) },

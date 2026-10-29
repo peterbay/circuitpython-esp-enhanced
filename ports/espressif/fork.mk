@@ -165,6 +165,19 @@ INC += -isystem esp-idf/components/esp_hal_parlio/$(IDF_TARGET)/include
 FORK_IDF_COMPONENTS_LINK += esp_driver_parlio esp_hal_parlio esp_driver_bitscrambler
 endif
 
+# espidf.bitscramble(): the BitScrambler, memory to memory. C5 only here.
+# Off unless a board asks for it.
+CIRCUITPY_ESPIDF_BITSCRAMBLER ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_BITSCRAMBLER=$(CIRCUITPY_ESPIDF_BITSCRAMBLER)
+export CIRCUITPY_ESPIDF_BITSCRAMBLER
+ifneq ($(CIRCUITPY_ESPIDF_BITSCRAMBLER),0)
+ifneq ($(IDF_TARGET),esp32c5)
+$(error CIRCUITPY_ESPIDF_BITSCRAMBLER is only implemented for the esp32c5)
+endif
+INC += -isystem esp-idf/components/esp_driver_bitscrambler/include
+FORK_IDF_COMPONENTS_LINK += esp_driver_bitscrambler
+endif
+
 CIRCUITPY_ESPIDF_ETM ?= 0
 CFLAGS += -DCIRCUITPY_ESPIDF_ETM=$(CIRCUITPY_ESPIDF_ETM)
 ifneq ($(CIRCUITPY_ESPIDF_ETM),0)
