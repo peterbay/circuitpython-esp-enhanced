@@ -85,10 +85,20 @@ extern const mp_obj_type_t espidf_sdm_type;
 void espidf_sdm_reset(void);
 #endif
 
+// extended_rmt.c
+#if CIRCUITPY_ESPIDF_RMT
+extern const mp_obj_type_t espidf_rmt_out_type;
+extern const mp_obj_type_t espidf_rmt_in_type;
+void espidf_rmt_reset(void);
+#endif
+
 // extended_mcpwm.c
 #if CIRCUITPY_ESPIDF_MCPWM
 extern const mp_obj_type_t espidf_mcpwm_type;
 void espidf_mcpwm_reset(void);
+// extended_mcpwm_cap.c
+extern const mp_obj_type_t espidf_pulse_capture_type;
+void espidf_mcpwm_cap_reset(void);
 #endif
 
 // extended_parlio.c

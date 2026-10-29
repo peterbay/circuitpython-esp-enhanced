@@ -119,6 +119,12 @@ endif
 # espidf.MotorPWM: the MCPWM peripheral, for complementary outputs with dead
 # time. Brought in like the SDM driver, with its HAL component. Off unless a
 # board asks for it.
+# espidf.RMTOut and RMTIn: the RMT peripheral with its resolution, hardware
+# repeat and receive filter, beyond pulseio's fixed 1 us. The driver is in
+# the port already. Off unless a board asks for it.
+CIRCUITPY_ESPIDF_RMT ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_RMT=$(CIRCUITPY_ESPIDF_RMT)
+
 CIRCUITPY_ESPIDF_MCPWM ?= 0
 CFLAGS += -DCIRCUITPY_ESPIDF_MCPWM=$(CIRCUITPY_ESPIDF_MCPWM)
 export CIRCUITPY_ESPIDF_MCPWM

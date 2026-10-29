@@ -100,8 +100,14 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_SigmaDelta), MP_ROM_PTR(&espidf_sdm_type) },
     #endif
 
+    #if CIRCUITPY_ESPIDF_RMT
+    { MP_ROM_QSTR(MP_QSTR_RMTOut), MP_ROM_PTR(&espidf_rmt_out_type) },
+    { MP_ROM_QSTR(MP_QSTR_RMTIn), MP_ROM_PTR(&espidf_rmt_in_type) },
+    #endif
+
     #if CIRCUITPY_ESPIDF_MCPWM
     { MP_ROM_QSTR(MP_QSTR_MotorPWM), MP_ROM_PTR(&espidf_mcpwm_type) },
+    { MP_ROM_QSTR(MP_QSTR_PulseCapture), MP_ROM_PTR(&espidf_pulse_capture_type) },
     #endif
 
     #if CIRCUITPY_ESPIDF_ANA_CMPR
@@ -194,7 +200,11 @@ void espidf_extended_reset(void) {
     #if CIRCUITPY_ESPIDF_SDM
     espidf_sdm_reset();
     #endif
+    #if CIRCUITPY_ESPIDF_RMT
+    espidf_rmt_reset();
+    #endif
     #if CIRCUITPY_ESPIDF_MCPWM
+    espidf_mcpwm_cap_reset();
     espidf_mcpwm_reset();
     #endif
     #if CIRCUITPY_ESPIDF_ANA_CMPR
