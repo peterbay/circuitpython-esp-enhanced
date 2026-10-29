@@ -1,0 +1,49 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Bluetooth
+#
+# CIRCUITPY-CHANGE: ESP-BLE-MESH, for espidf.BLEMesh; see fork.mk. Node and
+# provisioner both, chosen at run time; advertising bearer only, no GATT
+# proxy (that would need a GATT service beside _bleio's); nothing stored in
+# flash. The port's NimBLE uses extended advertising, which mesh takes only
+# through its BLE 5.0 path, an experimental option. Its advertising set is
+# instance 2: 0 is _bleio's, 1 PeriodicAdvertiser's.
+CONFIG_BT_NIMBLE_MAX_EXT_ADV_INSTANCES=3
+CONFIG_BLE_MESH=y
+CONFIG_BLE_MESH_EXPERIMENTAL=y
+CONFIG_BLE_MESH_USE_BLE_50=y
+CONFIG_BLE_MESH_ADV_INST_ID=2
+# Mesh packets as extended advertising, of the standard length. Without it
+# the NimBLE adapter does not compile on this IDF: it names
+# BLE_MESH_EXT_ADV_NONCONN_IND, which adapter.h defines only with this on.
+# Receivers then need Bluetooth 5.
+CONFIG_BLE_MESH_EXT_ADV=y
+CONFIG_BLE_MESH_EXT_ADV_BUF_COUNT=20
+CONFIG_BLE_MESH_EXT_RELAY_ADV_BUF_COUNT=20
+CONFIG_BLE_MESH_V11_SUPPORT=n
+CONFIG_BLE_MESH_NODE=y
+CONFIG_BLE_MESH_PROVISIONER=y
+CONFIG_BLE_MESH_PB_ADV=y
+CONFIG_BLE_MESH_PB_GATT=n
+CONFIG_BLE_MESH_GATT_PROXY_SERVER=n
+CONFIG_BLE_MESH_GATT_PROXY_CLIENT=n
+CONFIG_BLE_MESH_PROXY=n
+CONFIG_BLE_MESH_SETTINGS=n
+CONFIG_BLE_MESH_DEINIT=y
+# Mesh asks the controller to filter duplicates, which the port configures
+# by device address: one packet per device reached the host, and PB-ADV
+# provisioning stalled after its first. Unfiltered instead.
+CONFIG_BLE_MESH_USE_DUPLICATE_SCAN=n
+CONFIG_BLE_MESH_CFG_CLI=y
+CONFIG_BLE_MESH_TX_SEG_MSG_COUNT=10
+CONFIG_BLE_MESH_RX_SEG_MSG_COUNT=10
+# end of Bluetooth
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration

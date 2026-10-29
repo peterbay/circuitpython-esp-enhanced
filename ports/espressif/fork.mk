@@ -211,6 +211,24 @@ endif
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ble-periodic.defaults;
 endif
 
+# espidf.BLEMesh: Bluetooth Mesh through ESP-BLE-MESH, which the bt component
+# compiles in when the fragment configures it. Its headers are spread over the
+# component, and the port lists include directories itself. Off unless a board
+# asks for it; it comes after the periodic fragment, whose instance count it
+# raises.
+CIRCUITPY_ESPIDF_BLE_MESH ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_BLE_MESH=$(CIRCUITPY_ESPIDF_BLE_MESH)
+ifneq ($(CIRCUITPY_ESPIDF_BLE_MESH),0)
+ifeq ($(CIRCUITPY_BLEIO_NATIVE),0)
+$(error CIRCUITPY_ESPIDF_BLE_MESH needs CIRCUITPY_BLEIO_NATIVE)
+endif
+BLE_MESH_DIR = esp-idf/components/bt/esp_ble_mesh
+INC += $(addprefix -isystem $(BLE_MESH_DIR)/,common/include core core/include core/storage \
+	btc/include models/common/include models/client/include models/server/include \
+	api/core/include api/models/include api)
+FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ble-mesh.defaults;
+endif
+
 # espidf.WiFiAware: Wi-Fi Aware (NAN) discovery and messages. The IDF builds
 # its NAN app only with NAN synchronisation configured, which the fragment
 # does. Chips with SOC_WIFI_NAN_SUPPORT only (here the C5, not the S3). Off
