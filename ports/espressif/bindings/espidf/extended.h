@@ -91,6 +91,12 @@ extern const mp_obj_type_t espidf_mcpwm_type;
 void espidf_mcpwm_reset(void);
 #endif
 
+// extended_ana_cmpr.c
+#if CIRCUITPY_ESPIDF_ANA_CMPR
+extern const mp_obj_type_t espidf_ana_cmpr_type;
+void espidf_ana_cmpr_reset(void);
+#endif
+
 // extended_ftm.c
 #if CIRCUITPY_ESPIDF_FTM
 extern const mp_obj_fun_builtin_var_t espidf_ftm_obj;

@@ -129,6 +129,22 @@ INC += -isystem esp-idf/components/esp_hal_mcpwm/$(IDF_TARGET)/include
 FORK_IDF_COMPONENTS_LINK += esp_driver_mcpwm esp_hal_mcpwm
 endif
 
+# espidf.Comparator: the analog comparator. Only for the C5 so far: the S3 has
+# none, and the fixed pins it uses are per chip. Brought in like the SDM driver.
+# Off unless a board asks.
+CIRCUITPY_ESPIDF_ANA_CMPR ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_ANA_CMPR=$(CIRCUITPY_ESPIDF_ANA_CMPR)
+export CIRCUITPY_ESPIDF_ANA_CMPR
+ifneq ($(CIRCUITPY_ESPIDF_ANA_CMPR),0)
+ifneq ($(IDF_TARGET),esp32c5)
+$(error CIRCUITPY_ESPIDF_ANA_CMPR is only implemented for the esp32c5)
+endif
+INC += -isystem esp-idf/components/esp_driver_ana_cmpr/include
+INC += -isystem esp-idf/components/esp_hal_ana_cmpr/include
+INC += -isystem esp-idf/components/esp_hal_ana_cmpr/$(IDF_TARGET)/include
+FORK_IDF_COMPONENTS_LINK += esp_driver_ana_cmpr esp_hal_ana_cmpr
+endif
+
 # ttfrast, TrueType glyphs rasterised from the outline, a shared module. It is
 # wired in here rather than in py/circuitpy_defns.mk: SRC_SHARED_MODULE is a
 # filter of SRC_PATTERNS over SRC_SHARED_MODULE_ALL, expanded only when used,
