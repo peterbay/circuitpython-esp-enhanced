@@ -79,6 +79,12 @@ void espidf_eap_reset(void);
 void espidf_smartconfig_reset(void);
 #endif
 
+// extended_sdm.c
+#if CIRCUITPY_ESPIDF_SDM
+extern const mp_obj_type_t espidf_sdm_type;
+void espidf_sdm_reset(void);
+#endif
+
 // extended_ftm.c
 #if CIRCUITPY_ESPIDF_FTM
 extern const mp_obj_fun_builtin_var_t espidf_ftm_obj;

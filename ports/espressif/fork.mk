@@ -104,6 +104,18 @@ ifneq ($(CIRCUITPY_ESPIDF_FTM),0)
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ftm.defaults;
 endif
 
+# espidf.SigmaDelta: the sigma-delta modulator, a DAC on any pin through an RC
+# filter. The port builds neither the IDF's SDM driver nor its component
+# otherwise, so both come in here and in CMakeLists.txt, which reads the
+# exported switch. Off unless a board asks for it.
+CIRCUITPY_ESPIDF_SDM ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_SDM=$(CIRCUITPY_ESPIDF_SDM)
+export CIRCUITPY_ESPIDF_SDM
+ifneq ($(CIRCUITPY_ESPIDF_SDM),0)
+INC += -isystem esp-idf/components/esp_driver_sdm/include
+FORK_IDF_COMPONENTS_LINK += esp_driver_sdm
+endif
+
 # ttfrast, TrueType glyphs rasterised from the outline, a shared module. It is
 # wired in here rather than in py/circuitpy_defns.mk: SRC_SHARED_MODULE is a
 # filter of SRC_PATTERNS over SRC_SHARED_MODULE_ALL, expanded only when used,
