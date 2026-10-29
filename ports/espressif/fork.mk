@@ -149,6 +149,22 @@ endif
 # events routed to GPIO tasks with no CPU. The C5 has it, the S3 not. The ETM
 # core and the GPIO side are already in components the port builds. Off unless
 # a board asks for it.
+# espidf.ParallelOut and ParallelIn: the parallel IO peripheral, up to eight
+# pins clocked out of or sampled into memory by DMA. C5 only here. Its driver
+# needs the BitScrambler driver as well. Off unless a board asks for it.
+CIRCUITPY_ESPIDF_PARLIO ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_PARLIO=$(CIRCUITPY_ESPIDF_PARLIO)
+export CIRCUITPY_ESPIDF_PARLIO
+ifneq ($(CIRCUITPY_ESPIDF_PARLIO),0)
+ifneq ($(IDF_TARGET),esp32c5)
+$(error CIRCUITPY_ESPIDF_PARLIO is only implemented for the esp32c5)
+endif
+INC += -isystem esp-idf/components/esp_driver_parlio/include
+INC += -isystem esp-idf/components/esp_hal_parlio/include
+INC += -isystem esp-idf/components/esp_hal_parlio/$(IDF_TARGET)/include
+FORK_IDF_COMPONENTS_LINK += esp_driver_parlio esp_hal_parlio esp_driver_bitscrambler
+endif
+
 CIRCUITPY_ESPIDF_ETM ?= 0
 CFLAGS += -DCIRCUITPY_ESPIDF_ETM=$(CIRCUITPY_ESPIDF_ETM)
 ifneq ($(CIRCUITPY_ESPIDF_ETM),0)

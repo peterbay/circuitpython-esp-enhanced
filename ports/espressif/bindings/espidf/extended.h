@@ -91,6 +91,13 @@ extern const mp_obj_type_t espidf_mcpwm_type;
 void espidf_mcpwm_reset(void);
 #endif
 
+// extended_parlio.c
+#if CIRCUITPY_ESPIDF_PARLIO
+extern const mp_obj_type_t espidf_parallel_out_type;
+extern const mp_obj_type_t espidf_parallel_in_type;
+void espidf_parlio_reset(void);
+#endif
+
 // extended_etm.c
 #if CIRCUITPY_ESPIDF_ETM
 #include "esp_etm.h"
