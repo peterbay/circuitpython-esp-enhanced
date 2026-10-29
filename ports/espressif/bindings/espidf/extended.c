@@ -95,6 +95,12 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     #if CIRCUITPY_ESPIDF_CSI
     { MP_ROM_QSTR(MP_QSTR_CSI), MP_ROM_PTR(&espidf_csi_type) },
     #endif
+
+    #if CIRCUITPY_ESPIDF_FTM
+    { MP_ROM_QSTR(MP_QSTR_ftm), MP_ROM_PTR(&espidf_ftm_obj) },
+    { MP_ROM_QSTR(MP_QSTR_ftm_responder), MP_ROM_PTR(&espidf_ftm_responder_obj) },
+    { MP_ROM_QSTR(MP_QSTR_ftm_scan), MP_ROM_PTR(&espidf_ftm_scan_obj) },
+    #endif
 };
 static MP_DEFINE_CONST_MAP(espidf_extended_globals, espidf_extended_globals_table);
 
@@ -138,6 +144,9 @@ void espidf_extended_reset(void) {
     #endif
     #if CIRCUITPY_ESPIDF_CSI
     espidf_csi_reset();
+    #endif
+    #if CIRCUITPY_ESPIDF_FTM
+    espidf_ftm_reset();
     #endif
     #if CIRCUITPY_BLEIO_NATIVE
     // Otherwise the BLE workflow's own advertising would carry on in whatever

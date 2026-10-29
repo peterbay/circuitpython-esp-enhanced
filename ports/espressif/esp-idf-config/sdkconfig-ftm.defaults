@@ -1,0 +1,18 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Wi-Fi
+#
+# CIRCUITPY-CHANGE: Wi-Fi Fine Timing Measurement, for espidf.ftm; see fork.mk.
+CONFIG_ESP_WIFI_FTM_ENABLE=y
+CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT=y
+CONFIG_ESP_WIFI_FTM_RESPONDER_SUPPORT=y
+# end of Wi-Fi
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration

@@ -94,6 +94,16 @@ ifneq ($(CIRCUITPY_ESPIDF_CSI),0)
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-csi.defaults;
 endif
 
+# espidf.ftm() and espidf.ftm_responder(): Wi-Fi Fine Timing Measurement
+# (802.11mc), the distance to a responder from the round trip time of
+# timestamped frames. Off unless a board asks for it, like CSI; both ends of a
+# measurement need it.
+CIRCUITPY_ESPIDF_FTM ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_FTM=$(CIRCUITPY_ESPIDF_FTM)
+ifneq ($(CIRCUITPY_ESPIDF_FTM),0)
+FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ftm.defaults;
+endif
+
 # ttfrast, TrueType glyphs rasterised from the outline, a shared module. It is
 # wired in here rather than in py/circuitpy_defns.mk: SRC_SHARED_MODULE is a
 # filter of SRC_PATTERNS over SRC_SHARED_MODULE_ALL, expanded only when used,
