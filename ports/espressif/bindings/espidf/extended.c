@@ -121,6 +121,10 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_PeriodicSync), MP_ROM_PTR(&espidf_periodic_sync_type) },
     #endif
 
+    #if CIRCUITPY_ESPIDF_NAN
+    { MP_ROM_QSTR(MP_QSTR_WiFiAware), MP_ROM_PTR(&espidf_wifi_aware_type) },
+    #endif
+
     #if CIRCUITPY_ESPIDF_LPCORE
     { MP_ROM_QSTR(MP_QSTR_LPCore), MP_ROM_PTR(&espidf_lpcore_type) },
     { MP_ROM_QSTR(MP_QSTR_LPCoreAlarm), MP_ROM_PTR(&espidf_lpcorealarm_type) },
@@ -203,6 +207,9 @@ void espidf_extended_reset(void) {
     #endif
     #if CIRCUITPY_ESPIDF_BLE_PERIODIC
     espidf_ble_periodic_reset();
+    #endif
+    #if CIRCUITPY_ESPIDF_NAN
+    espidf_nan_reset();
     #endif
     #if CIRCUITPY_BLEIO_NATIVE
     // Otherwise the BLE workflow's own advertising would carry on in whatever

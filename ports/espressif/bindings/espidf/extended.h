@@ -124,6 +124,12 @@ extern const mp_obj_type_t espidf_periodic_sync_type;
 void espidf_ble_periodic_reset(void);
 #endif
 
+// extended_nan.c
+#if CIRCUITPY_ESPIDF_NAN
+extern const mp_obj_type_t espidf_wifi_aware_type;
+void espidf_nan_reset(void);
+#endif
+
 // extended_etm.c
 #if CIRCUITPY_ESPIDF_ETM
 #include "esp_etm.h"

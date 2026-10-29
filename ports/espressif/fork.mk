@@ -211,6 +211,20 @@ endif
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ble-periodic.defaults;
 endif
 
+# espidf.WiFiAware: Wi-Fi Aware (NAN) discovery and messages. The IDF builds
+# its NAN app only with NAN synchronisation configured, which the fragment
+# does. Chips with SOC_WIFI_NAN_SUPPORT only (here the C5, not the S3). Off
+# unless a board asks for it.
+CIRCUITPY_ESPIDF_NAN ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_NAN=$(CIRCUITPY_ESPIDF_NAN)
+ifneq ($(CIRCUITPY_ESPIDF_NAN),0)
+ifeq ($(CIRCUITPY_WIFI),0)
+$(error CIRCUITPY_ESPIDF_NAN needs CIRCUITPY_WIFI)
+endif
+INC += -isystem esp-idf/components/esp_wifi/wifi_apps/nan_app/include
+FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-nan.defaults;
+endif
+
 CIRCUITPY_ESPIDF_ETM ?= 0
 CFLAGS += -DCIRCUITPY_ESPIDF_ETM=$(CIRCUITPY_ESPIDF_ETM)
 ifneq ($(CIRCUITPY_ESPIDF_ETM),0)

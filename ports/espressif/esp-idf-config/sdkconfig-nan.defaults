@@ -1,0 +1,17 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Wi-Fi
+#
+# CIRCUITPY-CHANGE: Wi-Fi Aware (NAN) synchronisation, for espidf.WiFiAware;
+# see fork.mk. No datapath security, pairing or USD.
+CONFIG_ESP_WIFI_NAN_SYNC_ENABLE=y
+# end of Wi-Fi
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration
