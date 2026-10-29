@@ -18,6 +18,9 @@
 
 #include "supervisor/port.h"
 
+// The headers below exist only on chips that have the peripheral.
+#if CIRCUITPY_ESPIDF_LPCORE
+
 #include "esp_sleep.h"
 #include "esp_timer.h"
 #include "hal/pmu_ll.h"
@@ -31,8 +34,6 @@
 // first CONFIG_ULP_COPROC_RESERVE_MEM bytes hold the program and its data.
 // This is espulp's job on the S2 and S3, whose ULPs this chip does not have;
 // a class of its own keeps the upstream module untouched.
-
-#if CIRCUITPY_ESPIDF_LPCORE
 
 typedef struct {
     mp_obj_base_t base;

@@ -17,6 +17,9 @@
 #include "shared-bindings/util.h"
 #include "shared/runtime/context_manager_helpers.h"
 
+// The headers below exist only on chips that have the peripheral.
+#if CIRCUITPY_ESPIDF_ANA_CMPR
+
 #include "driver/ana_cmpr.h"
 #include "driver/gpio.h"
 #if CIRCUITPY_ESPIDF_ETM
@@ -30,8 +33,6 @@
 // interrupt on each crossing -- a threshold watched without the ADC or the CPU.
 // The pins are fixed by the silicon: on the C5 the input is GPIO9 and the
 // external reference GPIO8.
-
-#if CIRCUITPY_ESPIDF_ANA_CMPR
 
 typedef struct {
     mp_obj_base_t base;

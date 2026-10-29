@@ -14,6 +14,9 @@
 #include "bindings/espidf/__init__.h"
 #include "bindings/espidf/extended.h"
 
+// The headers below exist only on chips that have the peripheral.
+#if CIRCUITPY_ESPIDF_BITSCRAMBLER
+
 #include "driver/bitscrambler.h"
 #include "driver/bitscrambler_loopback.h"
 #include "esp_heap_caps.h"
@@ -25,8 +28,6 @@
 // DMA speed. Here in its memory-to-memory form. Programs are written in
 // Espressif's .bsasm language and assembled on a computer with the IDF's
 // tools/bsasm.py; Python hands over the resulting binary.
-
-#if CIRCUITPY_ESPIDF_BITSCRAMBLER
 
 #define BITSCRAMBLER_MAX_BYTES (65536)
 // The driver's v1 image header, which it reads without being told the image's
