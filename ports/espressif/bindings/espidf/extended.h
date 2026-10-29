@@ -117,6 +117,13 @@ mp_obj_t espidf_lpcorealarm_record_wake_alarm(void);
 mp_obj_t espidf_lpcorealarm_find_triggered_alarm(size_t n_alarms, const mp_obj_t *alarms);
 #endif
 
+// extended_ble_periodic.c
+#if CIRCUITPY_ESPIDF_BLE_PERIODIC
+extern const mp_obj_type_t espidf_periodic_adv_type;
+extern const mp_obj_type_t espidf_periodic_sync_type;
+void espidf_ble_periodic_reset(void);
+#endif
+
 // extended_etm.c
 #if CIRCUITPY_ESPIDF_ETM
 #include "esp_etm.h"

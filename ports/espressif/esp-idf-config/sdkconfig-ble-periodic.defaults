@@ -1,0 +1,24 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Bluetooth
+#
+# CIRCUITPY-CHANGE: Bluetooth 5 periodic advertising, for espidf.PeriodicAdvertiser
+# and PeriodicSync; see fork.mk. Instance 0 stays _bleio's.
+CONFIG_BT_NIMBLE_MAX_EXT_ADV_INSTANCES=2
+CONFIG_BT_NIMBLE_ENABLE_PERIODIC_ADV=y
+CONFIG_BT_NIMBLE_ENABLE_PERIODIC_SYNC=y
+CONFIG_BT_NIMBLE_MAX_PERIODIC_SYNCS=1
+# The chip defaults shrink HCI events to 70 bytes. Periodic reports then come
+# in 60-byte pieces, and the controller truncated anything over ~430 bytes and
+# lost the sync on 600. 257 is the most one HCI event carries.
+CONFIG_BT_NIMBLE_TRANSPORT_EVT_SIZE=257
+# end of Bluetooth
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration

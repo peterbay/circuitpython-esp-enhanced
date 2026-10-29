@@ -197,6 +197,20 @@ FORK_IDF_COMPONENTS_LINK += ulp
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-lpcore.defaults;
 endif
 
+# espidf.PeriodicAdvertiser and PeriodicSync: Bluetooth 5 periodic
+# advertising. NimBLE has it switched off in the port's BLE configuration; the
+# fragment turns it on, with periodic sync and a second extended advertising
+# instance, so _bleio's own advertising keeps instance 0. Off unless a board
+# asks for it.
+CIRCUITPY_ESPIDF_BLE_PERIODIC ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_BLE_PERIODIC=$(CIRCUITPY_ESPIDF_BLE_PERIODIC)
+ifneq ($(CIRCUITPY_ESPIDF_BLE_PERIODIC),0)
+ifeq ($(CIRCUITPY_BLEIO_NATIVE),0)
+$(error CIRCUITPY_ESPIDF_BLE_PERIODIC needs CIRCUITPY_BLEIO_NATIVE)
+endif
+FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ble-periodic.defaults;
+endif
+
 CIRCUITPY_ESPIDF_ETM ?= 0
 CFLAGS += -DCIRCUITPY_ESPIDF_ETM=$(CIRCUITPY_ESPIDF_ETM)
 ifneq ($(CIRCUITPY_ESPIDF_ETM),0)
