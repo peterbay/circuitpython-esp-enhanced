@@ -18,6 +18,7 @@
 #include "common-hal/espnow/ESPNow.h"
 
 #include "esp_now.h"
+#include "freertos/FreeRTOS.h"
 #include "mphalport.h"
 
 #include "esp_now.h"
@@ -79,14 +80,18 @@ static void send_cb(const esp_now_send_info_t *tx_info, esp_now_send_status_t st
 // Callback triggered when an ESP-NOW packet is received.
 // Write the peer MAC address and the message into the recv_buffer as an ESPNow packet.
 // If the buffer is full, drop the message and increment the dropped count.
+// CIRCUITPY-CHANGE: this callback runs in the Wi-Fi task and read() in the
+// VM's, on the S3 on the other core, and the ring buffer's bookkeeping is not
+// safe against that: put and get each change its fill count a byte at a time.
+// Unlocked, read() saw the header of a record before its message had been
+// written and raised "Invalid buffer" -- within seconds at a few hundred
+// messages a second -- and the count itself could be corrupted. A record is
+// now written whole under this lock, and read under it.
+static portMUX_TYPE recv_lock = portMUX_INITIALIZER_UNLOCKED;
+
 static void recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *msg, int msg_len) {
     espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
     ringbuf_t *buf = self->recv_buffer;
-
-    if (sizeof(espnow_packet_t) + msg_len > ringbuf_num_empty(buf)) {
-        self->read_failure++;
-        return;
-    }
 
     espnow_header_t header;
     header.magic = ESPNOW_MAGIC;
@@ -94,9 +99,16 @@ static void recv_cb(const esp_now_recv_info_t *esp_now_info, const uint8_t *msg,
     header.rssi = esp_now_info->rx_ctrl->rssi;
     header.time_ms = mp_hal_ticks_ms();
 
+    taskENTER_CRITICAL(&recv_lock);
+    if (sizeof(espnow_packet_t) + msg_len > ringbuf_num_empty(buf)) {
+        taskEXIT_CRITICAL(&recv_lock);
+        self->read_failure++;
+        return;
+    }
     ringbuf_put_n(buf, (uint8_t *)&header, sizeof(header));
     ringbuf_put_n(buf, esp_now_info->src_addr, ESP_NOW_ETH_ALEN);
     ringbuf_put_n(buf, msg, msg_len);
+    taskEXIT_CRITICAL(&recv_lock);
 
     self->read_success++;
 }
@@ -194,13 +206,18 @@ mp_obj_t common_hal_espnow_send(espnow_obj_t *self, const mp_buffer_info_t *mess
 }
 
 mp_obj_t common_hal_espnow_read(espnow_obj_t *self) {
+    // Read the packet header from the incoming buffer. Under recv_lock: see
+    // recv_cb(). Once a header is out, the rest of its record is in the buffer,
+    // since records go in whole and this is the only reader.
+    espnow_header_t header;
+    taskENTER_CRITICAL(&recv_lock);
     if (!ringbuf_num_filled(self->recv_buffer)) {
+        taskEXIT_CRITICAL(&recv_lock);
         return mp_const_none;
     }
-
-    // Read the packet header from the incoming buffer
-    espnow_header_t header;
-    if (ringbuf_get_n(self->recv_buffer, (uint8_t *)&header, sizeof(header)) != sizeof(header)) {
+    size_t got = ringbuf_get_n(self->recv_buffer, (uint8_t *)&header, sizeof(header));
+    taskEXIT_CRITICAL(&recv_lock);
+    if (got != sizeof(header) || header.magic != ESPNOW_MAGIC || header.msg_len > ESPNOW_MAX_MSG_LEN) {
         mp_arg_error_invalid(MP_QSTR_buffer);
     }
 
@@ -208,15 +225,16 @@ mp_obj_t common_hal_espnow_read(espnow_obj_t *self) {
 
     uint8_t mac_buf[ESP_NOW_ETH_ALEN];
     // CIRCUITPY-CHANGE: read straight into the bytes object rather than a
-    // 1.5K array on the stack.
+    // 1.5K array on the stack. Allocated outside the lock: no allocation in a
+    // critical section.
     vstr_t msg;
     vstr_init_len(&msg, msg_len);
 
-    // Check the message packet header format and read the message data
-    if (header.magic != ESPNOW_MAGIC ||
-        msg_len > ESPNOW_MAX_MSG_LEN ||
-        ringbuf_get_n(self->recv_buffer, mac_buf, ESP_NOW_ETH_ALEN) != ESP_NOW_ETH_ALEN ||
-        ringbuf_get_n(self->recv_buffer, (uint8_t *)msg.buf, msg_len) != msg_len) {
+    taskENTER_CRITICAL(&recv_lock);
+    bool complete = ringbuf_get_n(self->recv_buffer, mac_buf, ESP_NOW_ETH_ALEN) == ESP_NOW_ETH_ALEN &&
+        ringbuf_get_n(self->recv_buffer, (uint8_t *)msg.buf, msg_len) == msg_len;
+    taskEXIT_CRITICAL(&recv_lock);
+    if (!complete) {
         vstr_clear(&msg);
         mp_arg_error_invalid(MP_QSTR_buffer);
     }
