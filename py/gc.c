@@ -1484,7 +1484,12 @@ void *gc_realloc(void *ptr_in, size_t n_bytes, bool allow_move) {
             ATB_FREE_TO_TAIL(area, bl);
         }
 
-        area->gc_last_used_block = MAX(area->gc_last_used_block, end_block);
+        // CIRCUITPY-CHANGE: end_block is one past the chunk here, while
+        // gc_last_used_block is inclusive, as gc_alloc sets it. Grown to the
+        // last block of an area, it pointed past the end, and the finaliser
+        // pass read a byte beyond the FTB -- the collect table -- and called
+        // __del__ on whatever its bits named.
+        area->gc_last_used_block = MAX(area->gc_last_used_block, end_block - 1);
 
         GC_EXIT();
 
