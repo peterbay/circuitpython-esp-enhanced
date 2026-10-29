@@ -85,6 +85,12 @@ extern const mp_obj_type_t espidf_sdm_type;
 void espidf_sdm_reset(void);
 #endif
 
+// extended_mcpwm.c
+#if CIRCUITPY_ESPIDF_MCPWM
+extern const mp_obj_type_t espidf_mcpwm_type;
+void espidf_mcpwm_reset(void);
+#endif
+
 // extended_ftm.c
 #if CIRCUITPY_ESPIDF_FTM
 extern const mp_obj_fun_builtin_var_t espidf_ftm_obj;

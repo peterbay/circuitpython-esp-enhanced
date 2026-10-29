@@ -116,6 +116,19 @@ INC += -isystem esp-idf/components/esp_driver_sdm/include
 FORK_IDF_COMPONENTS_LINK += esp_driver_sdm
 endif
 
+# espidf.MotorPWM: the MCPWM peripheral, for complementary outputs with dead
+# time. Brought in like the SDM driver, with its HAL component. Off unless a
+# board asks for it.
+CIRCUITPY_ESPIDF_MCPWM ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_MCPWM=$(CIRCUITPY_ESPIDF_MCPWM)
+export CIRCUITPY_ESPIDF_MCPWM
+ifneq ($(CIRCUITPY_ESPIDF_MCPWM),0)
+INC += -isystem esp-idf/components/esp_driver_mcpwm/include
+INC += -isystem esp-idf/components/esp_hal_mcpwm/include
+INC += -isystem esp-idf/components/esp_hal_mcpwm/$(IDF_TARGET)/include
+FORK_IDF_COMPONENTS_LINK += esp_driver_mcpwm esp_hal_mcpwm
+endif
+
 # ttfrast, TrueType glyphs rasterised from the outline, a shared module. It is
 # wired in here rather than in py/circuitpy_defns.mk: SRC_SHARED_MODULE is a
 # filter of SRC_PATTERNS over SRC_SHARED_MODULE_ALL, expanded only when used,
