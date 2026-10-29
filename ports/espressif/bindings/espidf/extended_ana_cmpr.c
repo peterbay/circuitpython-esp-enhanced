@@ -19,6 +19,10 @@
 
 #include "driver/ana_cmpr.h"
 #include "driver/gpio.h"
+#if CIRCUITPY_ESPIDF_ETM
+#include "driver/ana_cmpr_etm.h"
+#include "shared-bindings/microcontroller/Pin.h"
+#endif
 #include "soc/ana_cmpr_pins.h"
 
 // The analog comparator: one input pin compared in hardware against a
@@ -40,6 +44,13 @@ typedef struct {
     uint8_t reference_tenths;
     bool external;
     digitalio_pull_t pull;
+    #if CIRCUITPY_ESPIDF_ETM
+    // The output pin the crossings drive through the ETM, or NULL.
+    const mcu_pin_obj_t *output;
+    esp_etm_event_handle_t cross_up;
+    esp_etm_event_handle_t cross_down;
+    espidf_etm_drive_t drive;
+    #endif
 } espidf_ana_cmpr_obj_t;
 
 // One unit on the C5.
@@ -56,10 +67,61 @@ static bool IRAM_ATTR on_cross(ana_cmpr_handle_t unit, const ana_cmpr_cross_even
     return false;
 }
 
+#if CIRCUITPY_ESPIDF_ETM
+static void release_output(espidf_ana_cmpr_obj_t *self) {
+    if (self->output == NULL) {
+        return;
+    }
+    espidf_etm_drive_stop(&self->drive);
+    if (self->cross_up != NULL) {
+        esp_etm_del_event(self->cross_up);
+        self->cross_up = NULL;
+    }
+    if (self->cross_down != NULL) {
+        esp_etm_del_event(self->cross_down);
+        self->cross_down = NULL;
+    }
+    reset_pin_number(self->output->number);
+    self->output = NULL;
+}
+
+// Crossings upward set the pin, downward clear it, in hardware. The pin
+// starts low: the comparator's present output cannot be read on the C5.
+static esp_err_t start_output(espidf_ana_cmpr_obj_t *self, const mcu_pin_obj_t *pin) {
+    self->cross_up = self->cross_down = NULL;
+    ana_cmpr_etm_event_config_t up = { .event_type = ANA_CMPR_EVENT_POS_CROSS };
+    ana_cmpr_etm_event_config_t down = { .event_type = ANA_CMPR_EVENT_NEG_CROSS };
+    esp_err_t err = ana_cmpr_new_etm_event(self->unit, &up, &self->cross_up);
+    if (err == ESP_OK) {
+        err = ana_cmpr_new_etm_event(self->unit, &down, &self->cross_down);
+    }
+    if (err == ESP_OK) {
+        err = espidf_etm_drive_start(&self->drive, self->cross_up, self->cross_down, pin->number, false, 0);
+    }
+    if (err != ESP_OK) {
+        if (self->cross_up != NULL) {
+            esp_etm_del_event(self->cross_up);
+            self->cross_up = NULL;
+        }
+        if (self->cross_down != NULL) {
+            esp_etm_del_event(self->cross_down);
+            self->cross_down = NULL;
+        }
+        return err;
+    }
+    claim_pin(pin);
+    self->output = pin;
+    return ESP_OK;
+}
+#endif
+
 static void ana_cmpr_close(espidf_ana_cmpr_obj_t *self) {
     if (self->unit == NULL) {
         return;
     }
+    #if CIRCUITPY_ESPIDF_ETM
+    release_output(self);
+    #endif
     ana_cmpr_disable(self->unit);
     ana_cmpr_del_unit(self->unit);
     self->unit = NULL;
@@ -119,15 +181,22 @@ static void apply_pull(digitalio_pull_t pull) {
 //|         :param bool external_reference: compare against the voltage on the
 //|           reference pin instead.
 //|         :param ~digitalio.Pull pull: a weak pull on the input, e.g. for an
-//|           open-collector sensor."""
+//|           open-collector sensor.
+//|         :param ~microcontroller.Pin output: a pin the crossings drive in
+//|           hardware, through the Event Task Matrix: high after an upward
+//|           crossing, low after a downward one, low until the first. Only in
+//|           builds with ``CIRCUITPY_ESPIDF_ETM``."""
 //|         ...
 //|
 static mp_obj_t espidf_ana_cmpr_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
-    enum { ARG_reference, ARG_external_reference, ARG_pull };
+    enum { ARG_reference, ARG_external_reference, ARG_pull, ARG_output };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_reference, MP_ARG_KW_ONLY | MP_ARG_OBJ, { .u_obj = MP_OBJ_NULL } },
         { MP_QSTR_external_reference, MP_ARG_KW_ONLY | MP_ARG_BOOL, { .u_bool = false } },
         { MP_QSTR_pull, MP_ARG_KW_ONLY | MP_ARG_OBJ, { .u_obj = mp_const_none } },
+        #if CIRCUITPY_ESPIDF_ETM
+        { MP_QSTR_output, MP_ARG_KW_ONLY | MP_ARG_OBJ, { .u_obj = mp_const_none } },
+        #endif
     };
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
@@ -135,6 +204,15 @@ static mp_obj_t espidf_ana_cmpr_make_new(const mp_obj_type_t *type, size_t n_arg
     uint8_t tenths = args[ARG_reference].u_obj == MP_OBJ_NULL ? 5 : validate_reference(args[ARG_reference].u_obj);
     bool external = args[ARG_external_reference].u_bool;
     digitalio_pull_t pull = validate_pull(args[ARG_pull].u_obj, MP_QSTR_pull);
+    #if CIRCUITPY_ESPIDF_ETM
+    const mcu_pin_obj_t *output = NULL;
+    if (args[ARG_output].u_obj != mp_const_none) {
+        output = validate_obj_is_free_pin(args[ARG_output].u_obj, MP_QSTR_output);
+        if (output->number == ANA_CMPR0_SRC_GPIO || (external && output->number == ANA_CMPR0_EXT_REF_GPIO)) {
+            mp_raise_ValueError(MP_ERROR_TEXT("output must not be a comparator pin"));
+        }
+    }
+    #endif
 
     if (_open != NULL) {
         mp_raise_RuntimeError(MP_ERROR_TEXT("Comparator in use"));
@@ -150,6 +228,9 @@ static mp_obj_t espidf_ana_cmpr_make_new(const mp_obj_type_t *type, size_t n_arg
     self->reference_tenths = tenths;
     self->external = external;
     self->pull = pull;
+    #if CIRCUITPY_ESPIDF_ETM
+    self->output = NULL;
+    #endif
 
     ana_cmpr_config_t config = {
         .unit = 0,
@@ -167,10 +248,18 @@ static mp_obj_t espidf_ana_cmpr_make_new(const mp_obj_type_t *type, size_t n_arg
         ana_cmpr_event_callbacks_t callbacks = { .on_cross = on_cross };
         err = ana_cmpr_register_event_callbacks(self->unit, &callbacks, self);
     }
+    #if CIRCUITPY_ESPIDF_ETM
+    if (err == ESP_OK && output != NULL) {
+        err = start_output(self, output);
+    }
+    #endif
     if (err == ESP_OK) {
         err = ana_cmpr_enable(self->unit);
     }
     if (err != ESP_OK) {
+        #if CIRCUITPY_ESPIDF_ETM
+        release_output(self);
+        #endif
         ana_cmpr_del_unit(self->unit);
         self->unit = NULL;
         raise_esp_error(err);

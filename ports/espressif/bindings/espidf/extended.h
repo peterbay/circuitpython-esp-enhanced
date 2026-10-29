@@ -91,6 +91,25 @@ extern const mp_obj_type_t espidf_mcpwm_type;
 void espidf_mcpwm_reset(void);
 #endif
 
+// extended_etm.c
+#if CIRCUITPY_ESPIDF_ETM
+#include "esp_etm.h"
+extern const mp_obj_type_t espidf_pinlink_type;
+void espidf_etm_reset(void);
+// A pin set by one ETM event and cleared by another (swapped with invert),
+// through two ETM channels and the GPIO set/clear tasks. The pin becomes an
+// input-output starting at `initial`. On error everything made is undone.
+typedef struct {
+    esp_etm_channel_handle_t chan[2];
+    esp_etm_task_handle_t task_set;
+    esp_etm_task_handle_t task_clr;
+    int target;
+} espidf_etm_drive_t;
+esp_err_t espidf_etm_drive_start(espidf_etm_drive_t *d, esp_etm_event_handle_t up,
+    esp_etm_event_handle_t down, int target, bool invert, int initial);
+void espidf_etm_drive_stop(espidf_etm_drive_t *d);
+#endif
+
 // extended_ana_cmpr.c
 #if CIRCUITPY_ESPIDF_ANA_CMPR
 extern const mp_obj_type_t espidf_ana_cmpr_type;

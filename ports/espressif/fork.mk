@@ -145,6 +145,18 @@ INC += -isystem esp-idf/components/esp_hal_ana_cmpr/$(IDF_TARGET)/include
 FORK_IDF_COMPONENTS_LINK += esp_driver_ana_cmpr esp_hal_ana_cmpr
 endif
 
+# espidf.PinLink and Comparator(output=): the Event Task Matrix, peripheral
+# events routed to GPIO tasks with no CPU. The C5 has it, the S3 not. The ETM
+# core and the GPIO side are already in components the port builds. Off unless
+# a board asks for it.
+CIRCUITPY_ESPIDF_ETM ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_ETM=$(CIRCUITPY_ESPIDF_ETM)
+ifneq ($(CIRCUITPY_ESPIDF_ETM),0)
+ifneq ($(IDF_TARGET),esp32c5)
+$(error CIRCUITPY_ESPIDF_ETM is only implemented for the esp32c5)
+endif
+endif
+
 # ttfrast, TrueType glyphs rasterised from the outline, a shared module. It is
 # wired in here rather than in py/circuitpy_defns.mk: SRC_SHARED_MODULE is a
 # filter of SRC_PATTERNS over SRC_SHARED_MODULE_ALL, expanded only when used,
