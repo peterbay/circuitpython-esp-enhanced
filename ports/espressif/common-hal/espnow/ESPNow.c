@@ -7,11 +7,14 @@
 //
 // SPDX-License-Identifier: MIT
 
+#include <string.h>
+
 #include "py/mperrno.h"
 #include "py/runtime.h"
 
 #include "bindings/espidf/__init__.h"
 #include "bindings/espnow/ESPNowPacket.h"
+#include "bindings/espnow/Peer.h"
 
 #include "shared-bindings/wifi/__init__.h"
 
@@ -117,6 +120,82 @@ bool common_hal_espnow_deinited(espnow_obj_t *self) {
     return self == NULL || self->recv_buffer == NULL;
 }
 
+// CIRCUITPY-CHANGE: the PHY mode the driver wants alongside each rate, or -1
+// for a value that is not a rate.
+static int phy_mode_for(mp_int_t rate) {
+    if (rate == WIFI_PHY_RATE_LORA_250K || rate == WIFI_PHY_RATE_LORA_500K) {
+        return WIFI_PHY_MODE_LR;
+    }
+    if (rate <= WIFI_PHY_RATE_11M_L || (rate >= WIFI_PHY_RATE_2M_S && rate <= WIFI_PHY_RATE_11M_S)) {
+        return WIFI_PHY_MODE_11B;
+    }
+    if (rate >= WIFI_PHY_RATE_48M && rate <= WIFI_PHY_RATE_9M) {
+        return WIFI_PHY_MODE_11G;
+    }
+    // MCS8 and MCS9 exist only on Wi-Fi 6 parts and need HE20; not supported.
+    if ((rate >= WIFI_PHY_RATE_MCS0_LGI && rate <= WIFI_PHY_RATE_MCS7_LGI) ||
+        (rate >= WIFI_PHY_RATE_MCS0_SGI && rate <= WIFI_PHY_RATE_MCS7_SGI)) {
+        return WIFI_PHY_MODE_HT20;
+    }
+    return -1;
+}
+
+// Interfaces the current Wi-Fi mode has; the driver refuses the protocol calls
+// for any other.
+static bool interface_up(wifi_interface_t ifx) {
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    esp_wifi_get_mode(&mode);
+    return ifx == WIFI_IF_STA ? (mode == WIFI_MODE_STA || mode == WIFI_MODE_APSTA)
+                              : (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA);
+}
+
+// The plural calls rather than esp_wifi_get/set_protocol(): on a dual-band part
+// in its default band mode (2.4 + 5 GHz, as CircuitPython sets the C5) the
+// singular ones refuse with ESP_ERR_NOT_SUPPORTED.
+static void save_protocols(espnow_obj_t *self) {
+    memset(&self->protocols_sta, 0, sizeof(self->protocols_sta));
+    memset(&self->protocols_ap, 0, sizeof(self->protocols_ap));
+    if (interface_up(WIFI_IF_STA)) {
+        CHECK_ESP_RESULT(esp_wifi_get_protocols(WIFI_IF_STA, &self->protocols_sta));
+    }
+    if (interface_up(WIFI_IF_AP)) {
+        CHECK_ESP_RESULT(esp_wifi_get_protocols(WIFI_IF_AP, &self->protocols_ap));
+    }
+}
+
+static void set_protocols(wifi_interface_t ifx, const wifi_protocols_t *saved, bool lr) {
+    if (!interface_up(ifx) || saved->ghz_2g == 0) {
+        return;
+    }
+    wifi_protocols_t protocols = *saved;
+    if (lr) {
+        protocols.ghz_2g |= WIFI_PROTOCOL_LR;
+    }
+    CHECK_ESP_RESULT(esp_wifi_set_protocols(ifx, &protocols));
+}
+
+// For deinit, which also runs from espnow_reset() on a soft reset, where
+// raising is not an option. A refusal here means the interface went away with
+// the Wi-Fi mode, and its protocols with it.
+static void restore_protocols(espnow_obj_t *self) {
+    if (interface_up(WIFI_IF_STA) && self->protocols_sta.ghz_2g) {
+        esp_wifi_set_protocols(WIFI_IF_STA, &self->protocols_sta);
+    }
+    if (interface_up(WIFI_IF_AP) && self->protocols_ap.ghz_2g) {
+        esp_wifi_set_protocols(WIFI_IF_AP, &self->protocols_ap);
+    }
+}
+
+// CIRCUITPY-CHANGE: Espressif's Long Range rates are only sent, and only
+// received, on an interface that has WIFI_PROTOCOL_LR among its protocols --
+// on both ends, so the receiver sets the same phy_rate. Any other rate puts
+// the protocols back as they were.
+static void set_long_range(espnow_obj_t *self) {
+    bool lr = phy_mode_for(self->phy_rate) == WIFI_PHY_MODE_LR;
+    set_protocols(WIFI_IF_STA, &self->protocols_sta, lr);
+    set_protocols(WIFI_IF_AP, &self->protocols_ap, lr);
+}
+
 // Construct the ESPNow object
 void common_hal_espnow_construct(espnow_obj_t *self, mp_int_t buffer_size, mp_int_t phy_rate) {
     common_hal_espnow_set_phy_rate(self, phy_rate);
@@ -144,17 +223,12 @@ void common_hal_espnow_init(espnow_obj_t *self) {
 
     CHECK_ESP_RESULT(esp_now_init());
 
-    // esp_now_set_peer_rate_config() is poorly documented, and we haven't figured out
-    // what the esp_now_rate_config_t settings should be. For now, just ignore phy_rate.
-    // Note that esp_now_set_peer_rate_config() must be called after esp_now-init().
-    //
-    // esp_now_rate_config_t rate_config = {
-    //     .phymode = WIFI_PHY_MODE_LR,
-    //     .rate = self->phy_rate,
-    //     .ersu = false,
-    //     .dcm = false,
-    // };
-    // CHECK_ESP_RESULT(esp_now_set_peer_rate_config(NULL, &rate_config));
+    // CIRCUITPY-CHANGE: phy_rate used to be stored and never applied: the call
+    // here was commented out, with a NULL peer that the driver refuses -- the
+    // rate is configured per peer. Peers.append() now applies it to each peer
+    // as it is added, and setting phy_rate applies it to all of them.
+    save_protocols(self);
+    set_long_range(self);
 
     CHECK_ESP_RESULT(esp_now_register_send_cb(send_cb));
     CHECK_ESP_RESULT(esp_now_register_recv_cb(recv_cb));
@@ -170,6 +244,9 @@ void common_hal_espnow_deinit(espnow_obj_t *self) {
     CHECK_ESP_RESULT(esp_now_unregister_send_cb());
     CHECK_ESP_RESULT(esp_now_unregister_recv_cb());
     CHECK_ESP_RESULT(esp_now_deinit());
+    // CIRCUITPY-CHANGE: take WIFI_PROTOCOL_LR off again if a Long Range rate
+    // put it on.
+    restore_protocols(self);
 
     self->recv_buffer->buf = NULL;
     self->recv_buffer = NULL;
@@ -181,8 +258,32 @@ void espnow_reset(void) {
 }
 
 void common_hal_espnow_set_phy_rate(espnow_obj_t *self, mp_int_t value) {
-    self->phy_rate = mp_arg_validate_int_range(value, 0, WIFI_PHY_RATE_MAX - 1, MP_QSTR_phy_rate);
+    // CIRCUITPY-CHANGE: the enum has holes (0x04, 0x18-0x28 on parts without
+    // Wi-Fi 6), and a value in one of them used to pass the range check.
+    if (value < 0 || value >= WIFI_PHY_RATE_MAX || phy_mode_for(value) < 0) {
+        mp_raise_ValueError_varg(MP_ERROR_TEXT("Invalid %q"), MP_QSTR_phy_rate);
+    }
+    self->phy_rate = value;
+    if (common_hal_espnow_deinited(self)) {
+        return;
+    }
+    set_long_range(self);
+    size_t len;
+    mp_obj_t *peers;
+    mp_obj_list_get(self->peers->list, &len, &peers);
+    for (size_t i = 0; i < len; i++) {
+        espnow_peer_obj_t *peer = MP_OBJ_TO_PTR(peers[i]);
+        common_hal_espnow_apply_phy_rate(self, peer->peer_info.peer_addr);
+    }
 };
+
+void common_hal_espnow_apply_phy_rate(espnow_obj_t *self, const uint8_t *peer_addr) {
+    esp_now_rate_config_t config = {
+        .phymode = phy_mode_for(self->phy_rate),
+        .rate = self->phy_rate,
+    };
+    CHECK_ESP_RESULT(esp_now_set_peer_rate_config(peer_addr, &config));
+}
 
 void common_hal_espnow_set_pmk(espnow_obj_t *self, const uint8_t *key) {
     CHECK_ESP_RESULT(esp_now_set_pmk(key));

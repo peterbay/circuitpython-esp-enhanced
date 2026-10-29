@@ -12,6 +12,7 @@
 
 #include "bindings/espnow/Peer.h"
 #include "bindings/espnow/Peers.h"
+#include "common-hal/espnow/ESPNow.h"
 
 #include "esp_now.h"
 
@@ -33,6 +34,9 @@
 static mp_obj_t espnow_peers_append(mp_obj_t self_in, mp_obj_t arg) {
     espnow_peer_obj_t *peer = MP_OBJ_TO_PTR(mp_arg_validate_type(arg, &espnow_peer_type, MP_QSTR_Peer));
     CHECK_ESP_RESULT(esp_now_add_peer(&peer->peer_info));
+    // CIRCUITPY-CHANGE: the driver keeps the rate per peer; without this every
+    // peer went out at 1 Mbps whatever ESPNow.phy_rate said.
+    common_hal_espnow_apply_phy_rate(MP_STATE_PORT(espnow_singleton), peer->peer_info.peer_addr);
     espnow_peers_obj_t *self = MP_OBJ_TO_PTR(self_in);
     return mp_obj_list_append(self->list, arg);
 }

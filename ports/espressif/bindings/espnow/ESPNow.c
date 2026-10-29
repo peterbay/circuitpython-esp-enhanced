@@ -38,10 +38,12 @@ static void espnow_check_for_deinit(espnow_obj_t *self) {
 //|         """Allocate and initialize `ESPNow` instance as a singleton.
 //|
 //|         :param int buffer_size: The size of the internal ring buffer. Default: 2968 bytes, two messages of the 1470 bytes ESP-NOW v2 allows.
-//|         :param int phy_rate: The ESP-NOW physical layer rate. Default: 1 Mbps.
-//|             `wifi_phy_rate_t <https://docs.espressif.com/projects/esp-idf/en/release-v4.4/esp32/api-reference/network/esp_wifi.html#_CPPv415wifi_phy_rate_t>`_
-//|
-//|         **Limitations:** Currently, setting ``phy_rate`` does nothing. The rate is always 1 Mbps.
+//|         :param int phy_rate: The ESP-NOW physical layer rate, a
+//|             `wifi_phy_rate_t <https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-reference/network/esp_wifi.html>`_
+//|             value. Default: 1 Mbps (0). 802.11b: 0-3, 5-7; 802.11g: 8 (48M) to 15 (9M);
+//|             HT20: 16-23 MCS0-7 long GI, MCS0-7 short GI after them; Espressif's Long
+//|             Range: 41 (250 kbit/s) and 42 (500 kbit/s), which only another ESP32 with
+//|             the same ``phy_rate`` receives. Applies to every peer.
 //|         """
 //|         ...
 //|
@@ -231,11 +233,10 @@ MP_PROPERTY_GETTER(espnow_buffer_size_obj,
     (mp_obj_t)&espnow_get_buffer_size_obj);
 
 //|     phy_rate: int
-//|     """The ESP-NOW physical layer rate.
-//|     `wifi_phy_rate_t <https://docs.espressif.com/projects/esp-idf/en/release-v4.4/esp32/api-reference/network/esp_wifi.html#_CPPv415wifi_phy_rate_t>`_
-//|
-//|     **Limitations:** Currently, setting ``phy_rate`` does nothing. The rate is always 1 Mbps.
-//|     """
+//|     """The ESP-NOW physical layer rate (see the constructor). Setting it applies
+//|     to every peer at once. The Long Range rates (41, 42) add Espressif's LR
+//|     protocol to the Wi-Fi interfaces while ESP-NOW runs, on the receiving
+//|     side as well; it is taken off again on `deinit`."""
 //|
 static mp_obj_t espnow_get_phy_rate(const mp_obj_t self_in) {
     espnow_obj_t *self = MP_OBJ_TO_PTR(self_in);
