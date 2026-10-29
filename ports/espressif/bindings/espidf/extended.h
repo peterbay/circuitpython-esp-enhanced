@@ -103,6 +103,20 @@ void espidf_parlio_reset(void);
 extern const mp_obj_fun_builtin_fixed_t espidf_bitscramble_obj;
 #endif
 
+// extended_lpcore.c
+#if CIRCUITPY_ESPIDF_LPCORE
+extern const mp_obj_type_t espidf_lpcore_type;
+void espidf_lpcore_reset(void);
+// LPCoreAlarm, called from the port's alarm module like espulp's ULPAlarm.
+extern const mp_obj_type_t espidf_lpcorealarm_type;
+void espidf_lpcorealarm_set_alarm(bool deep_sleep, size_t n_alarms, const mp_obj_t *alarms);
+void espidf_lpcorealarm_prepare_for_deep_sleep(void);
+bool espidf_lpcorealarm_woke_this_cycle(void);
+void espidf_lpcorealarm_reset(void);
+mp_obj_t espidf_lpcorealarm_record_wake_alarm(void);
+mp_obj_t espidf_lpcorealarm_find_triggered_alarm(size_t n_alarms, const mp_obj_t *alarms);
+#endif
+
 // extended_etm.c
 #if CIRCUITPY_ESPIDF_ETM
 #include "esp_etm.h"

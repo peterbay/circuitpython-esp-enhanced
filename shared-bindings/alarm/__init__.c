@@ -10,6 +10,10 @@
 #if CIRCUITPY_ESPULP
 #include "bindings/espulp/ULPAlarm.h"
 #endif
+// CIRCUITPY-CHANGE: espidf.LPCoreAlarm; see ports/espressif/bindings/espidf.
+#if CIRCUITPY_ESPIDF_LPCORE
+#include "bindings/espidf/extended.h"
+#endif
 
 #include "shared-bindings/alarm/__init__.h"
 #include "shared-bindings/alarm/SleepMemory.h"
@@ -67,6 +71,9 @@ static void validate_objs_are_alarms(size_t n_args, const mp_obj_t *objs) {
             #endif
             #if CIRCUITPY_ESPULP
             mp_obj_is_type(objs[i], &espulp_ulpalarm_type) ||
+            #endif
+            #if CIRCUITPY_ESPIDF_LPCORE
+            mp_obj_is_type(objs[i], &espidf_lpcorealarm_type) ||
             #endif
             mp_obj_is_type(objs[i], &alarm_time_timealarm_type)) {
             continue;

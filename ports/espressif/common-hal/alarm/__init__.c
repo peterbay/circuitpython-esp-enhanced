@@ -23,6 +23,11 @@
 #include "bindings/espulp/ULPAlarm.h"
 #endif
 
+// CIRCUITPY-CHANGE: espidf.LPCoreAlarm, the C5's LP core, wired in like ULPAlarm.
+#if CIRCUITPY_ESPIDF_LPCORE
+#include "bindings/espidf/extended.h"
+#endif
+
 #include "common-hal/digitalio/DigitalInOut.h"
 
 #include "supervisor/port.h"
@@ -54,6 +59,9 @@ void alarm_reset(void) {
     #if CIRCUITPY_ESPULP
     espulp_ulpalarm_reset();
     #endif
+    #if CIRCUITPY_ESPIDF_LPCORE
+    espidf_lpcorealarm_reset();
+    #endif
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 }
 
@@ -72,6 +80,11 @@ static uint32_t _get_wakeup_causes(bool deep_sleep) {
     #endif
     #if CIRCUITPY_ESPULP
     if (espulp_ulpalarm_woke_this_cycle()) {
+        return 1 << ESP_SLEEP_WAKEUP_ULP;
+    }
+    #endif
+    #if CIRCUITPY_ESPIDF_LPCORE
+    if (espidf_lpcorealarm_woke_this_cycle()) {
         return 1 << ESP_SLEEP_WAKEUP_ULP;
     }
     #endif
@@ -112,6 +125,12 @@ mp_obj_t common_hal_alarm_record_wake_alarm(void) {
     }
     #endif
 
+    #if CIRCUITPY_ESPIDF_LPCORE
+    if (causes & (1 << ESP_SLEEP_WAKEUP_ULP)) {
+        return espidf_lpcorealarm_record_wake_alarm();
+    }
+    #endif
+
     return mp_const_none;
 }
 
@@ -124,6 +143,9 @@ static void _setup_sleep_alarms(bool deep_sleep, size_t n_alarms, const mp_obj_t
     #endif
     #if CIRCUITPY_ESPULP
     espulp_ulpalarm_set_alarm(deep_sleep, n_alarms, alarms);
+    #endif
+    #if CIRCUITPY_ESPIDF_LPCORE
+    espidf_lpcorealarm_set_alarm(deep_sleep, n_alarms, alarms);
     #endif
 }
 
@@ -153,6 +175,11 @@ mp_obj_t common_hal_alarm_light_sleep_until_alarms(size_t n_alarms, const mp_obj
                 wake_alarm = espulp_ulpalarm_find_triggered_alarm(n_alarms, alarms);
             }
             #endif
+            #if CIRCUITPY_ESPIDF_LPCORE
+            else if (causes & (1 << ESP_SLEEP_WAKEUP_ULP)) {
+                wake_alarm = espidf_lpcorealarm_find_triggered_alarm(n_alarms, alarms);
+            }
+            #endif
             shared_alarm_save_wake_alarm(wake_alarm);
             break;
         }
@@ -179,6 +206,9 @@ void MP_NORETURN common_hal_alarm_enter_deep_sleep(void) {
     #endif
     #if CIRCUITPY_ESPULP
     espulp_ulpalarm_prepare_for_deep_sleep();
+    #endif
+    #if CIRCUITPY_ESPIDF_LPCORE
+    espidf_lpcorealarm_prepare_for_deep_sleep();
     #endif
 
     // We no longer need to remember the pin preservations, since any pin resets are all done.

@@ -1,0 +1,18 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Ultra Low Power (ULP) Co-processor
+#
+# CIRCUITPY-CHANGE: the LP core, for espidf.LPCore; see fork.mk.
+CONFIG_ULP_COPROC_ENABLED=y
+CONFIG_ULP_COPROC_TYPE_LP_CORE=y
+CONFIG_ULP_COPROC_RESERVE_MEM=8192
+# end of Ultra Low Power (ULP) Co-processor
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration

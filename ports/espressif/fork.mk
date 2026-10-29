@@ -178,6 +178,25 @@ INC += -isystem esp-idf/components/esp_driver_bitscrambler/include
 FORK_IDF_COMPONENTS_LINK += esp_driver_bitscrambler
 endif
 
+# espidf.LPCore: the C5's LP core, a RISC-V core that runs while the main ones
+# sleep. espulp, which does this for the S2's and S3's ULPs, is off on the C5;
+# the ulp component comes in here instead, configured for the LP core with
+# 8 KiB of LP RAM for the program (an LP core app must be built with the same
+# reserve). Off unless a board asks for it.
+CIRCUITPY_ESPIDF_LPCORE ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_LPCORE=$(CIRCUITPY_ESPIDF_LPCORE)
+ifneq ($(CIRCUITPY_ESPIDF_LPCORE),0)
+ifneq ($(IDF_TARGET),esp32c5)
+$(error CIRCUITPY_ESPIDF_LPCORE is only implemented for the esp32c5)
+endif
+INC += -isystem esp-idf/components/ulp/lp_core/include
+INC += -isystem esp-idf/components/ulp/lp_core/shared/include
+# ulp_lp_core.h asks for the ROM's capabilities header.
+INC += -isystem esp-idf/components/esp_rom/$(IDF_TARGET)
+FORK_IDF_COMPONENTS_LINK += ulp
+FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-lpcore.defaults;
+endif
+
 CIRCUITPY_ESPIDF_ETM ?= 0
 CFLAGS += -DCIRCUITPY_ESPIDF_ETM=$(CIRCUITPY_ESPIDF_ETM)
 ifneq ($(CIRCUITPY_ESPIDF_ETM),0)
