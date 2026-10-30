@@ -90,6 +90,11 @@ static portMUX_TYPE espsdr_lock = portMUX_INITIALIZER_UNLOCKED;
 
 extern void phy_stop_tx_tone(unsigned);
 extern void phy_pbus_workmode(void);
+// The PBUS in debug mode takes forced values for its fields; block 2 and 3,
+// bank 2 are the I and Q DC DACs (0-511).
+extern void phy_pbus_debugmode(void);
+extern void phy_pbus_force_test(unsigned block, unsigned bank, unsigned value);
+extern unsigned phy_pbus_rd(unsigned block, unsigned bank);
 extern void phy_pbus_xpd_rx_on(unsigned);
 extern void phy_pbus_xpd_tx_off(void);
 extern void phy_set_rxclk_en(unsigned);
@@ -139,43 +144,78 @@ static void filter_write(unsigned j, unsigned value) {
     phy_i2c_writeReg(RX_FILTER_BLOCK, RX_FILTER_HOST, RX_FILTER_REG + j, value);
 }
 
-// Wi-Fi channels of both bands; esp_wifi_set_channel() knows which 5 GHz
-// ones exist.
-static mp_int_t channel_for(mp_int_t mhz) {
-    if (mhz == 2484) {
-        return 14;
+// Where the LO follows the frequency asked for, as ESPsoup measured it with a
+// signal generator: below about 2.1 GHz it stays near 2.2 GHz instead.
+static void check_frequency(int32_t khz) {
+    if ((khz >= 2130000 && khz <= 2730000) || (khz >= 4790000 && khz <= 5990000)) {
+        return;
     }
-    if (mhz >= 2412 && mhz <= 2472 && (mhz - 2412) % 5 == 0) {
-        return (mhz - 2412) / 5 + 1;
-    }
-    if (mhz >= 5180 && mhz <= 5885 && (mhz - 5000) % 20 == 0) {
-        return (mhz - 5000) / 5;
-    }
-    mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be a Wi-Fi channel frequency (2412-2472 in steps of 5, 2484, or 5180-5885 in steps of 20)"), MP_QSTR_frequency);
+    mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be 2130-2730 or 4790-5990 MHz"), MP_QSTR_frequency);
 }
 
-// The divider field: 80 MS/s divided by 1, 2, 4, 8, 10 or 20.
-static uint32_t rate_bits(uint32_t sample_rate) {
-    static const uint32_t rates[] = { 80000000, 40000000, 20000000, 10000000, 8000000, 4000000 };
-    for (size_t i = 0; i < MP_ARRAY_SIZE(rates); i++) {
-        if (rates[i] == sample_rate) {
-            return i;
+// Two ways to tune, after ESPsoup's ESP-SDR fork (tuning.h, TUNEM 0 and 2):
+//
+// - the PHY on a real channel of the band for its calibration, then the PLL
+//   moved to the exact MHz and a kHz offset; exact from 2130 to 2730 and 4790
+//   to about 5745 MHz, some 20 dB deafer above that;
+// - above 3 GHz, the Wi-Fi driver on a 5 GHz channel, then libphy's own
+//   phy_change_channel() to the MHz; exact up to 5990 MHz, but whole MHz only
+//   and on the narrow filter path.
+//
+// The second is taken above 3 GHz for whole MHz, unless the bandwidth asks for
+// the wide path below 5745 MHz.
+#define DRIVER_PATH_ONLY_ABOVE (5745)
+
+extern unsigned char phy_param[];
+// The crystal selector phy_chip_set_chan() passes, the PLL MHz, an LO offset in kHz.
+extern void phy_set_rf_freq_offset(unsigned crystal, unsigned mhz, int offset_khz);
+extern void phy_change_channel(int mhz, int a, int b, int c);
+#define PHY_PARAM_CRYSTAL (49)
+
+static const uint8_t channels_5g[] = {
+    140, 36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136,
+    144, 149, 153, 157, 161, 165, 169, 173, 177,
+};
+
+static esp_err_t tune(int32_t khz, int8_t bandwidth) {
+    int32_t mhz = (khz + 500) / 1000;
+    int32_t offset = khz - mhz * 1000;
+    unsigned path = bandwidth >= 0 && wide_path(bandwidth) ? 1 : 0;
+    if (mhz > 3000 && offset == 0 && (path == 0 || mhz > DRIVER_PATH_ONLY_ABOVE)) {
+        // Channel 140 as ESPsoup uses, else any the country setting allows:
+        // the channel only switches the driver to the 5 GHz band.
+        esp_err_t err = ESP_FAIL;
+        for (size_t i = 0; i < MP_ARRAY_SIZE(channels_5g) && err != ESP_OK; i++) {
+            err = esp_wifi_set_channel(channels_5g[i], WIFI_SECOND_CHAN_NONE);
         }
+        if (err != ESP_OK) {
+            return err;
+        }
+        phy_change_channel(mhz, 1, 0, 0);
+        return ESP_OK;
     }
-    mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be 80000000, 40000000, 20000000, 10000000, 8000000 or 4000000"), MP_QSTR_sample_rate);
+    phy_set_chanfreq(mhz, path);
+    if (offset != 0) {
+        phy_set_rf_freq_offset(phy_param[PHY_PARAM_CRYSTAL], mhz, offset);
+    }
+    return ESP_OK;
 }
+
+// The engine's rates, fastest first: 80 MS/s divided by 1, 2, 4, 8, 10 or 20,
+// the index being the divider field. The lower ones drop samples rather than
+// filter.
+static const uint32_t hw_rates[] = { 80000000, 40000000, 20000000, 10000000, 8000000, 4000000 };
+
+static uint32_t hw_rate_bits(size_t index) {
+    return index;
+}
+
+// Widest the analog filter gets, in MHz.
+#define BANDWIDTH_WIDEST (52)
 
 static mp_int_t max_gain(void) {
     mp_int_t limit = (REG_READ(GAIN_LIMIT_REG) >> 8) & 127;
     return limit <= GAIN_MAX ? limit : 0;
-}
-
-// After esp_wifi_set_channel(): the same frequency again, on the filter path
-// the bandwidth asks for. None leaves the channel setup as Wi-Fi made it.
-static void tune_bandwidth(mp_int_t frequency, int8_t bandwidth) {
-    if (bandwidth >= 0) {
-        phy_set_chanfreq(frequency, wide_path(bandwidth) ? 1 : 0);
-    }
 }
 
 // What librftest's force_rx_gain() does for the Wi-Fi receiver here. Linking

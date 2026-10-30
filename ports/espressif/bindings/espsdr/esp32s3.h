@@ -83,38 +83,44 @@ static void filter_write(unsigned j, unsigned value) {
     rom_chip_i2c_writeReg(RX_FILTER_BLOCK, RX_FILTER_HOST, RX_FILTER_REG + j, value);
 }
 
-// Wi-Fi channels of the 2.4 GHz band only.
-static mp_int_t channel_for(mp_int_t mhz) {
-    if (mhz == 2484) {
+// Wi-Fi channels of the 2.4 GHz band only: 0 for any other frequency.
+static uint8_t channel_for(int32_t khz) {
+    if (khz == 2484000) {
         return 14;
     }
-    if (mhz >= 2412 && mhz <= 2472 && (mhz - 2412) % 5 == 0) {
-        return (mhz - 2412) / 5 + 1;
+    if (khz >= 2412000 && khz <= 2472000 && (khz - 2412000) % 5000 == 0) {
+        return (khz - 2412000) / 5000 + 1;
     }
-    mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be a Wi-Fi channel frequency (2412-2472 in steps of 5, or 2484)"), MP_QSTR_frequency);
+    return 0;
 }
 
-static uint32_t rate_bits(uint32_t sample_rate) {
-    switch (sample_rate) {
-        case 80000000:
-            return 0;
-        case 40000000:
-            return DUMP_CTRL_40MSPS;
-        case 16000000:
-            return DUMP_CTRL_16MSPS;
+static void check_frequency(int32_t khz) {
+    if (channel_for(khz) == 0) {
+        mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be a Wi-Fi channel frequency (2412-2472 in steps of 5, or 2484)"), MP_QSTR_frequency);
     }
-    mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be 80000000, 40000000 or 16000000"), MP_QSTR_sample_rate);
 }
+
+// The analog filter mode is part of the channel setup on some chips; not here.
+static esp_err_t tune(int32_t khz, int8_t bandwidth) {
+    (void)bandwidth;
+    return esp_wifi_set_channel(channel_for(khz), WIFI_SECOND_CHAN_NONE);
+}
+
+// The engine's rates, fastest first, and the control bits that select them.
+// The lower ones drop samples rather than filter.
+static const uint32_t hw_rates[] = { 80000000, 40000000, 16000000 };
+
+static uint32_t hw_rate_bits(size_t index) {
+    static const uint32_t bits[] = { 0, DUMP_CTRL_40MSPS, DUMP_CTRL_16MSPS };
+    return bits[index];
+}
+
+// Widest the analog filter gets, in MHz.
+#define BANDWIDTH_WIDEST (79)
 
 static mp_int_t max_gain(void) {
     mp_int_t limit = (REG_READ(GAIN_LIMIT_REG) >> 8) & 127;
     return limit <= GAIN_MAX ? limit : 0;
-}
-
-// The analog filter mode is part of the channel setup on some chips; not here.
-static void tune_bandwidth(mp_int_t frequency, int8_t bandwidth) {
-    (void)frequency;
-    (void)bandwidth;
 }
 
 static void force_gain(bool manual, unsigned index) {
