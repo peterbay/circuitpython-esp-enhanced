@@ -128,6 +128,17 @@ CFLAGS += -DCIRCUITPY_ESPIDF_RMT=$(CIRCUITPY_ESPIDF_RMT)
 CIRCUITPY_ESPIDF_PCNT ?= 0
 CFLAGS += -DCIRCUITPY_ESPIDF_PCNT=$(CIRCUITPY_ESPIDF_PCNT)
 
+# espidf.TDM: I2S in TDM mode, up to 16 slots per frame. The I2S driver is
+# built for audiobusio, which this therefore needs. Off unless a board asks
+# for it.
+CIRCUITPY_ESPIDF_I2S_TDM ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_I2S_TDM=$(CIRCUITPY_ESPIDF_I2S_TDM)
+ifneq ($(CIRCUITPY_ESPIDF_I2S_TDM),0)
+ifeq ($(CIRCUITPY_AUDIOBUSIO),0)
+$(error CIRCUITPY_ESPIDF_I2S_TDM needs CIRCUITPY_AUDIOBUSIO)
+endif
+endif
+
 # espidf.MotorPWM: the MCPWM peripheral, for complementary outputs with dead
 # time. Brought in like the SDM driver, with its HAL component. Off unless a
 # board asks for it.

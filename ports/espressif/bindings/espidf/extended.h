@@ -85,6 +85,12 @@ extern const mp_obj_type_t espidf_sdm_type;
 void espidf_sdm_reset(void);
 #endif
 
+// extended_i2s_tdm.c
+#if CIRCUITPY_ESPIDF_I2S_TDM
+extern const mp_obj_type_t espidf_tdm_type;
+void espidf_i2s_tdm_reset(void);
+#endif
+
 // extended_pcnt.c
 #if CIRCUITPY_ESPIDF_PCNT
 extern const mp_obj_type_t espidf_pulse_counter_type;

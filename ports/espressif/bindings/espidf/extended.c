@@ -100,6 +100,10 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_SigmaDelta), MP_ROM_PTR(&espidf_sdm_type) },
     #endif
 
+    #if CIRCUITPY_ESPIDF_I2S_TDM
+    { MP_ROM_QSTR(MP_QSTR_TDM), MP_ROM_PTR(&espidf_tdm_type) },
+    #endif
+
     #if CIRCUITPY_ESPIDF_PCNT
     { MP_ROM_QSTR(MP_QSTR_PulseCounter), MP_ROM_PTR(&espidf_pulse_counter_type) },
     #endif
@@ -203,6 +207,9 @@ void espidf_extended_reset(void) {
     #endif
     #if CIRCUITPY_ESPIDF_SDM
     espidf_sdm_reset();
+    #endif
+    #if CIRCUITPY_ESPIDF_I2S_TDM
+    espidf_i2s_tdm_reset();
     #endif
     #if CIRCUITPY_ESPIDF_PCNT
     espidf_pcnt_reset();
