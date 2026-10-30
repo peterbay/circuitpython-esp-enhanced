@@ -1,0 +1,151 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 Petr Vavrin -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firmware builder</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="workspace" class="panel-open">
+
+  <nav id="menu-bar">
+    <button class="rail-button active" data-view="build" data-i18n-title="build.title">
+      <svg viewBox="0 0 24 24"><path d="M3 21l9-9M14 4l6 6-3 3-6-6zM10.5 7.5l6 6"/></svg>
+      <span data-i18n="rail.build"></span>
+    </button>
+    <button class="rail-button" data-view="firmware" data-i18n-title="fw.title">
+      <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>
+      <span data-i18n="rail.firmware"></span>
+    </button>
+    <button class="rail-button" data-view="log" data-i18n-title="log.title">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>
+      <span data-i18n="rail.log"></span>
+    </button>
+    <span class="spacer"></span>
+    <select id="lang" aria-label="Language">
+      <option value="cs">Čeština</option>
+      <option value="en">English</option>
+    </select>
+  </nav>
+
+  <aside class="tool-drawer active" id="drawer">
+    <header class="drawer-head"><h2 data-i18n="rail.build"></h2></header>
+    <div class="drawer-body">
+      <section class="card">
+        <h3 data-i18n="board.title"></h3>
+        <div class="row">
+          <input id="board-search" type="search" data-i18n-ph="board.search">
+          <select id="chip-filter"></select>
+        </div>
+        <label class="field"><span data-i18n="board.select"></span>
+          <select id="board"></select>
+        </label>
+        <p class="hint" id="board-info"></p>
+      </section>
+
+      <section class="card">
+        <h3 data-i18n="profile.title"></h3>
+        <label class="field"><span data-i18n="profile.saved"></span>
+          <select id="profile"></select>
+        </label>
+        <div class="row">
+          <input id="profile-name" data-i18n-ph="profile.name">
+          <button id="profile-save" data-i18n="profile.save"></button>
+        </div>
+        <button id="profile-delete" class="danger-link" data-i18n="profile.delete"></button>
+      </section>
+
+      <section class="card">
+        <h3 data-i18n="changes.title"></h3>
+        <p class="hint" id="changes-summary"></p>
+        <ul id="changes-list" class="changes"></ul>
+        <button id="reset-changes" class="secondary" data-i18n="changes.reset"></button>
+      </section>
+
+      <section class="card">
+        <h3 data-i18n="build.card"></h3>
+        <label class="check"><input type="checkbox" id="clean-build"> <span data-i18n="build.clean"></span></label>
+        <button id="build" class="primary wide" data-i18n="build.start"></button>
+        <button id="cancel" class="secondary wide" hidden data-i18n="build.cancel"></button>
+        <p class="hint" data-i18n="build.hint"></p>
+      </section>
+    </div>
+  </aside>
+
+  <main id="content">
+    <div class="view active" id="view-build">
+      <div class="toolbar">
+        <input id="filter" type="search" data-i18n-ph="modules.search">
+        <label class="check"><input type="checkbox" id="only-changed"> <span data-i18n="modules.onlyChanged"></span></label>
+        <label class="check"><input type="checkbox" id="show-other"> <span data-i18n="modules.showOther"></span></label>
+        <label class="check" data-i18n-title="modules.showBlockedTip"><input type="checkbox" id="show-blocked"> <span data-i18n="modules.showBlocked"></span><span id="blocked-count"></span></label>
+        <span class="spacer"></span>
+        <span class="counter" id="module-count"></span>
+      </div>
+      <div class="scroll" id="modules"></div>
+    </div>
+
+    <div class="view" id="view-firmware">
+      <div class="toolbar">
+        <h2 data-i18n="fw.title"></h2>
+        <span class="spacer"></span>
+        <button id="fw-refresh" class="secondary" data-i18n="fw.refresh"></button>
+      </div>
+      <div class="scroll" id="firmwares"></div>
+    </div>
+
+    <div class="view" id="view-log">
+      <div class="toolbar">
+        <h2 id="log-title"></h2>
+        <span class="spacer"></span>
+        <label class="check"><input type="checkbox" id="log-follow" checked> <span data-i18n="log.follow"></span></label>
+      </div>
+      <pre id="log" class="log"></pre>
+    </div>
+  </main>
+
+  <footer id="bottom-bar">
+    <span class="status" id="job-status"></span>
+    <span class="spacer"></span>
+    <label class="field inline"><span data-i18n="port.label"></span>
+      <select id="port"></select>
+    </label>
+    <button id="ports-refresh" class="secondary" data-i18n-title="port.refresh">↻</button>
+    <button id="probe" class="secondary" data-i18n="probe.button" data-i18n-title="probe.tip"></button>
+  </footer>
+</div>
+
+<div id="tooltip" role="tooltip" hidden></div>
+
+<dialog id="flash-dialog">
+  <form method="dialog">
+    <h3 data-i18n="flash.title"></h3>
+    <p id="flash-what"></p>
+    <label class="field"><span data-i18n="port.label"></span> <select id="flash-port"></select></label>
+    <label class="check"><input type="checkbox" id="flash-erase"> <span data-i18n="flash.erase"></span></label>
+    <p class="hint" data-i18n="flash.hint"></p>
+    <div class="row end">
+      <button value="cancel" class="secondary" data-i18n="common.cancel"></button>
+      <button value="ok" class="primary" data-i18n="flash.go"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="probe-dialog">
+  <form method="dialog">
+    <h3 id="probe-title"></h3>
+    <div id="probe-body"></div>
+    <details id="probe-raw-box"><summary data-i18n="probe.raw"></summary><pre id="probe-raw" class="log small"></pre></details>
+    <div class="row end">
+      <button value="close" class="primary" data-i18n="common.close"></button>
+    </div>
+  </form>
+</dialog>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

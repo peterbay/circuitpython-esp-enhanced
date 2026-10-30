@@ -1,0 +1,982 @@
+{
+ "4MB_FLASH_LARGE_USER_FS_LAYOUT": {
+  "cs": "Rozvržení 4MB flash s větším uživatelským souborovým systémem (CIRCUITPY) na úkor firmware. Jen pro desky bez USB, které tak byly definované; změna přerozdělí flash.",
+  "en": "4 MB flash layout with a larger user filesystem (CIRCUITPY) at the firmware's expense. Only for the non-USB boards defined that way; changing it re-partitions the flash."
+ },
+ "AESIO": {
+  "cs": "Modul aesio: šifrování AES (ECB, CBC, CTR) v Pythonu. Pro šifrovanou komunikaci a ukládání dat.",
+  "en": "aesio module: AES encryption (ECB, CBC, CTR) from Python. For encrypted messages and stored data."
+ },
+ "ALARM": {
+  "cs": "Modul alarm: lehký a hluboký spánek a probouzení časem, pinem nebo dotykem. Nutné pro bateriová zařízení.",
+  "en": "alarm module: light and deep sleep, woken by time, pin or touch. Needed for battery devices."
+ },
+ "ALARM_PRESERVE_DIOS": {
+  "cs": "Volba preserve_dios v alarm.exit_and_deep_sleep_until_alarms(): ponechá nastavené výstupy během hlubokého spánku.",
+  "en": "The preserve_dios option of alarm.exit_and_deep_sleep_until_alarms(): keeps chosen outputs set through deep sleep."
+ },
+ "ALARM_TOUCH": {
+  "cs": "Probouzení ze spánku dotykem (alarm.touch.TouchAlarm). Jen na čipech s dotykovým senzorem (S2, S3).",
+  "en": "Waking from sleep by touch (alarm.touch.TouchAlarm). Only chips with a touch sensor (S2, S3)."
+ },
+ "ALL_MEMORY_DMA_CAPABLE": {
+  "cs": "Říká, že všechna paměť umí DMA. Na čipech s PSRAM vypnuto, aby se buffery pro periferie kopírovaly do interní RAM. Interní volba portu, neměnit.",
+  "en": "Says all memory can do DMA. Off on chips with PSRAM, so buffers for peripherals are copied to internal RAM. A port setting; leave it."
+ },
+ "ANALOGBUFIO": {
+  "cs": "Modul analogbufio: rychlé čtení ADC do bufferu přes DMA. Pro vzorkování signálu, osciloskop, audio z mikrofonu.",
+  "en": "analogbufio module: fast ADC reads into a buffer by DMA. For sampling signals, a scope, audio from a microphone."
+ },
+ "ANALOGIO": {
+  "cs": "Modul analogio: čtení napětí z ADC (AnalogIn) a výstup DAC (AnalogOut, jen čipy s DAC).",
+  "en": "analogio module: voltage from the ADC (AnalogIn) and DAC output (AnalogOut, chips with a DAC only)."
+ },
+ "ARRAY": {
+  "cs": "Modul array: kompaktní pole čísel jednoho typu. Používá ho řada knihoven; vypínat jen kvůli místu.",
+  "en": "array module: compact arrays of one number type. Many libraries use it; turn off only for space."
+ },
+ "ATEXIT": {
+  "cs": "Modul atexit: funkce spuštěné při ukončení programu (úklid, uložení stavu).",
+  "en": "atexit module: functions run when the program ends (clean-up, saving state)."
+ },
+ "AUDIOBUSIO": {
+  "cs": "Modul audiobusio: digitální audio přes I2S výstup (I2SOut) a PDM mikrofony (PDMIn).",
+  "en": "audiobusio module: digital audio out over I2S (I2SOut) and in from PDM microphones (PDMIn)."
+ },
+ "AUDIOBUSIO_I2SOUT": {
+  "cs": "Třída audiobusio.I2SOut: zvuk do I2S DAC nebo zesilovače (MAX98357 apod.).",
+  "en": "audiobusio.I2SOut: sound to an I2S DAC or amplifier (MAX98357 and the like)."
+ },
+ "AUDIOBUSIO_PDMIN": {
+  "cs": "Třída audiobusio.PDMIn: záznam z PDM mikrofonu.",
+  "en": "audiobusio.PDMIn: recording from a PDM microphone."
+ },
+ "AUDIOCORE": {
+  "cs": "Modul audiocore: zvukové vzorky (WAV soubory, RawSample). Základ pro přehrávání zvuku.",
+  "en": "audiocore module: audio samples (WAV files, RawSample). The base of audio playback."
+ },
+ "AUDIOCORE_DEBUG": {
+  "cs": "Ladicí výpisy audiocore. Jen pro vývoj firmware.",
+  "en": "Debug output of audiocore. For firmware development only."
+ },
+ "AUDIODELAYS": {
+  "cs": "Modul audiodelays: zvukové efekty zpoždění (echo, chorus, pitch shift).",
+  "en": "audiodelays module: delay effects (echo, chorus, pitch shift)."
+ },
+ "AUDIOEFFECTS": {
+  "cs": "Souhrnný přepínač zvukových efektů (audiodelays, audiofilters, audiofreeverb).",
+  "en": "Umbrella switch for the audio effect modules (audiodelays, audiofilters, audiofreeverb)."
+ },
+ "AUDIOFILEWRITER": {
+  "cs": "Modul audiofilewriter: zápis zvuku do WAV souboru.",
+  "en": "audiofilewriter module: writing audio to a WAV file."
+ },
+ "AUDIOFILTERS": {
+  "cs": "Modul audiofilters: zvukové filtry (dolní, horní propust, zkreslení).",
+  "en": "audiofilters module: audio filters (low-pass, high-pass, distortion)."
+ },
+ "AUDIOFREEVERB": {
+  "cs": "Modul audiofreeverb: dozvuk (reverb) Freeverb.",
+  "en": "audiofreeverb module: Freeverb reverb."
+ },
+ "AUDIOI2SIN": {
+  "cs": "Modul audioi2sin: záznam zvuku z I2S vstupu (digitální mikrofony, ADC kodeky).",
+  "en": "audioi2sin module: recording from an I2S input (digital microphones, ADC codecs)."
+ },
+ "AUDIOIO": {
+  "cs": "Modul audioio: zvuk přes vestavěný DAC. Jen čipy s DAC (ESP32, S2).",
+  "en": "audioio module: sound through the built-in DAC. Only chips with a DAC (ESP32, S2)."
+ },
+ "AUDIOMIXER": {
+  "cs": "Modul audiomixer: míchání více zvukových stop do jednoho výstupu.",
+  "en": "audiomixer module: mixing several audio voices into one output."
+ },
+ "AUDIOMP3": {
+  "cs": "Modul audiomp3: přehrávání MP3 souborů.",
+  "en": "audiomp3 module: MP3 playback."
+ },
+ "AUDIOPWMIO": {
+  "cs": "Modul audiopwmio: zvuk přes PWM na pinu (s RC filtrem). Pro čipy bez DAC a I2S zesilovače.",
+  "en": "audiopwmio module: sound by PWM on a pin (with an RC filter). For chips without a DAC or an I2S amplifier."
+ },
+ "AUDIOSPEED": {
+  "cs": "Modul audiospeed: změna rychlosti přehrávání zvuku.",
+  "en": "audiospeed module: changing the playback speed."
+ },
+ "AURORA_EPAPER": {
+  "cs": "Ovladač e-paper displejů Pervasive Displays Aurora.",
+  "en": "Driver for Pervasive Displays Aurora e-paper panels."
+ },
+ "BINASCII": {
+  "cs": "Modul binascii: převody base64 a hex. Používají ho síťové knihovny.",
+  "en": "binascii module: base64 and hex conversions. Network libraries use it."
+ },
+ "BITBANGIO": {
+  "cs": "Modul bitbangio: I2C, SPI a OneWire řízené procesorem na libovolných pinech, když chybí hardwarová sběrnice.",
+  "en": "bitbangio module: I2C, SPI and OneWire driven by the CPU on any pins, when no hardware bus is free."
+ },
+ "BITBANG_APA102": {
+  "cs": "Softwarový ovladač LED APA102 (DotStar).",
+  "en": "Software driver for APA102 (DotStar) LEDs."
+ },
+ "BITMAPFILTER": {
+  "cs": "Modul bitmapfilter: filtry obrazu nad displayio.Bitmap (rozmazání, morfologie, barevné úpravy).",
+  "en": "bitmapfilter module: image filters on displayio.Bitmap (blur, morphology, colour adjustments)."
+ },
+ "BITMAPTOOLS": {
+  "cs": "Modul bitmaptools: kreslení a operace nad bitmapami (čáry, výplně, otáčení, kopírování).",
+  "en": "bitmaptools module: drawing and operations on bitmaps (lines, fills, rotation, copying)."
+ },
+ "BITOPS": {
+  "cs": "Modul bitops: přeskládání bitů v datech (bit transpose) pro paralelní výstupy LED.",
+  "en": "bitops module: bit transposition of data, for parallel LED outputs."
+ },
+ "BLEIO": {
+  "cs": "Modul _bleio a podpora Bluetooth LE (s knihovnou adafruit_ble).",
+  "en": "_bleio module and Bluetooth LE support (with the adafruit_ble library)."
+ },
+ "BLEIO_HCI": {
+  "cs": "Bluetooth přes externí HCI modul na UARTu (např. ESP32 co-processor). Na čipech s vlastním BLE nepotřeba.",
+  "en": "Bluetooth through an external HCI module on a UART (an ESP32 co-processor, say). Not needed on chips with their own BLE."
+ },
+ "BLEIO_NATIVE": {
+  "cs": "Bluetooth LE vestavěným rádiem čipu (NimBLE).",
+  "en": "Bluetooth LE through the chip's own radio (NimBLE)."
+ },
+ "BLE_FILE_SERVICE": {
+  "cs": "BLE služba pro přístup k souborům na CIRCUITPY (BLE workflow, např. code.circuitpython.org).",
+  "en": "BLE service giving access to the files on CIRCUITPY (the BLE workflow, e.g. code.circuitpython.org)."
+ },
+ "BLE_SERIAL_SERVICE": {
+  "cs": "BLE služba se sériovou konzolí (REPL přes Bluetooth).",
+  "en": "BLE service with the serial console (REPL over Bluetooth)."
+ },
+ "BOARD": {
+  "cs": "Modul board: jména pinů a výchozí sběrnice dané desky.",
+  "en": "board module: the board's pin names and default buses."
+ },
+ "BUILTINS_POW3": {
+  "cs": "Tříargumentová funkce pow(a, b, mod), rychlé modulární umocňování (kryptografie).",
+  "en": "Three-argument pow(a, b, mod), fast modular exponentiation (cryptography)."
+ },
+ "BULK_RESET": {
+  "cs": "Při soft resetu se hromadně resetují piny a sběrnice (kromě never_reset). Interní volba portu, neměnit.",
+  "en": "A soft reset resets pins and buses in bulk (except never_reset ones). A port setting; leave it."
+ },
+ "BUSDEVICE": {
+  "cs": "Modul adafruit_bus_device vestavěný ve firmware (I2CDevice, SPIDevice), na kterém stojí ovladače senzorů.",
+  "en": "adafruit_bus_device built into the firmware (I2CDevice, SPIDevice), which sensor drivers build on."
+ },
+ "BUSDISPLAY": {
+  "cs": "Modul busdisplay: displeje s vlastní pamětí (ST7789, ILI9341 a další) připojené přes SPI, I2C nebo paralelní sběrnici.",
+  "en": "busdisplay module: displays with their own memory (ST7789, ILI9341 and others) on SPI, I2C or a parallel bus."
+ },
+ "BUSIO": {
+  "cs": "Modul busio: hardwarové I2C, SPI a UART.",
+  "en": "busio module: hardware I2C, SPI and UART."
+ },
+ "BUSIO_I2C": {
+  "cs": "Třída busio.I2C.",
+  "en": "busio.I2C."
+ },
+ "BUSIO_SPI": {
+  "cs": "Třída busio.SPI.",
+  "en": "busio.SPI."
+ },
+ "BUSIO_SPI_ASYNC": {
+  "cs": "Neblokující přenos po SPI na pozadí (pro rychlejší vykreslování displejů).",
+  "en": "Non-blocking SPI transfers in the background (faster display drawing)."
+ },
+ "BUSIO_UART": {
+  "cs": "Třída busio.UART (sériová linka).",
+  "en": "busio.UART (serial port)."
+ },
+ "CAMERA": {
+  "cs": "Modul camera: kamera na deskách Spresense. Na ESP nepoužito (viz ESPCAMERA).",
+  "en": "camera module: the camera on Spresense boards. Unused on Espressif (see ESPCAMERA)."
+ },
+ "CANIO": {
+  "cs": "Modul canio: sběrnice CAN (TWAI). Pro auta, průmysl, robotiku; potřeba externí transceiver.",
+  "en": "canio module: CAN bus (TWAI). For cars, industry, robotics; needs an external transceiver."
+ },
+ "CODEOP": {
+  "cs": "Modul codeop: kompilace neúplného Python kódu (pro vlastní REPL a editory).",
+  "en": "codeop module: compiling incomplete Python source (for custom REPLs and editors)."
+ },
+ "COLLECTIONS": {
+  "cs": "Modul collections: namedtuple, OrderedDict, deque.",
+  "en": "collections module: namedtuple, OrderedDict, deque."
+ },
+ "COMPUTED_GOTO_SAVE_SPACE": {
+  "cs": "Úsporná varianta smyčky interpretu (computed goto); šetří flash za cenu rychlosti.",
+  "en": "A smaller variant of the interpreter loop (computed goto); saves flash at some speed."
+ },
+ "COPROC": {
+  "cs": "Modul coproc: běh kódu na koprocesoru. Na ESP se nepoužívá (viz ESPULP).",
+  "en": "coproc module: running code on a co-processor. Unused on Espressif (see ESPULP)."
+ },
+ "COUNTIO": {
+  "cs": "Modul countio: hardwarové počítání pulzů na pinu (PCNT). Pro anemometry, průtokoměry, otáčky.",
+  "en": "countio module: counting pulses on a pin in hardware (PCNT). For anemometers, flow meters, RPM."
+ },
+ "CYW43": {
+  "cs": "Wi-Fi čip CYW43 (Raspberry Pi Pico W). Na ESP nepoužito.",
+  "en": "The CYW43 Wi-Fi chip (Raspberry Pi Pico W). Unused on Espressif."
+ },
+ "DIGITALINOUT_PROTOCOL": {
+  "cs": "Umožní C kódu (ovladače displejů apod.) použít i piny z I2C expanderů a jiných DigitalInOut-like objektů.",
+  "en": "Lets C code (display drivers and such) use pins of I2C expanders and other DigitalInOut-like objects."
+ },
+ "DIGITALIO": {
+  "cs": "Modul digitalio: digitální vstupy a výstupy (DigitalInOut). Základní modul.",
+  "en": "digitalio module: digital inputs and outputs (DigitalInOut). A basic module."
+ },
+ "DISPLAYIO": {
+  "cs": "Modul displayio: grafika na displejích (Group, TileGrid, Bitmap, Palette).",
+  "en": "displayio module: graphics on displays (Group, TileGrid, Bitmap, Palette)."
+ },
+ "DOTCLOCKFRAMEBUFFER": {
+  "cs": "Modul dotclockframebuffer: RGB paralelní displeje bez vlastní paměti (ESP32-S3).",
+  "en": "dotclockframebuffer module: parallel RGB displays without their own memory (ESP32-S3)."
+ },
+ "DUALBANK": {
+  "cs": "Modul dualbank: aktualizace firmware ze souboru do druhého oddílu (OTA).",
+  "en": "dualbank module: firmware updates from a file into the second partition (OTA)."
+ },
+ "EMMCIO": {
+  "cs": "Modul emmcio: přístup k eMMC paměti.",
+  "en": "emmcio module: access to eMMC memory."
+ },
+ "EMMC_USB": {
+  "cs": "Zpřístupnit eMMC přes USB jako disk.",
+  "en": "Present the eMMC over USB as a drive."
+ },
+ "ENABLE_MPY_NATIVE": {
+  "cs": "Dekorátor @micropython.native (kompilace do strojového kódu). Experimentální.",
+  "en": "The @micropython.native decorator (compiling to machine code). Experimental."
+ },
+ "EPAPERDISPLAY": {
+  "cs": "Modul epaperdisplay: e-paper displeje.",
+  "en": "epaperdisplay module: e-paper displays."
+ },
+ "ERRNO": {
+  "cs": "Modul errno: čísla chyb (ENOENT, ETIMEDOUT…) pro zachytávání OSError.",
+  "en": "errno module: error numbers (ENOENT, ETIMEDOUT...) for catching OSError."
+ },
+ "ESPCAMERA": {
+  "cs": "Modul espcamera: kamery OV2640/OV5640 přes rozhraní kamery ESP32 (S3).",
+  "en": "espcamera module: OV2640/OV5640 cameras on the ESP32 camera interface (S3)."
+ },
+ "ESPIDF": {
+  "cs": "Modul espidf: přímý přístup k ESP-IDF. Tento fork do něj přidává většinu rozšíření.",
+  "en": "espidf module: direct access to ESP-IDF. This fork puts most of its additions here."
+ },
+ "ESPIDF_ANA_CMPR": {
+  "cs": "espidf.Comparator: analogový komparátor (jen C5). Hlídání prahu napětí bez ADC a bez CPU.",
+  "en": "espidf.Comparator: analog comparator (C5 only). Watching a voltage threshold without the ADC or the CPU."
+ },
+ "ESPIDF_BITSCRAMBLER": {
+  "cs": "espidf.bitscramble(): přeskládání bitů v datech přes BitScrambler (jen C5).",
+  "en": "espidf.bitscramble(): rearranging bits of data with the BitScrambler (C5 only)."
+ },
+ "ESPIDF_BLE_MESH": {
+  "cs": "espidf.BLEMesh: Bluetooth Mesh, provisioner a uzly, zprávy přes více skoků (~143 kB).",
+  "en": "espidf.BLEMesh: Bluetooth Mesh, provisioner and nodes, messages over several hops (~143 KB)."
+ },
+ "ESPIDF_BLE_PERIODIC": {
+  "cs": "espidf.PeriodicAdvertiser a PeriodicSync: Bluetooth 5 periodic advertising, vysílání až 1650 B dat bez spojení.",
+  "en": "espidf.PeriodicAdvertiser and PeriodicSync: Bluetooth 5 periodic advertising, up to 1650 bytes broadcast without connections."
+ },
+ "ESPIDF_CSI": {
+  "cs": "espidf.CSI: informace o kanálu (CSI) z Wi-Fi rádia. Detekce pohybu a přítomnosti, analýza rádiového prostředí.",
+  "en": "espidf.CSI: channel state information from the Wi-Fi radio. Motion and presence detection, radio environment analysis."
+ },
+ "ESPIDF_ETM": {
+  "cs": "espidf.PinLink: piny řízené hardwarovými událostmi (Event Task Matrix, jen C5). Reakce bez latence CPU.",
+  "en": "espidf.PinLink: pins driven by hardware events (Event Task Matrix, C5 only). Reactions without CPU latency."
+ },
+ "ESPIDF_FTM": {
+  "cs": "espidf.ftm(): vzdálenost k Wi-Fi zařízení podle doby letu signálu (802.11mc). Lokalizace v interiéru.",
+  "en": "espidf.ftm(): distance to a Wi-Fi device by signal time of flight (802.11mc). Indoor positioning."
+ },
+ "ESPIDF_I2S_TDM": {
+  "cs": "espidf.TDM: I2S až se 16 kanály v jednom rámci. Mikrofonní pole, vícekanálové kodeky.",
+  "en": "espidf.TDM: I2S with up to 16 channels per frame. Microphone arrays, multichannel codecs."
+ },
+ "ESPIDF_LEDC_FADE": {
+  "cs": "espidf.pwm_fade(): hardwarové plynulé stmívání PWM bez zátěže procesoru.",
+  "en": "espidf.pwm_fade(): hardware PWM fading with no CPU load."
+ },
+ "ESPIDF_LPCORE": {
+  "cs": "espidf.LPCore a LPCoreAlarm: vlastní program na LP jádru, běží i v hlubokém spánku a umí čip probudit (jen C5).",
+  "en": "espidf.LPCore and LPCoreAlarm: your program on the LP core, running in deep sleep and able to wake the chip (C5 only)."
+ },
+ "ESPIDF_MCPWM": {
+  "cs": "espidf.MotorPWM a PulseCapture: PWM pro řízení motorů (komplementární výstupy s dead time) a přesné měření hran pulzů.",
+  "en": "espidf.MotorPWM and PulseCapture: PWM for motor drives (complementary outputs with dead time) and precise edge timing."
+ },
+ "ESPIDF_NAN": {
+  "cs": "espidf.WiFiAware: Wi-Fi Aware (NAN), vyhledání služeb a zprávy mezi zařízeními bez přístupového bodu (jen C5, ~59 kB).",
+  "en": "espidf.WiFiAware: Wi-Fi Aware (NAN), finding services and messaging between devices without an access point (C5 only, ~59 KB)."
+ },
+ "ESPIDF_PARLIO": {
+  "cs": "espidf.ParallelOut a ParallelIn: paralelní výstup a vstup přes DMA (jen C5). Generátor vzorů, logický analyzátor.",
+  "en": "espidf.ParallelOut and ParallelIn: parallel output and input by DMA (C5 only). Pattern generator, logic analyser."
+ },
+ "ESPIDF_PCNT": {
+  "cs": "espidf.PulseCounter: hardwarové čítání pulzů se směrem a kvadraturou, filtrem a prahy. Enkodéry, průtokoměry.",
+  "en": "espidf.PulseCounter: hardware pulse counting with direction and quadrature, filter and thresholds. Encoders, flow meters."
+ },
+ "ESPIDF_RMT": {
+  "cs": "espidf.RMTOut a RMTIn: generování a čtení pulzních sekvencí s rozlišením až 12,5 ns. IR ovladače, DShot, vlastní protokoly.",
+  "en": "espidf.RMTOut and RMTIn: pulse trains out and in with up to 12.5 ns resolution. IR remotes, DShot, custom protocols."
+ },
+ "ESPIDF_SDM": {
+  "cs": "espidf.SigmaDelta: sigma-delta modulátor. Levný DAC přes RC filtr, plynulé stmívání LED.",
+  "en": "espidf.SigmaDelta: sigma-delta modulator. A cheap DAC through an RC filter, smooth LED dimming."
+ },
+ "ESPNOW": {
+  "cs": "Modul espnow: rychlé zprávy mezi deskami ESP bez Wi-Fi sítě. Fork přidává zprávy až 1470 B a Long Range.",
+  "en": "espnow module: fast messages between ESP boards without a Wi-Fi network. The fork adds 1470-byte messages and Long Range."
+ },
+ "ESPSDR": {
+  "cs": "Modul espsdr: surové I/Q vzorky z Wi-Fi přijímače (S3, C5 i v pásmu 5 GHz). Spektrum, analýza signálů.",
+  "en": "espsdr module: raw I/Q samples from the Wi-Fi receiver (S3; C5 also at 5 GHz). Spectrum, signal analysis."
+ },
+ "ESPULP": {
+  "cs": "Modul espulp: program na ULP koprocesoru (S2, S3) běžící i v hlubokém spánku.",
+  "en": "espulp module: a program on the ULP co-processor (S2, S3), running even in deep sleep."
+ },
+ "ESP_USB_SERIAL_JTAG": {
+  "cs": "Konzole přes vestavěný USB-Serial/JTAG (čipy bez plného USB, např. C3, C5, C6).",
+  "en": "Console over the built-in USB-Serial/JTAG (chips without full USB, e.g. C3, C5, C6)."
+ },
+ "FLOPPYIO": {
+  "cs": "Modul floppyio: čtení disket přes floppy mechaniku. Jen RP2.",
+  "en": "floppyio module: reading floppy disks from a drive. RP2 only."
+ },
+ "FONTIO": {
+  "cs": "Modul fontio: základní typy fontů pro displayio.",
+  "en": "fontio module: the basic font types of displayio."
+ },
+ "FOURWIRE": {
+  "cs": "Modul fourwire: displeje přes čtyřvodičové SPI (data, příkaz, CS, reset).",
+  "en": "fourwire module: displays on four-wire SPI (data, command, CS, reset)."
+ },
+ "FRAMEBUFFERIO": {
+  "cs": "Modul framebufferio: displeje s framebufferem v RAM (RGB matice, paralelní RGB).",
+  "en": "framebufferio module: displays with a framebuffer in RAM (RGB matrices, parallel RGB)."
+ },
+ "FREQUENCYIO": {
+  "cs": "Modul frequencyio: měření frekvence signálu na pinu.",
+  "en": "frequencyio module: measuring a signal's frequency on a pin."
+ },
+ "FULL_BUILD": {
+  "cs": "Plná sada modulů. Vypnuté = malý build pro čipy s malou flash. Ovlivňuje výchozí hodnoty mnoha dalších voleb.",
+  "en": "The full set of modules. Off makes a small build for chips with little flash, and changes the defaults of many other options."
+ },
+ "FUTURE": {
+  "cs": "Modul __future__ (jen kvůli kompatibilitě s CPython kódem).",
+  "en": "__future__ module (for compatibility with CPython code only)."
+ },
+ "GETPASS": {
+  "cs": "Modul getpass: zadání hesla v konzoli bez zobrazení.",
+  "en": "getpass module: entering a password on the console without echo."
+ },
+ "GIFIO": {
+  "cs": "Modul gifio: přehrávání a zápis GIF animací.",
+  "en": "gifio module: playing and writing GIF animations."
+ },
+ "GNSS": {
+  "cs": "Modul gnss: GPS na deskách Spresense. Na ESP nepoužito.",
+  "en": "gnss module: GPS on Spresense boards. Unused on Espressif."
+ },
+ "HARDWAREKEY": {
+  "cs": "Modul hardwarekey: kryptografické operace s klíči v hardwaru (eFuse klíče).",
+  "en": "hardwarekey module: cryptographic operations with keys held in hardware (eFuse keys)."
+ },
+ "HASHLIB": {
+  "cs": "Modul hashlib: SHA-1, SHA-256 a další hashe.",
+  "en": "hashlib module: SHA-1, SHA-256 and other hashes."
+ },
+ "HASHLIB_EXTENDED": {
+  "cs": "Rozšířený hashlib: konstruktory jako v CPython (hashlib.sha256()), hexdigest, copy, MD5 a SHA-224/384/512.",
+  "en": "Extended hashlib: CPython constructors (hashlib.sha256()), hexdigest, copy, MD5 and SHA-224/384/512."
+ },
+ "HASHLIB_MBEDTLS": {
+  "cs": "hashlib postavený na mbedTLS.",
+  "en": "hashlib built on mbedTLS."
+ },
+ "HASHLIB_MBEDTLS_ONLY": {
+  "cs": "Jen část mbedTLS pro hashlib, když SSL není. Interní volba.",
+  "en": "Only the part of mbedTLS hashlib needs, when there is no SSL. Internal."
+ },
+ "HMAC": {
+  "cs": "Modul hmac: podpis zpráv klíčem (HMAC), např. pro ověření webhooků a API.",
+  "en": "hmac module: signing messages with a key (HMAC), e.g. to verify webhooks and API calls."
+ },
+ "I2CDISPLAYBUS": {
+  "cs": "Modul i2cdisplaybus: displeje přes I2C (SSD1306 OLED apod.).",
+  "en": "i2cdisplaybus module: displays on I2C (SSD1306 OLEDs and the like)."
+ },
+ "I2CIOEXPANDER": {
+  "cs": "Modul i2cioexpander: piny I2C expanderů (MCP23017, PCF8574) jako běžné DigitalInOut.",
+  "en": "i2cioexpander module: pins of I2C expanders (MCP23017, PCF8574) as ordinary DigitalInOut."
+ },
+ "I2CTARGET": {
+  "cs": "Modul i2ctarget: deska jako I2C zařízení (slave). Na ESP v upstreamu nefunkční, proto vypnuto.",
+  "en": "i2ctarget module: the board as an I2C target (slave). Broken upstream on Espressif, hence off."
+ },
+ "I2C_ALLOW_STRAPPING_PINS": {
+  "cs": "Povolit I2C na strapping pinech (riziko problémů při bootu).",
+  "en": "Allow I2C on strapping pins (may disturb booting)."
+ },
+ "IEEE802154": {
+  "cs": "Modul ieee802154: surové rádio IEEE 802.15.4 (C5, C6, H2). Vlastní protokoly, sniffer Zigbee/Thread.",
+  "en": "ieee802154 module: the raw IEEE 802.15.4 radio (C5, C6, H2). Own protocols, a Zigbee/Thread sniffer."
+ },
+ "IMAGECAPTURE": {
+  "cs": "Modul imagecapture: paralelní zachytávání obrazu (kamera) na SAMD a RP2. Na ESP viz ESPCAMERA.",
+  "en": "imagecapture module: parallel image capture (cameras) on SAMD and RP2. On Espressif see ESPCAMERA."
+ },
+ "IO": {
+  "cs": "Modul io: StringIO, BytesIO. Potřebuje ho json.",
+  "en": "io module: StringIO, BytesIO. json needs it."
+ },
+ "IO_IOBASE": {
+  "cs": "Třída io.IOBase pro vlastní proudové objekty (např. čtení JPEG po částech).",
+  "en": "io.IOBase for custom stream objects (e.g. reading a JPEG in pieces)."
+ },
+ "IPADDRESS": {
+  "cs": "Modul ipaddress: IP adresy (IPv4Address, IPv6Address).",
+  "en": "ipaddress module: IP addresses (IPv4Address, IPv6Address)."
+ },
+ "IS31FL3741": {
+  "cs": "Ovladač LED matice IS31FL3741.",
+  "en": "Driver for the IS31FL3741 LED matrix."
+ },
+ "JPEGIO": {
+  "cs": "Modul jpegio: dekódování JPEG obrázků do bitmap.",
+  "en": "jpegio module: decoding JPEG images into bitmaps."
+ },
+ "JSON": {
+  "cs": "Modul json: čtení a zápis JSON (web API, konfigurace).",
+  "en": "json module: reading and writing JSON (web APIs, configuration)."
+ },
+ "KEYPAD": {
+  "cs": "Modul keypad: skenování tlačítek a klávesnic na pozadí s odrušením a frontou událostí.",
+  "en": "keypad module: scanning buttons and keyboards in the background, debounced, with an event queue."
+ },
+ "KEYPAD_DEMUX": {
+  "cs": "keypad.DemuxKeyMatrix: klávesnice přes demultiplexer (např. Cardputer).",
+  "en": "keypad.DemuxKeyMatrix: keyboards through a demultiplexer (the Cardputer's, for one)."
+ },
+ "KEYPAD_KEYMATRIX": {
+  "cs": "keypad.KeyMatrix: maticová klávesnice (řádky × sloupce).",
+  "en": "keypad.KeyMatrix: a matrix keyboard (rows by columns)."
+ },
+ "KEYPAD_KEYS": {
+  "cs": "keypad.Keys: jednotlivá tlačítka na pinech.",
+  "en": "keypad.Keys: individual buttons on pins."
+ },
+ "KEYPAD_SHIFTREGISTERKEYS": {
+  "cs": "keypad.ShiftRegisterKeys: tlačítka přes posuvný registr (74HC165, gamepady).",
+  "en": "keypad.ShiftRegisterKeys: buttons through a shift register (74HC165, gamepads)."
+ },
+ "LIBC_STRING0": {
+  "cs": "Vlastní optimalizované memcpy a spol. místo funkcí z SDK. Interní volba.",
+  "en": "CircuitPython's own optimised memcpy and friends rather than the SDK's. Internal."
+ },
+ "LIB_TLSF": {
+  "cs": "Vlastní alokátor TLSF místo verze z SDK. Interní volba.",
+  "en": "CircuitPython's own TLSF allocator rather than the SDK's. Internal."
+ },
+ "LOAD_NATIVE": {
+  "cs": "Načítání nativních .mpy souborů (strojový kód v knihovnách).",
+  "en": "Loading native .mpy files (machine code in libraries)."
+ },
+ "LOCALE": {
+  "cs": "Modul locale: jazyk chybových hlášek.",
+  "en": "locale module: the language of error messages."
+ },
+ "LTO": {
+  "cs": "Optimalizace při linkování (LTO): menší a rychlejší firmware, delší build.",
+  "en": "Link-time optimisation: a smaller, faster firmware, a longer build."
+ },
+ "LVFONTIO": {
+  "cs": "Modul lvfontio: fonty ve formátu LVGL pro displayio.",
+  "en": "lvfontio module: LVGL-format fonts for displayio."
+ },
+ "MATH": {
+  "cs": "Modul math: matematické funkce.",
+  "en": "math module: mathematical functions."
+ },
+ "MAX3421E": {
+  "cs": "Modul max3421e: USB host přes externí čip MAX3421E (připojení USB klávesnic, myší, MIDI).",
+  "en": "max3421e module: USB host through an external MAX3421E chip (USB keyboards, mice, MIDI)."
+ },
+ "MDNS": {
+  "cs": "Modul mdns: hledání a ohlašování služeb v síti (jmeno.local).",
+  "en": "mdns module: finding and announcing services on the network (name.local)."
+ },
+ "MEMORYMAP": {
+  "cs": "Modul memorymap: přímé čtení a zápis registrů a paměti.",
+  "en": "memorymap module: reading and writing registers and memory directly."
+ },
+ "MEMORYMONITOR": {
+  "cs": "Modul memorymonitor: sledování alokací paměti (ladění).",
+  "en": "memorymonitor module: watching memory allocations (debugging)."
+ },
+ "MESSAGE_COMPRESSION_LEVEL": {
+  "cs": "Míra komprese textů chybových hlášek ve flash. Vyšší = menší firmware, delší build.",
+  "en": "How hard the error message texts are compressed in flash. Higher: smaller firmware, longer build."
+ },
+ "MICROCONTROLLER": {
+  "cs": "Modul microcontroller: piny, CPU (teplota, frekvence), reset, NVM.",
+  "en": "microcontroller module: pins, CPU (temperature, frequency), reset, NVM."
+ },
+ "MII": {
+  "cs": "Ethernet přes MII/RMII rozhraní (čipy s EMAC, ESP32 a P4).",
+  "en": "Ethernet through an MII/RMII interface (chips with an EMAC: ESP32, P4)."
+ },
+ "MIPIDSI": {
+  "cs": "Modul mipidsi: displeje přes MIPI DSI (ESP32-P4).",
+  "en": "mipidsi module: MIPI DSI displays (ESP32-P4)."
+ },
+ "MSGPACK": {
+  "cs": "Modul msgpack: kompaktní binární serializace dat.",
+  "en": "msgpack module: compact binary serialisation."
+ },
+ "NEOPIXEL_WRITE": {
+  "cs": "Modul neopixel_write: řízení adresovatelných LED WS2812 (NeoPixel).",
+  "en": "neopixel_write module: driving WS2812 (NeoPixel) addressable LEDs."
+ },
+ "NETWORK": {
+  "cs": "Port má nativní síť (Wi-Fi nebo ethernet). Interní volba.",
+  "en": "The port has native networking (Wi-Fi or Ethernet). Internal."
+ },
+ "NVM": {
+  "cs": "Modul nvm (microcontroller.nvm): malá trvalá paměť bajtů.",
+  "en": "nvm (microcontroller.nvm): a small persistent byte store."
+ },
+ "ONEWIREIO": {
+  "cs": "Modul onewireio: sběrnice 1-Wire (teploměry DS18B20).",
+  "en": "onewireio module: the 1-Wire bus (DS18B20 thermometers)."
+ },
+ "OPTIMIZE_PROPERTY_FLASH_SIZE": {
+  "cs": "Úspornější uložení properties ve flash. Potřebuje podporu v linker skriptu.",
+  "en": "Smaller storage of properties in flash. Needs support in the linker script."
+ },
+ "OPT_LOAD_ATTR_FAST_PATH": {
+  "cs": "Rychlejší přístup k atributům objektů (za cenu flash).",
+  "en": "Faster attribute access (at some flash)."
+ },
+ "OPT_MAP_LOOKUP_CACHE": {
+  "cs": "Cache pro vyhledávání v slovnících a jmenných prostorech (rychlejší kód, víc RAM).",
+  "en": "A cache for dictionary and namespace lookups (faster code, more RAM)."
+ },
+ "OS": {
+  "cs": "Modul os: soubory a adresáře, proměnné prostředí, os.urandom.",
+  "en": "os module: files and directories, environment variables, os.urandom."
+ },
+ "PARALLELDISPLAYBUS": {
+  "cs": "Modul paralleldisplaybus: displeje přes paralelní 8bit sběrnici (i80).",
+  "en": "paralleldisplaybus module: displays on an 8-bit parallel bus (i80)."
+ },
+ "PARTITION_DISK": {
+  "cs": "espidf.expose_partition(): oddíl flash jako druhý USB disk.",
+  "en": "espidf.expose_partition(): a flash partition as a second USB drive."
+ },
+ "PEW": {
+  "cs": "Modul _pew pro konzoli PewPew. Na ESP nepoužito.",
+  "en": "_pew module for the PewPew console. Unused on Espressif."
+ },
+ "PICODVI": {
+  "cs": "Výstup DVI/HDMI z RP2. Na ESP nepoužito.",
+  "en": "DVI/HDMI output from RP2. Unused on Espressif."
+ },
+ "PICODVI_AUDIOOUT": {
+  "cs": "Zvuk přes DVI z RP2. Na ESP nepoužito.",
+  "en": "Audio over DVI from RP2. Unused on Espressif."
+ },
+ "PICOGAME": {
+  "cs": "Modul picogame: vykreslovací jádro pro hry (sprity, dlaždice).",
+  "en": "picogame module: a rendering core for games (sprites, tiles)."
+ },
+ "PICOGAME_FAST_DISPLAY": {
+  "cs": "Rychlé asynchronní posílání snímků picogame na displej přes DMA.",
+  "en": "Fast asynchronous sending of picogame frames to the display by DMA."
+ },
+ "PICOGAME_FRAMEBUFFER": {
+  "cs": "picogame vykresluje do celého framebufferu v RAM (DVI desky).",
+  "en": "picogame draws into a whole framebuffer in RAM (DVI boards)."
+ },
+ "PICOGAME_RGB444": {
+  "cs": "Displej desky umí 12bitové barvy RGB444; picogame pak posílá méně dat.",
+  "en": "The board's display takes 12-bit RGB444 colour; picogame then sends less data."
+ },
+ "PIXELBUF": {
+  "cs": "Modul adafruit_pixelbuf: rychlý buffer pro LED pásky (podklad knihovny neopixel).",
+  "en": "adafruit_pixelbuf module: a fast buffer for LED strips (the base of the neopixel library)."
+ },
+ "PIXELMAP": {
+  "cs": "Modul adafruit_pixelmap: přemapování pořadí LED (např. matice, segmenty).",
+  "en": "adafruit_pixelmap module: remapping the order of LEDs (matrices, segments)."
+ },
+ "PORT_SERIAL": {
+  "cs": "Sériová konzole vlastní portu (např. UART nebo USB-Serial/JTAG).",
+  "en": "The port's own serial console (a UART or USB-Serial/JTAG)."
+ },
+ "PS2IO": {
+  "cs": "Modul ps2io: PS/2 klávesnice a myši.",
+  "en": "ps2io module: PS/2 keyboards and mice."
+ },
+ "PULSEIO": {
+  "cs": "Modul pulseio: měření a generování sekvencí pulzů (IR přijímače a ovladače, DHT senzory).",
+  "en": "pulseio module: measuring and generating pulse sequences (IR receivers and remotes, DHT sensors)."
+ },
+ "PULSEIO_PULSEOUT": {
+  "cs": "Třída pulseio.PulseOut (vysílání pulzů, IR LED).",
+  "en": "pulseio.PulseOut (sending pulses, IR LEDs)."
+ },
+ "PWMIO": {
+  "cs": "Modul pwmio: PWM výstupy (LED, serva, bzučáky).",
+  "en": "pwmio module: PWM outputs (LEDs, servos, buzzers)."
+ },
+ "PYUSB": {
+  "cs": "Python modul usb (pyusb API) pro USB host.",
+  "en": "The usb Python module (pyusb API) for USB host."
+ },
+ "QRIO": {
+  "cs": "Modul qrio: dekódování QR kódů z obrázku (kamera).",
+  "en": "qrio module: decoding QR codes from an image (camera)."
+ },
+ "QSPIBUS": {
+  "cs": "Modul qspibus: displeje přes Quad-SPI (AMOLED).",
+  "en": "qspibus module: displays on Quad-SPI (AMOLED)."
+ },
+ "RAINBOWIO": {
+  "cs": "Modul rainbowio: funkce colorwheel pro duhové barvy LED.",
+  "en": "rainbowio module: colorwheel for rainbow LED colours."
+ },
+ "RANDOM": {
+  "cs": "Modul random: náhodná čísla.",
+  "en": "random module: random numbers."
+ },
+ "RCLCPY": {
+  "cs": "Modul rclcpy: připojení do ROS 2 přes micro-ROS.",
+  "en": "rclcpy module: joining ROS 2 through micro-ROS."
+ },
+ "RE": {
+  "cs": "Modul re: regulární výrazy.",
+  "en": "re module: regular expressions."
+ },
+ "REQUIRE_I2C_PULLUPS": {
+  "cs": "busio.I2C kontroluje přítomnost pull-up rezistorů a bez nich ohlásí chybu.",
+  "en": "busio.I2C checks for pull-up resistors and raises without them."
+ },
+ "RGBMATRIX": {
+  "cs": "Modul rgbmatrix: velké RGB LED matice (HUB75).",
+  "en": "rgbmatrix module: large RGB LED matrices (HUB75)."
+ },
+ "ROTARYIO": {
+  "cs": "Modul rotaryio: čtení rotačních enkodérů (otočná tlačítka).",
+  "en": "rotaryio module: reading rotary encoders (knobs)."
+ },
+ "ROTARYIO_SOFTENCODER": {
+  "cs": "Softwarové čtení enkodéru přes přerušení, když chybí hardwarový čítač.",
+  "en": "Reading an encoder in software by interrupts, when there is no hardware counter."
+ },
+ "RP2PIO": {
+  "cs": "Modul rp2pio: PIO bloky RP2. Na ESP nepoužito.",
+  "en": "rp2pio module: the RP2's PIO blocks. Unused on Espressif."
+ },
+ "RTC": {
+  "cs": "Modul rtc: hodiny reálného času (nastavení času, i z NTP).",
+  "en": "rtc module: the real-time clock (setting the time, from NTP too)."
+ },
+ "SAFEMODE_PY": {
+  "cs": "Spuštění safemode.py při bezpečném režimu (vlastní reakce na pád).",
+  "en": "Running safemode.py in safe mode (your own reaction to a crash)."
+ },
+ "SAMD": {
+  "cs": "Modul samd. Jen čipy SAMD.",
+  "en": "samd module. SAMD chips only."
+ },
+ "SDCARDIO": {
+  "cs": "Modul sdcardio: SD karta přes SPI.",
+  "en": "sdcardio module: SD cards over SPI."
+ },
+ "SDIOIO": {
+  "cs": "Modul sdioio: SD karta přes rychlé SDIO (4 bity).",
+  "en": "sdioio module: SD cards over fast 4-bit SDIO."
+ },
+ "SETTABLE_PROCESSOR_FREQUENCY": {
+  "cs": "Možnost měnit frekvenci CPU (microcontroller.cpu.frequency) kvůli spotřebě.",
+  "en": "Changing the CPU frequency (microcontroller.cpu.frequency) to save power."
+ },
+ "SETTINGS_TOML": {
+  "cs": "Čtení settings.toml (Wi-Fi heslo, proměnné přes os.getenv).",
+  "en": "Reading settings.toml (Wi-Fi password, variables through os.getenv)."
+ },
+ "SHARPDISPLAY": {
+  "cs": "Modul sharpdisplay: paměťové displeje Sharp Memory.",
+  "en": "sharpdisplay module: Sharp Memory displays."
+ },
+ "SKIP_SAFE_MODE_WAIT": {
+  "cs": "Přeskočit čekání na vstup do bezpečného režimu při startu (rychlejší boot, ale nejde se do něj dostat tlačítkem).",
+  "en": "Skip the wait for entering safe mode at start-up (faster boot, but no way into it by button)."
+ },
+ "SOCKETPOOL": {
+  "cs": "Modul socketpool: TCP a UDP sockety nad Wi-Fi.",
+  "en": "socketpool module: TCP and UDP sockets over Wi-Fi."
+ },
+ "SOCKETPOOL_IPV6": {
+  "cs": "IPv6 v socketpool.",
+  "en": "IPv6 in socketpool."
+ },
+ "SPITARGET": {
+  "cs": "Modul spitarget: deska jako SPI zařízení (slave). Na ESP není.",
+  "en": "spitarget module: the board as an SPI target (slave). Not on Espressif."
+ },
+ "SSL": {
+  "cs": "Modul ssl: TLS (HTTPS, MQTT přes TLS).",
+  "en": "ssl module: TLS (HTTPS, MQTT over TLS)."
+ },
+ "SSL_MBEDTLS": {
+  "cs": "ssl postavené na mbedTLS.",
+  "en": "ssl built on mbedTLS."
+ },
+ "STAGE": {
+  "cs": "Modul _stage pro hry (ugame). Vypnuto.",
+  "en": "_stage module for games (ugame). Off."
+ },
+ "STATUS_BAR": {
+  "cs": "Stavový řádek v terminálu (IP adresa, stav kódu, verze).",
+  "en": "The status line in the terminal (IP address, code state, version)."
+ },
+ "STORAGE": {
+  "cs": "Modul storage: připojování souborových systémů, zápis na CIRCUITPY z kódu.",
+  "en": "storage module: mounting filesystems, writing CIRCUITPY from code."
+ },
+ "STORAGE_EXTEND": {
+  "cs": "Rozšíření CIRCUITPY o další oddíl flash (storage.extend).",
+  "en": "Extending CIRCUITPY with another flash partition (storage.extend)."
+ },
+ "STORAGE_MAP_FILE": {
+  "cs": "storage.map_file(): čtení souboru přímo z flash bez kopírování do RAM.",
+  "en": "storage.map_file(): reading a file straight from flash without copying it to RAM."
+ },
+ "STRUCT": {
+  "cs": "Modul struct: balení a rozbalování binárních dat (registry, protokoly).",
+  "en": "struct module: packing and unpacking binary data (registers, protocols)."
+ },
+ "SUPERVISOR": {
+  "cs": "Modul supervisor: stav běhu, reload, nastavení příštího spuštění.",
+  "en": "supervisor module: run state, reload, settings for the next run."
+ },
+ "SWO_TRACE": {
+  "cs": "Trasování funkcí přes ARM ITM. Na ESP nepoužito.",
+  "en": "Function tracing through the ARM ITM. Unused on Espressif."
+ },
+ "SYNTHIO": {
+  "cs": "Modul synthio: syntezátor (oscilátory, obálky, filtry, MIDI noty).",
+  "en": "synthio module: a synthesiser (oscillators, envelopes, filters, MIDI notes)."
+ },
+ "SYS": {
+  "cs": "Modul sys: verze, argumenty, stdin/stdout, sys.exit.",
+  "en": "sys module: version, arguments, stdin/stdout, sys.exit."
+ },
+ "TERMINALIO": {
+  "cs": "Modul terminalio: textový terminál na displeji (výchozí font).",
+  "en": "terminalio module: a text terminal on a display (built-in font)."
+ },
+ "TERMINALIO_VT100": {
+  "cs": "Podpora escape sekvencí VT100 v terminálu na displeji (barvy, pozice kurzoru).",
+  "en": "VT100 escape sequences in the display terminal (colours, cursor position)."
+ },
+ "TILEPALETTEMAPPER": {
+  "cs": "Modul tilepalettemapper: mapování palet pro jednotlivé dlaždice v TileGrid.",
+  "en": "tilepalettemapper module: per-tile palette mapping in a TileGrid."
+ },
+ "TIME": {
+  "cs": "Modul time: čas, sleep, monotonic.",
+  "en": "time module: time, sleep, monotonic."
+ },
+ "TINYUSB": {
+  "cs": "Zásobník TinyUSB (USB zařízení). Interní volba podle čipu.",
+  "en": "The TinyUSB stack (USB device). Set by chip."
+ },
+ "TINYUSB_HOST": {
+  "cs": "TinyUSB jako USB host.",
+  "en": "TinyUSB as a USB host."
+ },
+ "TOUCHIO": {
+  "cs": "Modul touchio: kapacitní dotyková tlačítka.",
+  "en": "touchio module: capacitive touch buttons."
+ },
+ "TOUCHIO_USE_NATIVE": {
+  "cs": "touchio používá hardwarový dotykový senzor čipu (S2, S3) místo softwarového měření.",
+  "en": "touchio uses the chip's hardware touch sensor (S2, S3) rather than measuring in software."
+ },
+ "TRACEBACK": {
+  "cs": "Modul traceback: výpis zásobníku chyb v kódu.",
+  "en": "traceback module: printing error stack traces from code."
+ },
+ "TRANSLATE_OBJECT": {
+  "cs": "Hlášky přeložené do objektů (jiné uložení přeložených textů). Interní volba.",
+  "en": "Translated messages stored as objects (another storage of translated texts). Internal."
+ },
+ "TTFRAST": {
+  "cs": "Modul ttfrast: vykreslování TrueType písem na displej v libovolné velikosti.",
+  "en": "ttfrast module: TrueType text on displays at any size."
+ },
+ "UHEAP": {
+  "cs": "Modul uheap: analýza haldy (ladění).",
+  "en": "uheap module: heap analysis (debugging)."
+ },
+ "ULAB": {
+  "cs": "Modul ulab: numerika à la numpy (matice, FFT, statistika).",
+  "en": "ulab module: numpy-like numerics (arrays, FFT, statistics)."
+ },
+ "ULAB_OPTIMIZE_SIZE": {
+  "cs": "ulab přeložený na velikost (-Os): menší, ale pomalejší.",
+  "en": "ulab compiled for size (-Os): smaller but slower."
+ },
+ "USB_AUDIO": {
+  "cs": "Modul usb_audio: deska jako USB zvuková karta. Fork opravuje headset, reproduktor, hlasitost a ztlumení.",
+  "en": "usb_audio module: the board as a USB sound card. The fork fixes headset, speaker, volume and mute."
+ },
+ "USB_CDC": {
+  "cs": "Modul usb_cdc: sériové porty přes USB (konzole a datový port).",
+  "en": "usb_cdc module: serial ports over USB (console and data)."
+ },
+ "USB_CDC_CONSOLE_ENABLED_DEFAULT": {
+  "cs": "Konzole přes USB CDC je zapnutá i bez boot.py.",
+  "en": "The USB CDC console is on without boot.py."
+ },
+ "USB_CDC_DATA_ENABLED_DEFAULT": {
+  "cs": "Druhý (datový) sériový port přes USB je zapnutý i bez boot.py.",
+  "en": "The second (data) USB serial port is on without boot.py."
+ },
+ "USB_DEVICE": {
+  "cs": "Čip má USB zařízení (TinyUSB). Interní volba podle čipu.",
+  "en": "The chip has a USB device (TinyUSB). Set by chip."
+ },
+ "USB_HID": {
+  "cs": "Modul usb_hid: deska jako USB klávesnice, myš nebo gamepad.",
+  "en": "usb_hid module: the board as a USB keyboard, mouse or gamepad."
+ },
+ "USB_HID_ENABLED_DEFAULT": {
+  "cs": "USB HID je zapnuté i bez boot.py.",
+  "en": "USB HID is on without boot.py."
+ },
+ "USB_HOST": {
+  "cs": "Modul usb_host: nativní USB host (připojení USB zařízení k desce).",
+  "en": "usb_host module: native USB host (USB devices plugged into the board)."
+ },
+ "USB_HOST_AUDIO": {
+  "cs": "Zvuk z USB zařízení připojených k USB hostu.",
+  "en": "Audio from USB devices on a USB host port."
+ },
+ "USB_HOST_BULK": {
+  "cs": "Souvislé bulk přenosy na USB hostu.",
+  "en": "Continuous bulk transfers on USB host ports."
+ },
+ "USB_IDENTIFICATION": {
+  "cs": "Nastavení USB VID, PID a jmen v boot.py (usb.identification).",
+  "en": "Setting USB VID, PID and names in boot.py (usb.identification)."
+ },
+ "USB_KEYBOARD_WORKFLOW": {
+  "cs": "Psaní do konzole z USB klávesnice připojené k hostu.",
+  "en": "Typing into the console from a USB keyboard on the host port."
+ },
+ "USB_MIDI": {
+  "cs": "Modul usb_midi: deska jako USB MIDI zařízení.",
+  "en": "usb_midi module: the board as a USB MIDI device."
+ },
+ "USB_MIDI_ENABLED_DEFAULT": {
+  "cs": "USB MIDI je zapnuté i bez boot.py.",
+  "en": "USB MIDI is on without boot.py."
+ },
+ "USB_MSC": {
+  "cs": "Disk CIRCUITPY přes USB (mass storage).",
+  "en": "The CIRCUITPY drive over USB (mass storage)."
+ },
+ "USB_MSC_ENABLED_DEFAULT": {
+  "cs": "Disk CIRCUITPY je přes USB vidět i bez boot.py.",
+  "en": "The CIRCUITPY drive shows over USB without boot.py."
+ },
+ "USB_NET": {
+  "cs": "Modul usb_net: síťové rozhraní přes USB s DHCP a DNS na desce. Deska je pak dostupná jako síťové zařízení bez Wi-Fi.",
+  "en": "usb_net module: a network interface over USB with DHCP and DNS on the board, so the board is reachable as a network device without Wi-Fi."
+ },
+ "USB_NET_ENABLED_DEFAULT": {
+  "cs": "Síťové rozhraní přes USB (usb_net) je zapnuté i bez boot.py.",
+  "en": "The network interface over USB (usb_net) is on without boot.py."
+ },
+ "USB_NET_RNDIS": {
+  "cs": "usb_net navíc jako RNDIS (pro Windows bez CDC-NCM ovladače).",
+  "en": "usb_net also as RNDIS (for Windows without a CDC-NCM driver)."
+ },
+ "USB_TMC": {
+  "cs": "Modul usb_tmc: deska jako měřicí přístroj USBTMC (USB488), ovládaný přes VISA (PyVISA, LabVIEW).",
+  "en": "usb_tmc module: the board as a USBTMC (USB488) instrument, driven over VISA (PyVISA, LabVIEW)."
+ },
+ "USB_TMC_ENABLED_DEFAULT": {
+  "cs": "USBTMC přístroj (usb_tmc) je zapnutý i bez boot.py.",
+  "en": "The USBTMC instrument (usb_tmc) is on without boot.py."
+ },
+ "USB_VENDOR": {
+  "cs": "Modul usb_vendor: vlastní USB rozhraní pro vlastní protokoly.",
+  "en": "usb_vendor module: a custom USB interface for your own protocols."
+ },
+ "USB_VIDEO": {
+  "cs": "Modul usb_video: deska jako USB kamera (UVC). Fork přidává MJPEG.",
+  "en": "usb_video module: the board as a USB camera (UVC). The fork adds MJPEG."
+ },
+ "USTACK": {
+  "cs": "Modul ustack: informace o zásobníku (ladění).",
+  "en": "ustack module: stack information (debugging)."
+ },
+ "VECTORIO": {
+  "cs": "Modul vectorio: vektorové tvary pro displayio (kružnice, obdélníky, polygony).",
+  "en": "vectorio module: vector shapes for displayio (circles, rectangles, polygons)."
+ },
+ "WARNINGS": {
+  "cs": "Modul warnings: varování v kódu.",
+  "en": "warnings module: warnings in code."
+ },
+ "WATCHDOG": {
+  "cs": "Modul watchdog (microcontroller.watchdog): restart při zaseknutí programu.",
+  "en": "watchdog (microcontroller.watchdog): restart when the program hangs."
+ },
+ "WEB_WORKFLOW": {
+  "cs": "Web workflow: editor a soubory přes Wi-Fi v prohlížeči.",
+  "en": "Web workflow: editor and files over Wi-Fi in a browser."
+ },
+ "WIFI": {
+  "cs": "Modul wifi: připojení k Wi-Fi, přístupový bod, skenování sítí.",
+  "en": "wifi module: joining Wi-Fi, access point, scanning."
+ },
+ "WIFI_RADIO_SETTABLE_MAC_ADDRESS": {
+  "cs": "Možnost změnit MAC adresu Wi-Fi.",
+  "en": "Changing the Wi-Fi MAC address."
+ },
+ "WIZNET": {
+  "cs": "Ethernet přes čip WIZnet. Na ESP nepoužito.",
+  "en": "Ethernet through a WIZnet chip. Unused on Espressif."
+ },
+ "ZIGBEE": {
+  "cs": "Modul zigbee: Zigbee stack na C5, koordinátor, router nebo koncové zařízení (~230 kB, potřebuje ieee802154).",
+  "en": "zigbee module: the Zigbee stack on the C5, as coordinator, router or end device (~230 KB, needs ieee802154)."
+ },
+ "ZLIB": {
+  "cs": "Modul zlib: dekomprese zlib a gzip dat.",
+  "en": "zlib module: decompressing zlib and gzip data."
+ },
+ "_EVE": {
+  "cs": "Modul _eve: grafické čipy BridgeTek EVE (FT8xx).",
+  "en": "_eve module: BridgeTek EVE graphics chips (FT8xx)."
+ }
+}
