@@ -85,6 +85,13 @@ extern const mp_obj_type_t espidf_sdm_type;
 void espidf_sdm_reset(void);
 #endif
 
+// extended_ledc_fade.c
+#if CIRCUITPY_ESPIDF_LEDC_FADE
+extern const mp_obj_fun_builtin_var_t espidf_pwm_fade_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_pwm_fading_obj;
+void espidf_ledc_fade_reset(void);
+#endif
+
 // extended_i2s_tdm.c
 #if CIRCUITPY_ESPIDF_I2S_TDM
 extern const mp_obj_type_t espidf_tdm_type;

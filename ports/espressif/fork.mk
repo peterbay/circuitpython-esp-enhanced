@@ -128,6 +128,16 @@ CFLAGS += -DCIRCUITPY_ESPIDF_RMT=$(CIRCUITPY_ESPIDF_RMT)
 CIRCUITPY_ESPIDF_PCNT ?= 0
 CFLAGS += -DCIRCUITPY_ESPIDF_PCNT=$(CIRCUITPY_ESPIDF_PCNT)
 
+# espidf.pwm_fade(): the LEDC's hardware fade on a pwmio.PWMOut. Off unless
+# a board asks for it.
+CIRCUITPY_ESPIDF_LEDC_FADE ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_LEDC_FADE=$(CIRCUITPY_ESPIDF_LEDC_FADE)
+ifneq ($(CIRCUITPY_ESPIDF_LEDC_FADE),0)
+ifeq ($(CIRCUITPY_PWMIO),0)
+$(error CIRCUITPY_ESPIDF_LEDC_FADE needs CIRCUITPY_PWMIO)
+endif
+endif
+
 # espidf.TDM: I2S in TDM mode, up to 16 slots per frame. The I2S driver is
 # built for audiobusio, which this therefore needs. Off unless a board asks
 # for it.
