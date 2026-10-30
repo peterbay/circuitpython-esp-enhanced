@@ -159,6 +159,12 @@ extern const mp_obj_type_t espidf_ble_mesh_type;
 void espidf_ble_mesh_reset(void);
 #endif
 
+// extended_ble_hid.c
+#if CIRCUITPY_ESPIDF_BLE_HID
+extern const mp_obj_type_t espidf_ble_hid_type;
+void espidf_ble_hid_reset(void);
+#endif
+
 // extended_nan.c
 #if CIRCUITPY_ESPIDF_NAN
 extern const mp_obj_type_t espidf_wifi_aware_type;

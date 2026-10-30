@@ -262,6 +262,21 @@ INC += $(addprefix -isystem $(BLE_MESH_DIR)/,common/include core core/include co
 FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ble-mesh.defaults;
 endif
 
+# espidf.BLEHIDDevice: Bluetooth LE keyboards, mice and other HID over GATT
+# devices. The host is the fork's own, on NimBLE; of the IDF's esp_hid
+# component only the report map parser is used, which CMakeLists.txt adds the
+# component for. Off unless a board asks for it.
+CIRCUITPY_ESPIDF_BLE_HID ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_BLE_HID=$(CIRCUITPY_ESPIDF_BLE_HID)
+export CIRCUITPY_ESPIDF_BLE_HID
+ifneq ($(CIRCUITPY_ESPIDF_BLE_HID),0)
+ifeq ($(CIRCUITPY_BLEIO_NATIVE),0)
+$(error CIRCUITPY_ESPIDF_BLE_HID needs CIRCUITPY_BLEIO_NATIVE)
+endif
+INC += -isystem esp-idf/components/esp_hid/include
+FORK_IDF_COMPONENTS_LINK += esp_hid
+endif
+
 # espidf.WiFiAware: Wi-Fi Aware (NAN) discovery and messages. The IDF builds
 # its NAN app only with NAN synchronisation configured, which the fragment
 # does. Chips with SOC_WIFI_NAN_SUPPORT only (here the C5, not the S3). Off
