@@ -18,97 +18,52 @@
 
 #include "bindings/espsdr/Receiver.h"
 
-#include "esp_rom_sys.h"
-#include "esp_timer.h"
 #include "esp_wifi.h"
-#include "heap_memory_layout.h"
-#include "soc/soc.h"
+#include "sdkconfig.h"
 
-// Everything below is undocumented. The addresses and bit fields are the ones
-// ESP-SDR worked out from Espressif's RF test library and describes in its
-// docs/how-it-works.md; the functions are private ones in the ROM, libphy and
-// librftest that the factory test code calls.
-//
-// The dump engine writes one 32-bit word per sample into a fixed 64 KiB bank:
-// two 10-bit two's complement fields in bits 0-9 and 10-19, and in bits 20-27
-// the receiver gain index in force for that sample. Which field is I: see
-// capture().
-#define DUMP_BANK_START (0x3fcd0000)
-#define DUMP_BANK_END (0x3fce0000)
-#define DUMP_BUFFER ((volatile uint32_t *)DUMP_BANK_START)
-// bit 31 enable, 19 trigger (pulse), 18 done, 16 selects 16 MS/s, 15 halves
-// 80 MS/s to 40, 0-14 sample count.
-#define DUMP_CTRL_REG (0x60033d5c)
-// Four 6-bit fields, each choosing an internal signal; 0-3 are I and Q.
-#define DUMP_LANES_REG (0x60033d90)
-// Which SRAM banks the CPU or the dump engine may write. Value 4 in the low
-// nibble gives the engine the bank at DUMP_BANK_START; the CPU must not touch
-// that bank until it is handed back.
-#define SRAM_OWNER_REG (0x600c101c)
-// Bits 8-14: highest gain index the PHY calibrated for the current channel.
-#define GAIN_LIMIT_REG (0x6001c02c)
+// Everything here is undocumented. The dump engine writes one 32-bit word per
+// sample into on-chip SRAM: two 10-bit two's complement fields in bits 0-9 and
+// 10-19, and in bits 20-27 the receiver gain index in force for that sample.
+// Which field is I: see capture(). Where it writes, how it is started and
+// which private PHY functions tune the radio differs per chip; the chip
+// headers below hold that.
 
-#define DUMP_CTRL_ENABLE (1u << 31)
-#define DUMP_CTRL_TRIGGER (1u << 19)
-#define DUMP_CTRL_DONE (1u << 18)
-#define DUMP_CTRL_16MSPS (1u << 16)
-#define DUMP_CTRL_40MSPS (1u << 15)
-
-// Written over the bank before every capture: a word still holding it was
-// never written by the engine, so a short capture is caught instead of
-// returning the previous one.
+// Written over the capture memory first: a word still holding it was never
+// written by the engine, so a short capture is caught instead of returning
+// the previous one.
 #define UNWRITTEN (0xa5a0055au)
 
-// A capture of 16380 samples at 16 MS/s takes about 1 ms.
+// A full capture at the slowest rate (16380 samples at 4 MS/s) takes about 4 ms.
 #define CAPTURE_TIMEOUT_US (20000)
 
-// The bank must hold neither heap nor stacks: the engine overwrites it, and
-// while it owns the bank the CPU reads garbage there. CircuitPython's static
-// data ends well below it (checked in the map), so the heap is all there is
-// to keep out.
-SOC_RESERVE_MEMORY_REGION(DUMP_BANK_START, DUMP_BANK_END, espsdr_dump_bank);
-
-extern void stop_tx_tone(unsigned);
-extern void rom_pbus_workmode(void);
-extern void rom_pbus_xpd_rx_on(unsigned);
-extern void rom_pbus_xpd_tx_off(void);
-extern void rom_set_rxclk_en(unsigned);
-// manual, gain index, unused. With manual 0 the hardware AGC takes over.
-extern void force_rx_gain(unsigned, unsigned, unsigned);
-extern unsigned rom_chip_i2c_readReg(unsigned block, unsigned host, unsigned reg);
-extern void rom_chip_i2c_writeReg(unsigned block, unsigned host, unsigned reg, unsigned data);
-
-// The analog low-pass filter ahead of the ADC: a 6-bit capacitor code in the
-// low bits of two registers of the baseband block, one per branch. A larger
-// code is a narrower filter. The PHY sets its own for Wi-Fi, about 20 MHz.
-#define RX_FILTER_BLOCK (0x67)
-#define RX_FILTER_HOST (0)
-#define RX_FILTER_REG (4)
+// The analog low-pass filter ahead of the ADC is a 6-bit capacitor code in
+// the low bits of two registers of the baseband block, one per branch. A larger
+// code is a narrower filter.
 #define RX_FILTER_MASK (63u)
-#define BANDWIDTH_MIN (13)
-#define BANDWIDTH_MAX (69)
 
-// Code against approximate full -3 dB width in MHz, as ESP-SDR measured it on
-// an S3 from the noise spectrum at 80 MS/s.
-static const uint8_t bandwidth_curve[][2] = {
-    {0, 69}, {4, 51}, {8, 45}, {16, 33}, {24, 25}, {32, 21}, {48, 16}, {60, 13},
-};
-
-// Linear between the measured points. 0 MHz asks for the widest setting.
-static uint8_t filter_code_for(mp_int_t mhz) {
-    const size_t count = MP_ARRAY_SIZE(bandwidth_curve);
-    if (mhz == 0 || mhz >= bandwidth_curve[0][1]) {
-        return bandwidth_curve[0][0];
+// Linear between measured {code, MHz} points, widest first. 0 MHz asks for the
+// widest setting.
+static uint8_t filter_code_on(const uint8_t curve[][2], size_t count, mp_int_t mhz) {
+    if (mhz == 0 || mhz >= curve[0][1]) {
+        return curve[0][0];
     }
     for (size_t i = 1; i < count; i++) {
-        if (mhz >= bandwidth_curve[i][1]) {
-            mp_int_t wide = bandwidth_curve[i - 1][1], narrow = bandwidth_curve[i][1];
-            mp_int_t c0 = bandwidth_curve[i - 1][0], c1 = bandwidth_curve[i][0];
+        if (mhz >= curve[i][1]) {
+            mp_int_t wide = curve[i - 1][1], narrow = curve[i][1];
+            mp_int_t c0 = curve[i - 1][0], c1 = curve[i][0];
             return c0 + ((c1 - c0) * (wide - mhz) + (wide - narrow) / 2) / (wide - narrow);
         }
     }
-    return bandwidth_curve[count - 1][0];
+    return curve[count - 1][0];
 }
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#include "bindings/espsdr/esp32s3.h"
+#elif defined(CONFIG_IDF_TARGET_ESP32C5)
+#include "bindings/espsdr/esp32c5.h"
+#else
+#error "espsdr has no support for this chip"
+#endif
 
 typedef struct {
     mp_obj_base_t base;
@@ -131,54 +86,24 @@ static void check_for_deinit(espsdr_receiver_obj_t *self) {
     }
 }
 
-static mp_int_t channel_for(mp_int_t mhz) {
-    if (mhz == 2484) {
-        return 14;
-    }
-    if (mhz >= 2412 && mhz <= 2472 && (mhz - 2412) % 5 == 0) {
-        return (mhz - 2412) / 5 + 1;
-    }
-    mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be a Wi-Fi channel frequency (2412-2472 in steps of 5, or 2484)"), MP_QSTR_frequency);
-}
-
-static uint32_t rate_bits(uint32_t sample_rate) {
-    switch (sample_rate) {
-        case 80000000:
-            return 0;
-        case 40000000:
-            return DUMP_CTRL_40MSPS;
-        case 16000000:
-            return DUMP_CTRL_16MSPS;
-    }
-    mp_raise_ValueError_varg(MP_ERROR_TEXT("%q must be 80000000, 40000000 or 16000000"), MP_QSTR_sample_rate);
-}
-
-static mp_int_t max_gain(void) {
-    mp_int_t limit = (REG_READ(GAIN_LIMIT_REG) >> 8) & 127;
-    // Anything larger means the PHY has not filled the field in.
-    return limit <= 82 ? limit : 0;
-}
-
 // Tune and switch the front end to receive only. Done again after every change
-// of frequency or gain, because esp_wifi_set_channel() rebuilds the PHY state.
+// of frequency, gain or bandwidth, because esp_wifi_set_channel() rebuilds the
+// PHY state.
 static esp_err_t configure(espsdr_receiver_obj_t *self) {
     esp_err_t err = esp_wifi_set_channel(channel_for(self->frequency), WIFI_SECOND_CHAN_NONE);
     if (err != ESP_OK) {
         return err;
     }
-    stop_tx_tone(1);
-    rom_pbus_workmode();
-    rom_pbus_xpd_tx_off();
-    rom_pbus_xpd_rx_on(1);
-    rom_set_rxclk_en(1);
+    tune_bandwidth(self->frequency, self->bandwidth);
+    receive_only();
     if (self->gain >= 0) {
         mp_int_t limit = max_gain();
         if (self->gain > limit) {
             self->gain = limit;
         }
-        force_rx_gain(1, self->gain, 0);
+        force_gain(true, self->gain);
     } else {
-        force_rx_gain(0, 0, 0);
+        force_gain(false, 0);
     }
     // ESP-SDR waits this long for the receiver to settle after the switch.
     esp_rom_delay_us(3000);
@@ -193,7 +118,7 @@ static void configure_or_raise(espsdr_receiver_obj_t *self) {
 }
 
 static void release(espsdr_receiver_obj_t *self) {
-    force_rx_gain(0, 0, 0);
+    force_gain(false, 0);
     if (!self->promiscuous_was_on) {
         esp_wifi_set_promiscuous(false);
     }
@@ -215,7 +140,7 @@ void espsdr_reset(void) {
 }
 
 //| class Receiver:
-//|     """Snapshot receiver on a 2.4 GHz Wi-Fi channel."""
+//|     """Snapshot receiver on a Wi-Fi channel."""
 //|
 //|     def __init__(
 //|         self,
@@ -228,14 +153,19 @@ void espsdr_reset(void) {
 //|         """Take over the radio. Wi-Fi must be enabled and idle.
 //|
 //|         :param int frequency: centre frequency in MHz. For now only Wi-Fi
-//|           channel frequencies: 2412 to 2472 in steps of 5, and 2484.
-//|         :param int sample_rate: 80_000_000, 40_000_000 or 16_000_000 samples
-//|           per second. The two lower rates appear to drop samples rather than
-//|           filter, so out-of-band signals alias.
+//|           channel frequencies: 2412 to 2472 in steps of 5, and 2484; on the
+//|           ESP32-C5 also the 5 GHz channels, 5180 to 5885 in steps of 20 as
+//|           far as the country setting allows.
+//|         :param int sample_rate: samples per second. ESP32-S3: 80_000_000,
+//|           40_000_000 or 16_000_000. ESP32-C5: 80_000_000, 40_000_000,
+//|           20_000_000, 10_000_000, 8_000_000 or 4_000_000. The lower rates
+//|           appear to drop samples rather than filter, so out-of-band signals
+//|           alias.
 //|         :param int gain: a PHY gain index from 0 to `max_gain`, or None for
 //|           the hardware AGC. Not dB.
-//|         :param int bandwidth: analog filter width in MHz, 13 to 69, or 0 for
-//|           the widest; None keeps the PHY's own (about 20 MHz)."""
+//|         :param int bandwidth: analog filter width in MHz, or 0 for the
+//|           widest: 13 to 69 on the ESP32-S3, 11 to 48 on the ESP32-C5. None
+//|           keeps the PHY's own (about 20 MHz)."""
 //|         ...
 //|
 static int8_t validate_bandwidth(mp_obj_t value) {
@@ -266,7 +196,7 @@ static mp_obj_t espsdr_receiver_make_new(const mp_obj_type_t *type, size_t n_arg
     rate_bits(sample_rate);
     mp_int_t gain = -1;
     if (args[ARG_gain].u_obj != mp_const_none) {
-        gain = mp_arg_validate_int_range(mp_obj_get_int(args[ARG_gain].u_obj), 0, 82, MP_QSTR_gain);
+        gain = mp_arg_validate_int_range(mp_obj_get_int(args[ARG_gain].u_obj), 0, GAIN_MAX, MP_QSTR_gain);
     }
     int8_t bandwidth = validate_bandwidth(args[ARG_bandwidth].u_obj);
 
@@ -350,7 +280,11 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espsdr_receiver___exit___obj, 4, 4, e
 //|           gain index in bits 20-27. Positive frequencies are above the
 //|           centre with that assignment; the other way round mirrors them.
 //|
-//|         The capture takes 205 us at 80 MS/s for the full length.
+//|         The capture takes 205 us at 80 MS/s for the full length. On the
+//|         ESP32-C5 interrupts are off for that and for copying the SRAM the
+//|         engine borrows to and from a scratch buffer in PSRAM: 32 us for
+//|         256 samples, about 1 ms for 4096, 9.6 ms for the full length
+//|         (13.5 ms at 4 MS/s).
 //|
 //|         :return: the gain index the receiver used, to scale AGC snapshots.
 //|         """
@@ -375,9 +309,7 @@ static mp_obj_t espsdr_receiver_capture(mp_obj_t self_in, mp_obj_t buffer_in) {
     }
     n = mp_arg_validate_int_range(n, 1, ESPSDR_MAX_SAMPLES, MP_QSTR_buffer);
 
-    for (size_t i = 0; i < n; i++) {
-        DUMP_BUFFER[i] = UNWRITTEN;
-    }
+    volatile uint32_t *words = capture_buffer(n);
 
     // Only for the capture, and put back after it: the PHY rewrites these when
     // it retunes, and Wi-Fi expects its own filter whenever it gets the radio.
@@ -385,34 +317,21 @@ static mp_obj_t espsdr_receiver_capture(mp_obj_t self_in, mp_obj_t buffer_in) {
     if (self->bandwidth >= 0) {
         unsigned code = filter_code_for(self->bandwidth);
         for (unsigned j = 0; j < 2; j++) {
-            filter_saved[j] = rom_chip_i2c_readReg(RX_FILTER_BLOCK, RX_FILTER_HOST, RX_FILTER_REG + j);
-            rom_chip_i2c_writeReg(RX_FILTER_BLOCK, RX_FILTER_HOST, RX_FILTER_REG + j,
-                (filter_saved[j] & ~RX_FILTER_MASK) | code);
+            filter_saved[j] = filter_read(j);
+            filter_write(j, (filter_saved[j] & ~RX_FILTER_MASK) | code);
         }
     }
 
-    uint32_t ctrl = DUMP_CTRL_ENABLE | rate_bits(self->sample_rate) | n;
-    uint32_t owner = REG_READ(SRAM_OWNER_REG);
-    REG_WRITE(DUMP_CTRL_REG, 0);
-    REG_WRITE(DUMP_LANES_REG, (0 << 0) | (1 << 6) | (2 << 12) | (3 << 18));
-    REG_WRITE(SRAM_OWNER_REG, (owner & ~15u) | 4u);
-    int64_t start = esp_timer_get_time();
-    REG_WRITE(DUMP_CTRL_REG, ctrl);
-    REG_WRITE(DUMP_CTRL_REG, ctrl | DUMP_CTRL_TRIGGER);
-    REG_WRITE(DUMP_CTRL_REG, ctrl);
-    while (!(REG_READ(DUMP_CTRL_REG) & DUMP_CTRL_DONE) &&
-           esp_timer_get_time() - start < CAPTURE_TIMEOUT_US) {
-    }
-    bool done = (REG_READ(DUMP_CTRL_REG) & DUMP_CTRL_DONE) != 0;
-    REG_WRITE(DUMP_CTRL_REG, 0);
-    REG_WRITE(SRAM_OWNER_REG, owner);
+    bool complete = capture_into(words, n, rate_bits(self->sample_rate));
+
     if (self->bandwidth >= 0) {
         for (unsigned j = 0; j < 2; j++) {
-            rom_chip_i2c_writeReg(RX_FILTER_BLOCK, RX_FILTER_HOST, RX_FILTER_REG + j, filter_saved[j]);
+            filter_write(j, filter_saved[j]);
         }
     }
 
-    if (!done || DUMP_BUFFER[n - 1] == UNWRITTEN || DUMP_BUFFER[0] == UNWRITTEN) {
+    if (!complete) {
+        capture_buffer_free(words);
         mp_raise_OSError(MP_ETIMEDOUT);
     }
 
@@ -425,24 +344,26 @@ static mp_obj_t espsdr_receiver_capture(mp_obj_t self_in, mp_obj_t buffer_in) {
     if (typecode == 'h') {
         int16_t *out = bufinfo.buf;
         for (size_t i = 0; i < n; i++) {
-            uint32_t w = DUMP_BUFFER[i];
+            uint32_t w = words[i];
             out[2 * i] = (int16_t)((int32_t)(w << 12) >> 22);
             out[2 * i + 1] = (int16_t)((int32_t)(w << 22) >> 22);
         }
     } else if (typecode == 'L' || typecode == 'I') {
         uint32_t *out = bufinfo.buf;
         for (size_t i = 0; i < n; i++) {
-            out[i] = DUMP_BUFFER[i];
+            out[i] = words[i];
         }
     } else {
         uint8_t *out = bufinfo.buf;
         for (size_t i = 0; i < n; i++) {
-            uint32_t w = DUMP_BUFFER[i];
+            uint32_t w = words[i];
             out[2 * i] = (w >> 12) & 0xff;
             out[2 * i + 1] = (w >> 2) & 0xff;
         }
     }
-    return MP_OBJ_NEW_SMALL_INT((DUMP_BUFFER[n - 1] >> 20) & 0xff);
+    mp_int_t gain = (words[n - 1] >> 20) & 0xff;
+    capture_buffer_free(words);
+    return MP_OBJ_NEW_SMALL_INT(gain);
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(espsdr_receiver_capture_obj, espsdr_receiver_capture);
 
@@ -472,7 +393,7 @@ MP_PROPERTY_GETSET(espsdr_receiver_frequency_obj,
     (mp_obj_t)&espsdr_receiver_set_frequency_obj);
 
 //|     sample_rate: int
-//|     """Samples per second: 80_000_000, 40_000_000 or 16_000_000."""
+//|     """Samples per second, one of the rates the constructor takes."""
 //|
 static mp_obj_t espsdr_receiver_get_sample_rate(mp_obj_t self_in) {
     espsdr_receiver_obj_t *self = MP_OBJ_TO_PTR(self_in);
@@ -510,7 +431,7 @@ static mp_obj_t espsdr_receiver_set_gain(mp_obj_t self_in, mp_obj_t value) {
     espsdr_receiver_obj_t *self = MP_OBJ_TO_PTR(self_in);
     check_for_deinit(self);
     self->gain = value == mp_const_none ? -1 :
-        mp_arg_validate_int_range(mp_obj_get_int(value), 0, 82, MP_QSTR_gain);
+        mp_arg_validate_int_range(mp_obj_get_int(value), 0, GAIN_MAX, MP_QSTR_gain);
     configure_or_raise(self);
     return mp_const_none;
 }
@@ -521,9 +442,10 @@ MP_PROPERTY_GETSET(espsdr_receiver_gain_obj,
     (mp_obj_t)&espsdr_receiver_set_gain_obj);
 
 //|     bandwidth: Optional[int]
-//|     """Analog filter width in MHz (13 to 69, 0 for the widest), applied for
-//|     the length of each capture only; None keeps the PHY's own, about 20 MHz.
-//|     Approximate: the curve was measured on one board."""
+//|     """Analog filter width in MHz (13 to 69 on the ESP32-S3, 11 to 48 on the
+//|     ESP32-C5, 0 for the widest), applied for the length of each capture
+//|     only; None keeps the PHY's own, about 20 MHz. Approximate: the curve was
+//|     measured on one board. On the ESP32-C5 setting it retunes the radio."""
 //|
 static mp_obj_t espsdr_receiver_get_bandwidth(mp_obj_t self_in) {
     espsdr_receiver_obj_t *self = MP_OBJ_TO_PTR(self_in);
@@ -536,6 +458,7 @@ static mp_obj_t espsdr_receiver_set_bandwidth(mp_obj_t self_in, mp_obj_t value) 
     espsdr_receiver_obj_t *self = MP_OBJ_TO_PTR(self_in);
     check_for_deinit(self);
     self->bandwidth = validate_bandwidth(value);
+    configure_or_raise(self);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(espsdr_receiver_set_bandwidth_obj, espsdr_receiver_set_bandwidth);

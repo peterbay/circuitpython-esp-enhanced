@@ -379,21 +379,24 @@ FORK_BINARY_BLOBS += esp_new_jpeg/lib/$(IDF_TARGET)/libesp_new_jpeg.a
 endif
 
 # espsdr: raw I/Q snapshots from the Wi-Fi receiver through the undocumented
-# dump engine ESP-SDR describes. ESP32-S3 only for now: the register addresses
-# and the reserved SRAM bank are per chip, and on the C5 CircuitPython's own
-# static data sits in the bank the engine writes. Off unless a board asks. The
-# manual gain call is in librftest, which the IDF links only for
-# CONFIG_ESP_PHY_ENABLE_CERT_TEST; added here instead, so the linker takes the
-# one object it needs and nothing else of the certification code comes along.
+# dump engine ESP-SDR describes. ESP32-S3 and ESP32-C5: the register addresses
+# and the SRAM the engine writes are per chip (bindings/espsdr/<chip>.h). Off
+# unless a board asks. On the S3 the manual gain call is in librftest, which the
+# IDF links only for CONFIG_ESP_PHY_ENABLE_CERT_TEST; added here instead, so the
+# linker takes the one object it needs and nothing else of the certification
+# code comes along. The C5 does without: there the object holding the call
+# drags in a mac_init() that collides with Zigbee's.
 CIRCUITPY_ESPSDR ?= 0
 CFLAGS += -DCIRCUITPY_ESPSDR=$(CIRCUITPY_ESPSDR)
 ifneq ($(CIRCUITPY_ESPSDR),0)
-ifneq ($(IDF_TARGET),esp32s3)
-$(error CIRCUITPY_ESPSDR is only implemented for the esp32s3)
+ifeq ($(filter $(IDF_TARGET),esp32s3 esp32c5),)
+$(error CIRCUITPY_ESPSDR is only implemented for the esp32s3 and esp32c5)
 endif
 ifeq ($(CIRCUITPY_WIFI),0)
 $(error CIRCUITPY_ESPSDR needs CIRCUITPY_WIFI)
 endif
 SRC_C += $(wildcard bindings/espsdr/*.c)
+ifeq ($(IDF_TARGET),esp32s3)
 FORK_BINARY_BLOBS += esp-idf/components/esp_phy/lib/$(IDF_TARGET)/librftest.a
+endif
 endif
