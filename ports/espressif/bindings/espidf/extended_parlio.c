@@ -20,6 +20,9 @@
 #include "shared-bindings/util.h"
 #include "shared/runtime/context_manager_helpers.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_PARLIO
+
 #include "driver/parlio_rx.h"
 #include "driver/parlio_tx.h"
 #include "esp_heap_caps.h"
@@ -28,8 +31,6 @@
 // into, memory by DMA at a fixed rate. Out, a pattern generator; in, a
 // logic analyser. The DMA works from internal RAM, so data is copied between
 // it and the Python buffer, which may be in PSRAM.
-
-#if CIRCUITPY_ESPIDF_PARLIO
 
 #define PARLIO_MAX_PINS (8)
 // One RX frame is at most 65535 bytes; TX is kept to the same so that one

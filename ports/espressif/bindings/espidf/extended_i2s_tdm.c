@@ -19,13 +19,14 @@
 #include "shared/runtime/context_manager_helpers.h"
 #include "supervisor/shared/tick.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_I2S_TDM
+
 #include "driver/i2s_tdm.h"
 
 // I2S in TDM mode: up to 16 slots per frame on one data line, for microphone
 // arrays and multichannel codecs, where audiobusio stops at two. Raw frames
 // in and out of buffers, interleaved slot by slot, as the codec defines them.
-
-#if CIRCUITPY_ESPIDF_I2S_TDM
 
 typedef struct {
     mp_obj_base_t base;

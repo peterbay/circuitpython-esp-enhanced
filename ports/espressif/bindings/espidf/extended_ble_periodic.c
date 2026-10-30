@@ -24,6 +24,9 @@
 #include "supervisor/shared/tick.h"
 
 #include "freertos/FreeRTOS.h"
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_BLE_PERIODIC
+
 #include "host/ble_gap.h"
 #include "host/ble_hs.h"
 #include "os/os_mbuf.h"
@@ -35,8 +38,6 @@
 //
 // The advertiser is extended advertising instance 1; _bleio's own
 // advertising uses instance 0, so both can run.
-
-#if CIRCUITPY_ESPIDF_BLE_PERIODIC
 
 #define PERIODIC_INSTANCE (1)
 #define PERIODIC_SID (1)

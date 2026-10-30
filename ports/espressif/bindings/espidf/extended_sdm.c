@@ -17,6 +17,9 @@
 #include "shared-bindings/util.h"
 #include "shared/runtime/context_manager_helpers.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_SDM
+
 #include "driver/gpio.h"
 #include "driver/sdm.h"
 #include "hal/sdm_caps.h"
@@ -25,8 +28,6 @@
 // time it is high follows `density`. Through an RC low-pass filter that is a
 // cheap DAC on any pin -- the S3 has no DAC at all -- and straight into an LED
 // it dims without the PWM flicker.
-
-#if CIRCUITPY_ESPIDF_SDM
 
 // Eight channels on the S3, four on the C5.
 #define SDM_SLOTS (SDM_CAPS_GET(INST_NUM) * SDM_CAPS_GET(CHANS_PER_INST))

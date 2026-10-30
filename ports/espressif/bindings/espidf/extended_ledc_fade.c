@@ -15,14 +15,15 @@
 #include "shared-bindings/pwmio/PWMOut.h"
 #include "shared-bindings/util.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_LEDC_FADE
+
 #include "driver/ledc.h"
 
 // The LEDC's hardware fade on a pwmio.PWMOut: the peripheral steps the duty
 // towards a target by itself, so a dimming LED changes smoothly without the
 // program setting it again and again. PWMOut reads its duty back from the
 // hardware, so duty_cycle follows the fade.
-
-#if CIRCUITPY_ESPIDF_LEDC_FADE
 
 static bool _installed;
 static volatile bool _fading[LEDC_CHANNEL_MAX];

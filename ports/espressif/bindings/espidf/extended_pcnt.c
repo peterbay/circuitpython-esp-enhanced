@@ -19,6 +19,9 @@
 #include "shared-bindings/util.h"
 #include "shared/runtime/context_manager_helpers.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_PCNT
+
 #include "driver/pulse_cnt.h"
 
 // The pulse counter as such: up to two channels per unit, each counting the
@@ -26,8 +29,6 @@
 // reversing or holding that -- the building blocks of direction counting and
 // quadrature decoding, which countio and rotaryio use in two fixed ways. Adds
 // the glitch filter and watch points, whose crossings are queued as events.
-
-#if CIRCUITPY_ESPIDF_PCNT
 
 #define PCNT_EVENTS (16)
 #define PCNT_OPEN_MAX (8)

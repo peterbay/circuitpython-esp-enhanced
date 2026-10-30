@@ -17,6 +17,9 @@
 #include "shared-bindings/util.h"
 #include "shared/runtime/context_manager_helpers.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_MCPWM
+
 #include "driver/mcpwm_cap.h"
 #include "hal/mcpwm_ll.h"
 
@@ -24,8 +27,6 @@
 // each edge of an input, so edge times come with the timer's resolution
 // (12.5 ns at 80 MHz) whatever the interrupt latency. One capture timer per
 // MCPWM group, shared by its three channels.
-
-#if CIRCUITPY_ESPIDF_MCPWM
 
 #define CAP_GROUPS (MCPWM_LL_GROUP_NUM)
 #define CAP_CHANNELS (MCPWM_LL_GROUP_NUM * MCPWM_LL_CAPTURE_CHANNELS_PER_TIMER)

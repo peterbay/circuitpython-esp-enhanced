@@ -17,6 +17,9 @@
 #include "shared-bindings/util.h"
 #include "shared/runtime/context_manager_helpers.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_MCPWM
+
 #include "driver/gpio.h"
 #include "driver/mcpwm_prelude.h"
 #include "hal/mcpwm_ll.h"
@@ -24,8 +27,6 @@
 // The MCPWM peripheral, used for what pwmio cannot do: a complementary pair of
 // outputs with dead time between them, the gate signals of a half bridge.
 // One timer, operator, comparator and one or two generators per object.
-
-#if CIRCUITPY_ESPIDF_MCPWM
 
 // Fixed, so that the timers sharing a group never ask for different
 // prescalers: 12.5 ns steps for duty and dead time. With a 16-bit period the

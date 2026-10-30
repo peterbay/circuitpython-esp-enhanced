@@ -21,6 +21,9 @@
 #include "shared/runtime/context_manager_helpers.h"
 #include "supervisor/shared/tick.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_ESPIDF_RMT
+
 #include "driver/rmt_rx.h"
 #include "driver/rmt_tx.h"
 #include "esp_heap_caps.h"
@@ -31,8 +34,6 @@
 // channel clock. pulseio uses it at a fixed 1 us; this exposes the resolution
 // (up to 80 MHz), the hardware's own repeat of a sequence, and the receiver's
 // glitch filter and end-of-frame threshold.
-
-#if CIRCUITPY_ESPIDF_RMT
 
 #define RMT_MAX_TICKS (32767)
 // More than either chip has channels of one direction.

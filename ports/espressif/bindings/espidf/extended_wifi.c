@@ -19,14 +19,15 @@
 #include "bindings/espidf/extended.h"
 #include "supervisor/port.h"
 
+// The headers below exist only where the switch brings them in.
+#if CIRCUITPY_WIFI
+
 #include "esp_eap_client.h"
 #include "esp_event.h"
 #include "esp_smartconfig.h"
 #include "esp_wifi.h"
 // esp_wifi_set_sleep_min_active_time().
 #include "esp_private/wifi.h"
-
-#if CIRCUITPY_WIFI
 
 // put a vendor-specific information element into the frames the
 // radio sends as an AP, so nearby devices see custom data in the beacon without
