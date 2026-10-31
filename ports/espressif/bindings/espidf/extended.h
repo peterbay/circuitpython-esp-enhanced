@@ -165,6 +165,13 @@ extern const mp_obj_type_t espidf_ble_hid_type;
 void espidf_ble_hid_reset(void);
 #endif
 
+// extended_ble_l2cap.c
+#if CIRCUITPY_ESPIDF_BLE_L2CAP
+extern const mp_obj_type_t espidf_l2cap_server_type;
+extern const mp_obj_type_t espidf_l2cap_channel_type;
+void espidf_ble_l2cap_reset(void);
+#endif
+
 // extended_nan.c
 #if CIRCUITPY_ESPIDF_NAN
 extern const mp_obj_type_t espidf_wifi_aware_type;

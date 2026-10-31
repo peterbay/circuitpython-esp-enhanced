@@ -277,6 +277,20 @@ INC += -isystem esp-idf/components/esp_hid/include
 FORK_IDF_COMPONENTS_LINK += esp_hid
 endif
 
+# espidf.L2CAPServer and L2CAPChannel: L2CAP connection-oriented channels,
+# messages over a BLE connection without GATT. NimBLE compiles them in only
+# with a channel count, which the fragment sets. The credits are handed out
+# here, through NimBLE's private headers. Off unless a board asks for it.
+CIRCUITPY_ESPIDF_BLE_L2CAP ?= 0
+CFLAGS += -DCIRCUITPY_ESPIDF_BLE_L2CAP=$(CIRCUITPY_ESPIDF_BLE_L2CAP)
+ifneq ($(CIRCUITPY_ESPIDF_BLE_L2CAP),0)
+ifeq ($(CIRCUITPY_BLEIO_NATIVE),0)
+$(error CIRCUITPY_ESPIDF_BLE_L2CAP needs CIRCUITPY_BLEIO_NATIVE)
+endif
+INC += -isystem esp-idf/components/bt/host/nimble/nimble/nimble/host/src
+FORK_SDKCONFIGS := $(FORK_SDKCONFIGS)esp-idf-config/sdkconfig-ble-l2cap.defaults;
+endif
+
 # espidf.WiFiAware: Wi-Fi Aware (NAN) discovery and messages. The IDF builds
 # its NAN app only with NAN synchronisation configured, which the fragment
 # does. Chips with SOC_WIFI_NAN_SUPPORT only (here the C5, not the S3). Off

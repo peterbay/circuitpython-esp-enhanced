@@ -1,0 +1,23 @@
+#
+# Espressif IoT Development Framework Configuration
+#
+#
+# Component config
+#
+#
+# Bluetooth
+#
+# CIRCUITPY-CHANGE: L2CAP connection-oriented channels, for espidf.L2CAPServer
+# and L2CAPChannel; see fork.mk. Two servers and two channels.
+CONFIG_BT_NIMBLE_L2CAP_COC_MAX_NUM=2
+# A channel's frames (MPS) are these blocks less 8 bytes: 247 fills one
+# 251-byte link layer packet, where the default 128 left 120.
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_SIZE=255
+# A message being sent sits in these blocks, beside the frames cut from it:
+# with the default 24 a message of 8 KB ran out of them (NimBLE error 6).
+CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=48
+# end of Bluetooth
+
+# end of Component config
+
+# end of Espressif IoT Development Framework Configuration
