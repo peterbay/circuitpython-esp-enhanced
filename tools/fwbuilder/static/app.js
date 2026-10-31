@@ -167,10 +167,14 @@ function infoButton(m) {
 
 async function loadBoards() {
   state.boards = await api("/api/boards");
-  const chips = [...new Set(state.boards.map((b) => b.chip))].sort();
+  // One group per port: the whole port first, then its chips.
+  const ports = [...new Set(state.boards.map((b) => b.port))];
   const chipSel = $("#chip-filter");
   chipSel.replaceChildren(el("option", { value: "" }, t("board.allChips")),
-    ...chips.map((c) => el("option", { value: c }, c)));
+    ...ports.map((p) => el("optgroup", { label: p },
+      el("option", { value: "port:" + p }, t("board.allOfPort", p)),
+      ...[...new Set(state.boards.filter((b) => b.port === p).map((b) => b.chip))].sort()
+        .map((c) => el("option", { value: c }, c)))));
   chipSel.value = recall("chip") || "";
   const last = recall("board");
   state.board = last && state.boards.some((b) => b.id === last) ? last : null;
@@ -181,7 +185,8 @@ async function loadBoards() {
 function filteredBoards() {
   const q = $("#board-search").value.trim().toLowerCase();
   const chip = $("#chip-filter").value;
-  return state.boards.filter((b) => (!chip || b.chip === chip) &&
+  const matches = (b) => !chip || (chip.startsWith("port:") ? b.port === chip.slice(5) : b.chip === chip);
+  return state.boards.filter((b) => matches(b) &&
     (!q || b.name.toLowerCase().includes(q) || b.id.includes(q)));
 }
 
@@ -196,11 +201,14 @@ function renderBoardOptions() {
   if (!boards.length) sel.append(el("option", { value: "", disabled: true }, t("board.none")));
   if (state.board) sel.value = state.board;
   $("#chip-filter").options[0].textContent = t("board.allChips");
+  for (const o of $("#chip-filter").options) {
+    if (o.value.startsWith("port:")) o.textContent = t("board.allOfPort", o.value.slice(5));
+  }
   const shown = filteredBoards().length;
   $("#board-search").title = t("board.count", shown);
   if (state.info) {
     const b = state.boards.find((x) => x.id === state.board);
-    $("#board-info").textContent = `${b ? b.target : state.info.target} · ` +
+    $("#board-info").textContent = `${state.info.port} · ${b ? b.target : state.info.target} · ` +
       (state.info.uf2 ? t("board.uf2") : t("board.noUf2")) + ` · ${t("board.count", shown)}`;
   }
 }
@@ -348,7 +356,7 @@ function setStatus(job) {
 function logLine(text) {
   const log = $("#log");
   const cls = /error|Error|failed|FAILED|overflow/.test(text) ? "err"
-    : /bytes free|saved as|Hash of data verified|Hard resetting/.test(text) ? "ok" : "";
+    : /bytes free|saved as|Hash of data verified|Hard resetting|bootloader drive|copied;/.test(text) ? "ok" : "";
   log.append(cls ? el("span", { class: cls }, text + "\n") : text + "\n");
   if ($("#log-follow").checked) log.scrollTop = log.scrollHeight;
 }
@@ -408,7 +416,7 @@ function renderFirmware(fw) {
     el("div", { class: "fw-head" },
       el("span", { class: "title" }, board ? board.name : fw.board),
       fw.profile ? el("span", { class: "tag on" }, fw.profile) : "",
-      el("span", { class: "meta" }, `${fw.created.replace("T", " ")} · ${fw.target} · git ${fw.git}`)),
+      el("span", { class: "meta" }, `${fw.created.replace("T", " ")} · ${fw.port || "espressif"} · ${fw.target} · git ${fw.git}`)),
     fw.flash_total ? el("div", { class: "meta hint" },
       t("fw.flashUse", fmtBytes(used), fmtBytes(fw.flash_total), fmtBytes(fw.flash_free))) : "",
     fw.flash_total ? el("div", { class: "bar" + (pct > 97 ? " full" : "") }, el("div", { style: `width:${pct}%` })) : "",
@@ -432,23 +440,53 @@ async function deleteFirmware(fw) {
 
 let flashTarget = null;
 
+// Firmware of the ports other than espressif goes in as a .uf2 copied to the
+// bootloader drive, not through esptool.
+const isUf2Flash = (fw) => (fw.port || "espressif") !== "espressif";
+
 function openFlash(fw) {
   flashTarget = fw;
+  const uf2 = isUf2Flash(fw);
   $("#flash-what").textContent = `${fw.id} (${fw.target})`;
   const sel = $("#flash-port");
   sel.replaceChildren(...state.ports.map((p) => el("option", { value: p.port }, `${p.port}  ${p.desc || ""}`)));
   sel.value = $("#port").value;
   $("#flash-erase").checked = false;
+  $("#flash-erase-row").hidden = uf2;
+  $("#flash-uf2").hidden = !uf2;
+  $("#flash-hint").textContent = t(uf2 ? "flash.hintUf2" : "flash.hint");
+  if (uf2) loadDrives();
   $("#flash-dialog").showModal();
+}
+
+async function loadDrives() {
+  const sel = $("#flash-drive");
+  // CircuitPython sends an nRF board to its serial-only DFU, which has no drive.
+  const touch = flashTarget && flashTarget.port !== "nordic";
+  sel.replaceChildren(touch ? el("option", { value: "" }, t("flash.driveTouch"))
+    : el("option", { value: "", disabled: true }, t("flash.driveNone")));
+  let drives;
+  try {
+    drives = await api("/api/uf2drives");
+  } catch (e) {
+    sel.append(el("option", { value: "", disabled: true }, t("flash.drivesFailed", e.message)));
+    return;
+  }
+  sel.append(...drives.map((d) => el("option", { value: d.drive }, `${d.drive}  ${d.board}`)));
+  // A board already in its bootloader is the likely target.
+  if (drives.length === 1) sel.value = drives[0].drive;
 }
 
 async function doFlash() {
   const port = $("#flash-port").value;
-  if (!flashTarget || !port) return;
-  remember("port", port);
-  $("#port").value = port;
+  const drive = isUf2Flash(flashTarget || {}) ? $("#flash-drive").value : "";
+  if (!flashTarget || (!port && !drive)) return;
+  if (port) {
+    remember("port", port);
+    $("#port").value = port;
+  }
   const job = await api("/api/flash", {
-    method: "POST", body: { firmware: flashTarget.id, port, erase: $("#flash-erase").checked },
+    method: "POST", body: { firmware: flashTarget.id, port, drive, erase: $("#flash-erase").checked },
   }).catch((e) => alert(e.message));
   if (job) { followJob(job); showView("log"); }
 }
@@ -536,6 +574,7 @@ $("#fw-refresh").addEventListener("click", loadFirmwares);
 $("#ports-refresh").addEventListener("click", loadPorts);
 $("#port").addEventListener("change", (e) => remember("port", e.target.value));
 $("#probe").addEventListener("click", probeBoard);
+$("#flash-drives-refresh").addEventListener("click", loadDrives);
 $("#flash-dialog").addEventListener("close", () => { if ($("#flash-dialog").returnValue === "ok") doFlash(); });
 document.addEventListener("scroll", hideTooltip, true);
 

@@ -124,9 +124,13 @@
   <form method="dialog">
     <h3 data-i18n="flash.title"></h3>
     <p id="flash-what"></p>
+    <div class="row" id="flash-uf2" hidden>
+      <label class="field"><span data-i18n="flash.drive"></span> <select id="flash-drive"></select></label>
+      <button type="button" id="flash-drives-refresh" class="secondary" data-i18n-title="flash.drivesRefresh">↻</button>
+    </div>
     <label class="field"><span data-i18n="port.label"></span> <select id="flash-port"></select></label>
-    <label class="check"><input type="checkbox" id="flash-erase"> <span data-i18n="flash.erase"></span></label>
-    <p class="hint" data-i18n="flash.hint"></p>
+    <label class="check" id="flash-erase-row"><input type="checkbox" id="flash-erase"> <span data-i18n="flash.erase"></span></label>
+    <p class="hint" id="flash-hint"></p>
     <div class="row end">
       <button value="cancel" class="secondary" data-i18n="common.cancel"></button>
       <button value="ok" class="primary" data-i18n="flash.go"></button>

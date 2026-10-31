@@ -283,6 +283,10 @@
   "cs": "espidf.BLEHIDDevice: Bluetooth LE klávesnice, myši a ovladače připojené k desce (HID over GATT), párování s passkey (~7 kB, ~4 kB RAM).",
   "en": "espidf.BLEHIDDevice: Bluetooth LE keyboards, mice and controllers connected to the board (HID over GATT), pairing with a passkey (~7 KB, ~4 KB RAM)."
  },
+ "ESPIDF_BLE_L2CAP": {
+  "cs": "espidf.L2CAPServer a L2CAPChannel: L2CAP kanály přes BLE spojení, zprávy až 4 kB s řízením toku, bez ztrát i při pomalém čtení (~90 kB/s na 2M PHY; ~8 kB flash, ~11 kB RAM pro BLE a 8 kB na kanál).",
+  "en": "espidf.L2CAPServer and L2CAPChannel: L2CAP channels over a BLE connection, messages up to 4 KB with flow control, nothing lost to a slow reader (~90 KB/s on the 2M PHY; ~8 KB of flash, ~11 KB of RAM for BLE and 8 KB per channel)."
+ },
  "ESPIDF_BLE_MESH": {
   "cs": "espidf.BLEMesh: Bluetooth Mesh, provisioner a uzly, zprávy přes více skoků (~143 kB).",
   "en": "espidf.BLEMesh: Bluetooth Mesh, provisioner and nodes, messages over several hops (~143 KB)."

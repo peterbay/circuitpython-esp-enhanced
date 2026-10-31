@@ -157,7 +157,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .6); }
 
 /* board search and chip filter */
 .row #board-search { flex: 1; }
-#chip-filter { width: 92px; }
+#chip-filter { width: 120px; }
 .card .row + .field { margin-top: 8px; }
 
 /* the "i" next to each switch, and its tooltip */
@@ -175,6 +175,11 @@ dialog::backdrop { background: rgba(0, 0, 0, .6); }
 .module.blocked { opacity: .55; }
 .module.blocked .switch span { cursor: not-allowed; }
 .module .why { color: var(--warn); font-size: 12px; }
+
+/* UF2 drive choice in the flash dialog */
+#flash-uf2[hidden], #flash-erase-row[hidden] { display: none; }
+#flash-uf2 .field { flex: 1; }
+#flash-uf2 button { margin-top: 12px; }
 
 /* board info dialog */
 #probe-dialog { width: min(620px, 94vw); }

@@ -3,14 +3,16 @@
 #
 # SPDX-License-Identifier: MIT
 """Firmware builder: a small web app to pick a board and its modules, build
-CircuitPython for the espressif port, keep the results and flash them.
+CircuitPython for the espressif, raspberrypi, atmel-samd and nordic ports,
+keep the results and flash them.
 
 Run it from WSL in the repository and open http://localhost:8080:
 
     python3 tools/fwbuilder/server.py
 
-Only the standard library. Flashing goes through the Windows Python and its
-esptool, which see the COM ports that WSL cannot.
+Only the standard library. Flashing goes through the Windows Python, which sees
+the COM ports and the UF2 drives that WSL cannot: esptool for espressif, a copy
+to the bootloader drive for the others.
 """
 
 import argparse
@@ -29,13 +31,27 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 REPO = Path(__file__).resolve().parents[2]
-PORT_DIR = REPO / "ports" / "espressif"
+ESP_DIR = REPO / "ports" / "espressif"
 STATIC = Path(__file__).resolve().parent / "static"
 DATA = Path(os.environ.get("FWB_DATA", Path.home() / "cp-fwbuilder"))
 FIRMWARE_DIR = DATA / "firmware"
 PROFILES_FILE = DATA / "profiles.json"
 WIN_PYTHON = os.environ.get("FWB_WIN_PYTHON", "/mnt/c/Python312/python.exe")
+ARM_BIN = os.environ.get("FWB_ARM_BIN", "/opt/arm-gcc14/bin")
 BUILD_PREFIX = "build-fwb-"
+
+# The ports offered, and for the ARM ones the board variables that name the
+# chip: the first for the chip filter, the second for the exact part.
+PORTS = ("espressif", "raspberrypi", "atmel-samd", "nordic")
+CHIP_VARIABLES = {
+    "raspberrypi": ("CHIP_VARIANT", "CHIP_VARIANT"),
+    "atmel-samd": ("CHIP_FAMILY", "CHIP_VARIANT"),
+    "nordic": ("MCU_CHIP", "MCU_CHIP"),
+}
+
+
+def port_dir(port):
+    return REPO / "ports" / port
 
 # Switches the fork adds; shown as their own group.
 FORK_SWITCHES = {
@@ -43,7 +59,9 @@ FORK_SWITCHES = {
     "CIRCUITPY_ESPIDF_RMT", "CIRCUITPY_ESPIDF_PCNT", "CIRCUITPY_ESPIDF_I2S_TDM", "CIRCUITPY_ESPIDF_LEDC_FADE",
     "CIRCUITPY_ESPIDF_ANA_CMPR", "CIRCUITPY_ESPIDF_ETM", "CIRCUITPY_ESPIDF_PARLIO",
     "CIRCUITPY_ESPIDF_BITSCRAMBLER", "CIRCUITPY_ESPIDF_LPCORE", "CIRCUITPY_ESPIDF_BLE_PERIODIC",
-    "CIRCUITPY_ESPIDF_BLE_MESH", "CIRCUITPY_ESPIDF_NAN", "CIRCUITPY_ESPSDR", "CIRCUITPY_IEEE802154",
+    "CIRCUITPY_ESPIDF_BLE_MESH", "CIRCUITPY_ESPIDF_BLE_HID", "CIRCUITPY_ESPIDF_BLE_L2CAP",
+    "CIRCUITPY_ESPIDF_NAN", "CIRCUITPY_ESPSDR",
+    "CIRCUITPY_IEEE802154",
     "CIRCUITPY_ZIGBEE", "CIRCUITPY_TTFRAST", "CIRCUITPY_HASHLIB_EXTENDED", "CIRCUITPY_PARTITION_DISK",
     "CIRCUITPY_USB_TMC", "CIRCUITPY_USB_NET",
 }
@@ -52,23 +70,32 @@ FORK_SWITCHES = {
 # the name without CIRCUITPY_.
 DESCRIPTIONS = json.loads((Path(__file__).resolve().parent / "descriptions.json").read_text(encoding="utf-8"))
 
-MK_FILES = [REPO / "py" / "circuitpy_mpconfig.mk", PORT_DIR / "mpconfigport.mk", PORT_DIR / "fork.mk"]
+def mk_files(port):
+    files = [REPO / "py" / "circuitpy_mpconfig.mk", port_dir(port) / "mpconfigport.mk", port_dir(port) / "fork.mk"]
+    return [f for f in files if f.exists()]
+
 
 DUMP_RULE = ("fwb-dump: ; @$(foreach v,$(sort $(filter CIRCUITPY_% IDF_TARGET UF2_BOOTLOADER,"
              "$(.VARIABLES))),$(info FWB $(v)=$($(v))))")
 
 
-def run_make(board, overrides, *targets, eval_rule=None):
-    """Runs make in the port with the IDF environment and returns stdout."""
+def toolchain(port):
+    """The shell prefix that puts the port's compiler on the PATH."""
+    if port == "espressif":
+        return ". esp-idf/export.sh >/dev/null 2>&1 && "
+    return f'export PATH="{ARM_BIN}:$PATH" && ' if Path(ARM_BIN).is_dir() else ""
+
+
+def run_make(port, board, overrides, *targets, eval_rule=None):
+    """Runs make in the port with its toolchain and returns stdout."""
     args = " ".join(f"{k}={int(v)}" for k, v in sorted(overrides.items()))
     extra = f"--eval='{eval_rule}'" if eval_rule else ""
-    cmd = (f". esp-idf/export.sh >/dev/null 2>&1; "
-           f"make BOARD={board} {args} {extra} {' '.join(targets)} 2>/dev/null")
-    return subprocess.run(["bash", "-c", cmd], cwd=PORT_DIR, capture_output=True, text=True).stdout
+    cmd = f"{toolchain(port)}make BOARD={board} {args} {extra} {' '.join(targets)} 2>/dev/null"
+    return subprocess.run(["bash", "-c", cmd], cwd=port_dir(port), capture_output=True, text=True).stdout
 
 
-def board_variables(board, overrides=None):
-    out = run_make(board, overrides or {}, "fwb-dump", eval_rule=DUMP_RULE)
+def board_variables(port, board, overrides=None):
+    out = run_make(port, board, overrides or {}, "fwb-dump", eval_rule=DUMP_RULE)
     variables = {}
     for line in out.splitlines():
         if line.startswith("FWB "):
@@ -77,16 +104,20 @@ def board_variables(board, overrides=None):
     return variables
 
 
-def module_names():
+def binding_dirs(port):
+    return [d for d in (REPO / "shared-bindings", port_dir(port) / "bindings") if d.is_dir()]
+
+
+def module_names(port):
     names = set()
-    for d in (REPO / "shared-bindings", PORT_DIR / "bindings"):
+    for d in binding_dirs(port):
         names.update(p.name.lower() for p in d.iterdir() if p.is_dir())
     return names
 
 
-def module_docstring(short):
+def module_docstring(short, port):
     """The first paragraph of a module's docstring, from its bindings."""
-    for d in (REPO / "shared-bindings", PORT_DIR / "bindings"):
+    for d in binding_dirs(port):
         f = d / short / "__init__.c"
         if not f.exists():
             continue
@@ -113,10 +144,10 @@ def module_docstring(short):
     return ""
 
 
-def mk_comment(name):
+def mk_comment(name, port):
     """The comment right above a switch's first definition. Short ones are
     section headings (\"Modules\", \"Has no USB\") rather than descriptions."""
-    for f in MK_FILES:
+    for f in mk_files(port):
         lines = f.read_text(errors="ignore").splitlines()
         for i, line in enumerate(lines):
             if re.match(rf"^{name}\s*\??=", line):
@@ -152,13 +183,15 @@ SOC_REQUIRED = {
     "CIRCUITPY_ESPIDF_LPCORE": "SOC_LP_CORE_SUPPORTED",
     "CIRCUITPY_ESPIDF_BLE_PERIODIC": "SOC_BLE_50_SUPPORTED",
     "CIRCUITPY_ESPIDF_BLE_MESH": "SOC_BLE_MESH_SUPPORTED",
+    "CIRCUITPY_ESPIDF_BLE_HID": "SOC_BLE_SUPPORTED",
+    "CIRCUITPY_ESPIDF_BLE_L2CAP": "SOC_BLE_SUPPORTED",
     "CIRCUITPY_IEEE802154": "SOC_IEEE802154_SUPPORTED",
 }
 
 
 def soc_caps(target):
     """The SOC_* capabilities of a chip that soc_caps.h sets to a number."""
-    f = PORT_DIR / "esp-idf" / "components" / "soc" / target / "include" / "soc" / "soc_caps.h"
+    f = ESP_DIR / "esp-idf" / "components" / "soc" / target / "include" / "soc" / "soc_caps.h"
     caps = {}
     if f.exists():
         for m in re.finditer(r"^#define\s+(SOC_\w+)\s+\(?(\d+)\)?", f.read_text(errors="ignore"), re.M):
@@ -171,7 +204,7 @@ def fork_rules():
     switches it needs (an $(error) under an IDF_TARGET or a ",0" test, or a
     default taken from other switches), and the paths per chip it uses, which
     for prebuilt libraries exist for some chips only."""
-    text = (PORT_DIR / "fork.mk").read_text(errors="ignore").replace("\\\n", " ")
+    text = (ESP_DIR / "fork.mk").read_text(errors="ignore").replace("\\\n", " ")
     rules = {}
 
     def rule(name):
@@ -231,7 +264,7 @@ def requirements(name, variables, switches, caps, rules):
     if cap and not caps.get(cap):
         blocked.append({"kind": "soc", "value": cap})
     for p in r["paths"]:
-        if not (PORT_DIR / p.replace("$(IDF_TARGET)", target)).exists():
+        if not (ESP_DIR / p.replace("$(IDF_TARGET)", target)).exists():
             blocked.append({"kind": "file", "value": p})
     for dep in r["needs"]:
         if dep in switches:
@@ -241,14 +274,16 @@ def requirements(name, variables, switches, caps, rules):
     return blocked, needs
 
 
-def describe_modules(variables):
+def describe_modules(variables, port):
     """The 0/1 switches of a board, grouped: fork additions, modules, other,
     each with its description and what the source says about it. Fork
-    switches also say what keeps them from this board."""
-    modules = module_names()
+    switches also say what keeps them from this board (espressif only: the
+    rules come from its fork.mk and the IDF)."""
+    modules = module_names(port)
     switches = {n for n, v in variables.items() if v in ("0", "1") and n.startswith("CIRCUITPY_")}
-    caps = soc_caps(variables.get("IDF_TARGET", ""))
-    rules = fork_rules()
+    esp = port == "espressif"
+    caps = soc_caps(variables.get("IDF_TARGET", "")) if esp else {}
+    rules = fork_rules() if esp else {}
     result = []
     for name, value in variables.items():
         if value not in ("0", "1") or not name.startswith("CIRCUITPY_"):
@@ -260,34 +295,63 @@ def describe_modules(variables):
             group = "module"
         else:
             group = "other"
-        source = module_docstring(short.lower()) if group == "module" else ""
-        blocked, needs = requirements(name, variables, switches, caps, rules) if group == "fork" else ([], [])
+        source = module_docstring(short.lower(), port) if group == "module" else ""
+        blocked, needs = (requirements(name, variables, switches, caps, rules) if group == "fork" and esp
+                          else ([], []))
         result.append({
             "name": name,
             "value": value == "1",
             "group": group,
             "info": DESCRIPTIONS.get(short, {}),
-            "source": source or mk_comment(name),
+            "source": source or mk_comment(name, port),
             "blocked": blocked,
             "needs": needs,
         })
     return result
 
 
+def mk_value(text, name):
+    m = re.search(rf"^{name}\s*=\s*(\S+)", text, re.M)
+    return m.group(1) if m else ""
+
+
 def board_list():
+    """Every board of the offered ports. Board directory names do not repeat
+    across these ports, so the name alone is the board's id."""
     boards = []
-    for d in sorted((PORT_DIR / "boards").iterdir()):
-        header = d / "mpconfigboard.h"
-        mk = d / "mpconfigboard.mk"
-        if not header.exists() or not mk.exists():
-            continue
-        m = re.search(r'MICROPY_HW_BOARD_NAME\s+"([^"]*)"', header.read_text(errors="ignore"))
-        t = re.search(r"^IDF_TARGET\s*=\s*(\S+)", mk.read_text(errors="ignore"), re.M)
-        target = t.group(1) if t else ""
-        # esp32s3 -> S3, esp32 -> ESP32
-        chip = target[len("esp32"):].upper() or "ESP32" if target.startswith("esp32") else target.upper()
-        boards.append({"id": d.name, "name": m.group(1) if m else d.name, "target": target, "chip": chip})
+    for port in PORTS:
+        for d in sorted((port_dir(port) / "boards").iterdir()):
+            header = d / "mpconfigboard.h"
+            mk = d / "mpconfigboard.mk"
+            if not header.exists() or not mk.exists():
+                continue
+            m = re.search(r'MICROPY_HW_BOARD_NAME\s+"([^"]*)"', header.read_text(errors="ignore"))
+            text = mk.read_text(errors="ignore")
+            if port == "espressif":
+                target = mk_value(text, "IDF_TARGET")
+                # esp32s3 -> S3, esp32 -> ESP32
+                chip = target[len("esp32"):].upper() or "ESP32" if target.startswith("esp32") else target.upper()
+            else:
+                family, part = CHIP_VARIABLES[port]
+                chip = mk_value(text, family).upper()
+                target = mk_value(text, part)
+            boards.append({"id": d.name, "name": m.group(1) if m else d.name, "port": port,
+                           "target": target, "chip": chip})
     return boards
+
+
+def board_port(board):
+    for port in PORTS:
+        if (port_dir(port) / "boards" / board / "mpconfigboard.mk").exists():
+            return port
+    raise ValueError(f"no board {board}")
+
+
+def board_target(port, board, variables):
+    if port == "espressif":
+        return variables.get("IDF_TARGET", "")
+    text = (port_dir(port) / "boards" / board / "mpconfigboard.mk").read_text(errors="ignore")
+    return mk_value(text, CHIP_VARIABLES[port][1])
 
 
 # --- persistent data ----------------------------------------------------------
@@ -383,15 +447,16 @@ def build_dir_name(board, overrides):
 
 
 def do_build(job, board, overrides, profile, clean):
+    port = board_port(board)
+    pdir = port_dir(port)
     build = build_dir_name(board, overrides)
-    if clean and (PORT_DIR / build).exists():
+    if clean and (pdir / build).exists():
         job.add(f"removing {build} for a clean build")
-        shutil.rmtree(PORT_DIR / build)
+        shutil.rmtree(pdir / build)
     args = " ".join(f"{k}={int(v)}" for k, v in sorted(overrides.items()))
-    cmd = (f". esp-idf/export.sh >/dev/null 2>&1 && "
-           f"make BOARD={board} BUILD={build} {args} -j$(nproc)")
+    cmd = f"{toolchain(port)}make BOARD={board} BUILD={build} {args} -j$(nproc)"
     try:
-        code = stream(job, cmd, cwd=PORT_DIR)
+        code = stream(job, cmd, cwd=pdir)
     except Exception as e:  # noqa: BLE001 -- reported to the browser
         job.add(f"error: {e}")
         job.finish("failed")
@@ -401,7 +466,7 @@ def do_build(job, board, overrides, profile, clean):
     if code != 0:
         job.finish("failed", {"exit": code})
         return
-    out = PORT_DIR / build
+    out = pdir / build
     created = datetime.now()
     fw_id = created.strftime("%Y%m%d-%H%M%S-") + board
     dest = FIRMWARE_DIR / fw_id
@@ -411,14 +476,15 @@ def do_build(job, board, overrides, profile, clean):
         if (out / name).exists():
             shutil.copy2(out / name, dest / name)
             files.append({"name": name, "size": (dest / name).stat().st_size})
-    variables = board_variables(board, overrides)
+    variables = board_variables(port, board, overrides)
     free = re.search(r"(-?\d+) bytes free in flash firmware space out of (\d+)", "\n".join(job.lines))
     git = subprocess.run(["git", "describe", "--tags", "--dirty", "--always"], cwd=REPO,
                          capture_output=True, text=True).stdout.strip()
     manifest = {
         "id": fw_id,
         "board": board,
-        "target": variables.get("IDF_TARGET", ""),
+        "port": port,
+        "target": board_target(port, board, variables),
         "profile": profile,
         "created": created.isoformat(timespec="seconds"),
         "git": git,
@@ -438,8 +504,17 @@ def win_path(path):
     return subprocess.run(["wslpath", "-w", str(path)], capture_output=True, text=True).stdout.strip()
 
 
-def do_flash(job, fw_id, port, erase):
+def do_flash(job, fw_id, port, erase, drive):
     manifest = json.loads((FIRMWARE_DIR / fw_id / "manifest.json").read_text())
+    if manifest.get("port", "espressif") != "espressif":
+        if not drive and manifest["port"] == "nordic":
+            # CircuitPython asks the nRF bootloader for its serial-only DFU
+            # (BOOTLOADER_DFU_MAGIC 0x4e), which has no drive.
+            job.add("an nRF board does not show its UF2 drive after the 1200 baud touch; "
+                    "double-press RESET and choose the drive")
+            job.finish("failed")
+            return
+        return flash_uf2(job, fw_id, port, drive)
     image = win_path(FIRMWARE_DIR / fw_id / "firmware.bin")
     base = [WIN_PYTHON, "-m", "esptool", "--chip", manifest["target"], "-p", port]
     try:
@@ -455,6 +530,74 @@ def do_flash(job, fw_id, port, erase):
         job.finish("failed")
         return
     if job.state != "cancelled":
+        job.finish("done" if code == 0 else "failed", {"exit": code})
+
+
+# Run by the Windows Python: the drives with a UF2 bootloader's INFO_UF2.TXT.
+UF2_DRIVES_PY = r"""
+import json, os
+found = []
+for d in os.listdrives():
+    try:
+        with open(os.path.join(d, "INFO_UF2.TXT"), errors="replace") as f:
+            found.append({"drive": d.rstrip("\\"), "info": f.read()})
+    except OSError:
+        pass  # no bootloader there, or an empty card reader
+print(json.dumps(found))
+"""
+
+
+def uf2_drives():
+    code, out = run_win(["-c", UF2_DRIVES_PY], timeout=20)
+    if code != 0:
+        raise OSError(out.strip())
+    drives = json.loads(out)
+    for d in drives:
+        m = re.search(r"^Board-ID:\s*(.+)$", d["info"], re.M) or re.search(r"^Model:\s*(.+)$", d["info"], re.M)
+        d["board"] = m.group(1).strip() if m else ""
+        del d["info"]
+    return drives
+
+
+UF2_WAIT = 20
+
+
+def flash_uf2(job, fw_id, port, drive):
+    """Copies firmware.uf2 to the bootloader drive. Without a drive the board
+    on port is sent there first: CircuitPython resets into its UF2 bootloader
+    when the port is opened at 1200 baud and closed."""
+    image = win_path(FIRMWARE_DIR / fw_id / "firmware.uf2")
+    try:
+        if not drive:
+            before = {d["drive"] for d in uf2_drives()}
+            job.add(f"{port}: 1200 baud touch to restart the board into its UF2 bootloader")
+            code, out = run_win(["-c", "import serial, sys; serial.Serial(sys.argv[1], 1200).close()", port])
+            if code != 0:
+                job.add(out)
+                job.finish("failed")
+                return
+            deadline = time.time() + UF2_WAIT
+            while not drive and time.time() < deadline and job.state == "running":
+                time.sleep(1)
+                new = [d for d in uf2_drives() if d["drive"] not in before]
+                if new:
+                    drive = new[0]["drive"]
+                    job.add(f"bootloader drive {drive} ({new[0]['board']})")
+            if not drive:
+                if job.state == "running":
+                    job.add(f"no UF2 drive appeared in {UF2_WAIT} s; put the board in its bootloader "
+                            "by hand and choose the drive")
+                    job.finish("failed")
+                return
+        code = stream(job, [WIN_PYTHON, "-c", "import shutil, sys; shutil.copyfile(sys.argv[1], sys.argv[2])",
+                            image, drive + "\\firmware.uf2"])
+    except Exception as e:  # noqa: BLE001 -- reported to the browser
+        job.add(f"error: {e}")
+        job.finish("failed")
+        return
+    if job.state != "cancelled":
+        if code == 0:
+            job.add("copied; the board restarts into the new firmware")
         job.finish("done" if code == 0 else "failed", {"exit": code})
 
 
@@ -567,11 +710,14 @@ class Handler(SimpleHTTPRequestHandler):
             if m:
                 board = safe_id(m.group(1))
                 if board not in _module_cache:
-                    variables = board_variables(board)
+                    port = board_port(board)
+                    variables = board_variables(port, board)
                     _module_cache[board] = {
-                        "target": variables.get("IDF_TARGET", ""),
-                        "uf2": variables.get("UF2_BOOTLOADER") == "1",
-                        "modules": describe_modules(variables),
+                        "port": port,
+                        "target": board_target(port, board, variables),
+                        # The other ports always make a .uf2.
+                        "uf2": port != "espressif" or variables.get("UF2_BOOTLOADER") == "1",
+                        "modules": describe_modules(variables, port),
                     }
                 return self.send_json(_module_cache[board])
             if path == "/api/profiles":
@@ -580,6 +726,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(firmware_list())
             if path == "/api/ports":
                 return self.send_json(list_ports())
+            if path == "/api/uf2drives":
+                return self.send_json(uf2_drives())
             if path == "/api/probe":
                 port = parse_qs(urlparse(self.path).query).get("port", [""])[0]
                 if not re.fullmatch(r"COM\d+", port):
@@ -613,16 +761,21 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(job.summary())
             if path == "/api/flash":
                 fw_id = safe_id(body["firmware"])
-                port = body["port"]
-                if not re.fullmatch(r"COM\d+", port):
+                port = body.get("port") or ""
+                drive = body.get("drive") or ""
+                if drive and not re.fullmatch(r"[A-Z]:", drive):
+                    raise ValueError("bad drive")
+                if not drive and not re.fullmatch(r"COM\d+", port):
                     raise ValueError("bad port")
-                job = start_job("flash", f"{fw_id} -> {port}",
-                                lambda j: do_flash(j, fw_id, port, bool(body.get("erase"))))
+                job = start_job("flash", f"{fw_id} -> {drive or port}",
+                                lambda j: do_flash(j, fw_id, port, bool(body.get("erase")), drive))
                 return self.send_json(job.summary())
             if path == "/api/job/cancel":
-                if _job and _job.state == "running" and _job.proc:
+                if _job and _job.state == "running":
+                    # The UF2 flash waits for its drive without a process.
                     _job.state = "cancelled"
-                    _job.proc.terminate()
+                    if _job.proc:
+                        _job.proc.terminate()
                     _job.add("cancelled")
                     _job.finish("cancelled")
                 return self.send_json({"ok": True})
@@ -651,7 +804,7 @@ class Handler(SimpleHTTPRequestHandler):
                 # The build directory goes too once no kept firmware came from it.
                 build = manifest.get("build_dir", "")
                 if build.startswith(BUILD_PREFIX) and not any(f.get("build_dir") == build for f in firmware_list()):
-                    shutil.rmtree(PORT_DIR / build, ignore_errors=True)
+                    shutil.rmtree(port_dir(manifest.get("port", "espressif")) / build, ignore_errors=True)
                 return self.send_json(firmware_list())
             m = re.fullmatch(r"/api/profiles/(.+)", path)
             if m:
