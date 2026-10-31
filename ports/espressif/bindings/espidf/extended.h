@@ -214,4 +214,7 @@ void espidf_csi_reset(void);
 #if CIRCUITPY_BLEIO_NATIVE
 extern const mp_obj_fun_builtin_var_t espidf_ble_advertising_phy_obj;
 extern const mp_obj_fun_builtin_fixed_t espidf_ble_prefer_phy_obj;
+extern const mp_obj_fun_builtin_var_t espidf_ble_connect_phy_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_ble_connection_info_obj;
+extern const mp_obj_fun_builtin_fixed_t espidf_ble_connection_phy_obj;
 #endif

@@ -138,6 +138,12 @@ int bleio_connection_event_cb(struct ble_gap_event *event, void *connection_in) 
             connection->mtu = event->mtu.value;
             break;
         }
+        // CIRCUITPY-CHANGE: kept for espidf.ble_connection_info().
+        case BLE_GAP_EVENT_DATA_LEN_CHG: {
+            connection->data_len_tx = event->data_len_chg.max_tx_octets;
+            connection->data_len_rx = event->data_len_chg.max_rx_octets;
+            break;
+        }
 
         // These events are actually att specific so forward to all registered
         // handlers for them. The handlers themselves decide whether an event

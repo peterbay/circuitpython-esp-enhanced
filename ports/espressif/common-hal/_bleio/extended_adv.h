@@ -14,4 +14,10 @@
 extern uint8_t bleio_extended_adv_primary_phy;
 extern uint8_t bleio_extended_adv_secondary_phy;
 
+// The PHY Adapter.connect() initiates on: BLE_HCI_LE_PHY_1M, or
+// BLE_HCI_LE_PHY_CODED to listen on both and connect long range when the peer
+// advertises there. Set through espidf.ble_connect_phy(); 1M after every soft
+// reset.
+extern uint8_t bleio_extended_connect_phy;
+
 void bleio_extended_adv_reset(void);

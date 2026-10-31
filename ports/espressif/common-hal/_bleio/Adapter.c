@@ -412,6 +412,9 @@ static void _new_connection(uint16_t conn_handle, bool user_owned) {
     connection->pair_status = PAIR_NOT_PAIRED;
     connection->indicate_outstanding = false;
     connection->mtu = 0;
+    // CIRCUITPY-CHANGE: the Bluetooth default until the link layer reports more.
+    connection->data_len_tx = BLE_HCI_SET_DATALEN_TX_OCTETS_MIN;
+    connection->data_len_rx = BLE_HCI_SET_DATALEN_TX_OCTETS_MIN;
     connection->user_owned = user_owned;
 
     if (ble_gattc_exchange_mtu(conn_handle, _mtu_reply, connection) != 0) {
@@ -488,6 +491,18 @@ mp_obj_t common_hal_bleio_adapter_connect(bleio_adapter_obj_t *self, bleio_addre
     _connection_status = BLEIO_HANDLE_INVALID;
 
     const int timeout_ms = SEC_TO_UNITS(timeout, UNIT_1_MS) + 0.5f;
+    #if MYNEWT_VAL(BLE_EXT_ADV)
+    // CIRCUITPY-CHANGE: chosen with espidf.ble_connect_phy(). Listening on 1M as
+    // well still reaches peers that advertise only there.
+    if (bleio_extended_connect_phy == BLE_HCI_LE_PHY_CODED) {
+        CHECK_NIMBLE_ERROR(
+            ble_gap_ext_connect(own_addr_type, &addr,
+                timeout_ms,
+                BLE_GAP_LE_PHY_1M_MASK | BLE_GAP_LE_PHY_CODED_MASK,
+                &conn_params, NULL, &conn_params,
+                _connect_event, self));
+    } else
+    #endif
     CHECK_NIMBLE_ERROR(
         ble_gap_connect(own_addr_type, &addr,
             timeout_ms,

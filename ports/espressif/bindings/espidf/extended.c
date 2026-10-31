@@ -70,6 +70,9 @@ static const mp_rom_map_elem_t espidf_extended_globals_table[] = {
     #if CIRCUITPY_BLEIO_NATIVE
     { MP_ROM_QSTR(MP_QSTR_ble_advertising_phy), MP_ROM_PTR(&espidf_ble_advertising_phy_obj) },
     { MP_ROM_QSTR(MP_QSTR_ble_prefer_phy), MP_ROM_PTR(&espidf_ble_prefer_phy_obj) },
+    { MP_ROM_QSTR(MP_QSTR_ble_connect_phy), MP_ROM_PTR(&espidf_ble_connect_phy_obj) },
+    { MP_ROM_QSTR(MP_QSTR_ble_connection_info), MP_ROM_PTR(&espidf_ble_connection_info_obj) },
+    { MP_ROM_QSTR(MP_QSTR_ble_connection_phy), MP_ROM_PTR(&espidf_ble_connection_phy_obj) },
     #endif
 
     #if CIRCUITPY_WIFI

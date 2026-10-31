@@ -10,8 +10,10 @@
 
 uint8_t bleio_extended_adv_primary_phy = BLE_HCI_LE_PHY_1M;
 uint8_t bleio_extended_adv_secondary_phy = BLE_HCI_LE_PHY_1M;
+uint8_t bleio_extended_connect_phy = BLE_HCI_LE_PHY_1M;
 
 void bleio_extended_adv_reset(void) {
     bleio_extended_adv_primary_phy = BLE_HCI_LE_PHY_1M;
     bleio_extended_adv_secondary_phy = BLE_HCI_LE_PHY_1M;
+    bleio_extended_connect_phy = BLE_HCI_LE_PHY_1M;
 }
